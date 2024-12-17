@@ -1,9 +1,12 @@
+
+;--- included by cmd.asm
+
 ;
 ;Some basic EQU's for the assemblers sake
 ;
-w	equ word ptr
-b	equ byte ptr
-d	equ dword ptr
+w	equ <word ptr>
+b	equ <byte ptr>
+d	equ <dword ptr>
 
 
 ;

@@ -613,7 +613,7 @@ ebpdump:
 	mov	b[edi],' '
 	inc	edi
 	mov	ebx,es:[esi]
-	sys	GetSelDet32
+	sys GetSelDet32
 	push	ecx
 	mov	eax,edx
 	mov	ecx,8
@@ -650,7 +650,7 @@ ebpdump:
 	;See if there is a memory block that matches this selector.
 	;
 	mov	ebx,es:[esi]
-	sys	GetSelDet32
+	sys GetSelDet32
 	mov	ebx,edx
 	pushad
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
@@ -668,7 +668,7 @@ ebpdump:
 	jz	@@nodpmi
 	pushad
 	mov	bx,fs:w[EPSP_Struc.EPSP_DPMIMem]
-	sys	GetSelDet32
+	sys GetSelDet32
 	cmp	es:[esi],edx
 	popad
 	jz	@@s1
@@ -803,7 +803,7 @@ ebpdump:
 	jz	@@nodpmimem
 	pushad
 	mov	bx,fs:w[EPSP_Struc.EPSP_DPMIMem]
-	sys	GetSelDet32
+	sys GetSelDet32
 	cmp	es:[esi],edx
 	popad
 	jz	@@m1
@@ -897,7 +897,7 @@ ebpdump:
 	jz	@@nodpmimemhere
 	pushad
 	mov	bx,fs:w[EPSP_Struc.EPSP_DPMIMem]
-	sys	GetSelDet32
+	sys GetSelDet32
 	sub	edx,mcbLen
 	cmp	esi,edx
 	popad
@@ -1051,7 +1051,7 @@ ebpdump:
 	inc	edi
 	pushm	ebx,ecx,edx
 	mov	bx,es:[esi]
-	sys	GetSelDet32
+	sys GetSelDet32
 	mov	eax,edx
 	popm	ebx,ecx,edx
 	mov	cx,8
@@ -1100,7 +1100,7 @@ ebpdump:
 	mov	esi,fs:d[EPSP_Struc.EPSP_INTMem]
 	mov	ebx,0
 @@pv0:	pushm	ebx,ecx,esi
-	sys	GetVect
+	sys GetVect
 	cmp	cx,es:w[esi+4]
 	jnz	@@pv10
 	cmp	edx,es:d[esi]
@@ -1153,7 +1153,7 @@ ebpdump:
 	add	esi,256*6
 	mov	ebx,0
 @@pe0:	pushm	ebx,ecx,esi
-	sys	GetEVect
+	sys GetEVect
 	cmp	cx,es:w[esi+4]
 	jnz	@@pv100
 	cmp	edx,es:d[esi]
@@ -1206,7 +1206,7 @@ ebpdump:
 	add	esi,(256*6)+(32*6)
 	mov	ebx,0
 @@ri0:	pushm	ebx,ecx,esi
-	sys	GetRVect
+	sys GetRVect
 	cmp	cx,es:w[esi+2]
 	jnz	@@pv1000
 	cmp	dx,es:w[esi]

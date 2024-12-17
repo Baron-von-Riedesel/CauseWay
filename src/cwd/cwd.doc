@@ -1,0 +1,24 @@
+
+; int 31h called with AX=
+
+GetRVect		equ	0200h
+SetRVect		equ	0201h
+GetEVect		equ	0202h
+SetEVect		equ	0203h
+GetVect			equ	0204h
+SetVect			equ	0205h
+
+Info			equ	0ff00h		;Get general purpose segment selectors.
+GetSel			equ	0ff03h
+AliasSel		equ	0ff06h
+GetSelDet		equ	0ff07h
+GetSelDet32		equ	0ff08h
+SetSelDet32		equ	0ff0ah
+RelMem			equ	0ff0fh
+GetMemLinear32	equ	0ff11h
+ResMemLinear32	equ	0ff13h
+RelMemLinear32	equ	0ff15h
+LockMem32		equ	0ff1ch
+GetMemDOS		equ	0ff21h
+SetDOSTrans		equ	0ff26h
+

@@ -8,6 +8,7 @@
 	.386
 	.model flat
 	.dosseg
+	.stack 4096
 
 	include general.inc
 	include ..\strucs.inc
@@ -22,6 +23,11 @@ _Seg_	ends
 if @Model ne 7
 DGROUP group _TEXT, _DATA, _BSS, STACK
 endif
+
+; WL32 doesn't organize segments if model is flat!
+; so ensure CONST is defined BEFORE _BSS ( so _BSS and STACK come last )
+
+	.const
 
 ifdef DEBUG
 @dbgmsg macro text:vararg
@@ -360,9 +366,6 @@ Entry	proc	far
 ifndef CWAPP
 	mov [psp], ebx		;set by LOADPE.BIN
 else
-	mov eax, cs
-	add eax, 8
-	mov ds, eax			;how to set DS to flat in CauseWay?
 	mov ebx, es
 	mov ax, 6
 	int 31h
@@ -4566,13 +4569,9 @@ ResMemLinear32 ENDP
 	include print.inc
 
 ifndef CWAPP
-if @Model ne 7
+ if @Model ne 7
 	include initpm.inc
-endif
-endif
-
-if @Model ne 7
-	.stack 4096
+ endif
 endif
 
 	end start

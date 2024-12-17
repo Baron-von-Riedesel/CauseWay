@@ -298,11 +298,11 @@ InitWindows	proc	near
 	add	VideoSegment,edi
 	popm	ax,dx,es
 @@3:	;
-	sys	GetSel
+	sys GetSel
 	mov	VideoBase,bx
 	mov	ecx,65535
 	mov	edx,VideoSegment
-	sys	SetSelDet32
+	sys SetSelDet32
 	;
 	cmp	MousePresent,0
 	jz	@@0w

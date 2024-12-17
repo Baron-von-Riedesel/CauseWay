@@ -2197,7 +2197,7 @@ HexTable	db '0123456789ABCDEF'
 ;
 InitDisas	proc	near
 	mov	SymbolList,ebx
-	sys	GetSel
+	sys GetSel
 	mov	DisasTempSel,bx
 	ret
 InitDisas	endp
@@ -2225,11 +2225,11 @@ Disasemble	proc	near
 	;
 	pushm	esi,edi,es,fs
 	mov	bx,fs
-	sys	GetSelDet
+	sys GetSelDet
 	mov	bx,DisasTempSel
 	mov	si,-1
 	mov	di,si
-	sys	SetSelDet
+	sys SetSelDet
 	popm	esi,edi,es,fs
 	;
 	mov	fs,DisasTempSel
@@ -2268,7 +2268,7 @@ Disasemble	proc	near
 	pushm	esi,edi
 	push	esi
 	mov	bx,DisasTempSel
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	pop	esi

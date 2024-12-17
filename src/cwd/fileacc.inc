@@ -3,7 +3,9 @@
 
 FileBufferCount dd 0
 FileBufferPosition dd 0
+	.data?
 FileBuffer	db 2048 dup (?)
+	.data
 OpenFilesList	dw 60 dup (-1)	;Enough for 60 files.
 
 	.code

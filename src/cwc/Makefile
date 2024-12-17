@@ -6,11 +6,13 @@ ALL: Build\cwc.exe
 
 LINK = \msvc\bin\link
 
-Build\cwc.exe:	cwc.asm copystub.inc decstub.inc
-	@ml -c -nologo -Cx /DENGLISH=1 /Zf /Zd -FlBuild\ -FoBuild\ cwc.asm
+Build\cwc.exe:	Build\cwc.obj
 #	..\..\bin\cwl /m /sy /flat Build\cwc
 	WL32 /q/m/f/cs Build\cwc,,Build\cwc.map,..\..\bin\cw.lib;
 #	cwc /l245 cwc.exe
+
+Build\cwc.obj:	cwc.asm copystub.inc decstub.inc
+	@ml -c -nologo -Cx /DENGLISH=1 /Zf /Zd -FlBuild\ -FoBuild\ -I.. cwc.asm
 
 copystub.inc: copystub.asm
 	@ml -c -nologo -FlBuild\ -FoBuild\ copystub.asm

@@ -4,6 +4,8 @@
 	include strucs.inc
 	includelib cw.lib
 
+CWCStackSize	equ	1024	; cannot exceed EXECopyStubLen size (1135 bytes)
+
 ifndef SPANISH
 SPANISH	equ	0
 endif

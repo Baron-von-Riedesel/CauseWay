@@ -1,3 +1,6 @@
+
+;--- included by cwd.asm
+
 DDS	struc		;Structure to get at Low/high words.
 lw	dw ?
 hw	dw ?

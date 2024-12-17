@@ -9,6 +9,7 @@
 	.386
 	.model small
 	.stack 4096
+	.dosseg		; ensure .data? and .stack segments are last
 
 ;	option oldstructs
 	option proc:private
@@ -16,15 +17,15 @@
 ;
 ;Setup language equates.
 ;
-	ifndef ENGLISH
-ENGLISH	equ	0
-	endif
-	ifndef SPANISH
+ifndef SPANISH
 SPANISH	equ	0
-	endif
+endif
+ifndef ENGLISH
+ENGLISH	equ	1-SPANISH
+endif
 
 	include macros.inc
-	include ..\cw.inc
+	include cw.inc
 
 MaxBreaks	equ	256
 MaxEIPs	equ	4096
@@ -34,7 +35,7 @@ MaxLineLength	equ	1024	;Maximum source line length.
 
 RetStackSize	equ	64
 
-	include ..\strucs.inc
+	include strucs.inc
 	include disaseq.inc
 
 ;
@@ -49,8 +50,7 @@ HBRK_Type	db 0	;DPMI type code to use.
 HBRK_Flags	dw 0	;padding.
 HBRK	ends
 
-	.data
-
+	.data?
 	db 2048 dup (?)
 DataStack	dd ?
 ;	public DataStack
@@ -59,7 +59,7 @@ DescriptorBuffer db 8 dup (?)
 
 WindowSplits	db 2048 dup (?)
 ;
-WindowRegionFlag dw 0
+WindowRegionFlag dw ?
 WindowRegionX	dw ?
 WindowRegionY	dw ?
 WindowRegionWidth dw ?
@@ -70,6 +70,8 @@ MouseY	dw ?
 MouseB	dw ?
 
 VLineBuffer	db 4096 dup (?)
+
+	.data
 
 MousePresent	db 0
 MouseFlag	db 0
@@ -90,10 +92,12 @@ InMouse	dw 0
 ;
 MouseStore	dw ?
 ;
+	.data?
 DisasBuffer	db 8192 dup (?)
 ABuffer	db 1024 dup (?)
 BBuffer	db 1024 dup (?)
 CBuffer	db 1024 dup (?)
+	.data
 CarriageReturn	db 13,10,0
 ;
 DebugMode	db 0,0
@@ -342,6 +346,8 @@ TerminationFlag db 0
 ;
 DebugName	db 32 dup (0)
 ErrHandle	dd 0
+
+if 0
 ;
 NewHeader	db size NewHeaderStruc dup (0)
 ;
@@ -360,6 +366,7 @@ ExeEntryIP	dw ?	;14 Contents of IP at entry.
 ExeEntryCS	dw ?	;16 Segment displacement of CS at entry.
 ExeRelocFirst	dw ?	;18 First relocation item offset.
 ExeOverlayNum	db ?	;1A Overlay number.
+endif
 
 ErrorLevel	db 0
 
@@ -388,6 +395,7 @@ HelpText1	label byte
 	db ' ',1,74h,'F8',1,70h,'-Step'
 	db ' ',1,74h,'F9',1,70h,'-Run '
 	DB	' ',1,74h,'F10',1
+
 FlipTextAttr	DB	70h,'-Flip',0
 
 HelpText1a	label byte
@@ -566,7 +574,9 @@ MAPextension	db 'MAP',0
 ;
 SymIDSpace	db 8 dup (0)
 ;
+	.data?
 LineBuffer	db 1024 dup (?)
+	.data
 ;
 	db -1
 SymHeaderText	db ' address publics by name',0
@@ -683,16 +693,20 @@ ExceptionText	label byte
 	endif
 ExceptionNumt	db '00h ',13,10,13,10,0
 ;
-VectorList	dd 0
-	df 256 dup (?)
-	df 32 dup (?)
-	dd 256 dup (?)
+	.data?
+VectorList	dd ?
+	df 256 dup (?)	; 256 interrupt vectors
+	df 32 dup (?)	; 32 exception vectors
+	dd 256 dup (?)	; 256 IVT vectors
+	.data
 ;
 DisasGened	db 0
 ;
 SearchCSEIPList df MaxEIPs dup (0)
 ;
+	.data?
 DataWatchList	db size WatchStruc * MaxWatches dup (?)
+	.data
 ;
 WatchTitleText	db 1,3fh,'Data #'
 WatchTitleNumt	db '00 - '
@@ -924,9 +938,11 @@ SourceFileWindow dd 0
 ;
 LastFilePointer dd 0
 ;
-FileNameSpace	db 256 dup (0)
-FileNameSpace2	db 256 dup (0)
-FileNameSpace3	db 256 dup (0)
+	.data?
+FileNameSpace	db 256 dup (?)
+FileNameSpace2	db 256 dup (?)
+FileNameSpace3	db 256 dup (?)
+	.data
 ;
 OS2TypeMalloc	db 0
 ;
@@ -1173,13 +1189,22 @@ main	proc	near
 	push	ds
 	pop	es
 
+;--- clear _BSS segment
+externdef _edata:abs
+externdef _end:abs
+	mov edi, _edata
+	mov ecx, _end
+	sub ecx, edi
+	mov al,0
+	rep stosb
+
 	call	CheckFPU	; check for FPU presence
 
 ;
 ;Get 0-4G selector and current system flags.
 ;
 	push	es
-	sys	Info
+	sys Info
 	mov	si,di
 	and	si,1
 	and	di,65535-(16384)
@@ -1206,34 +1231,34 @@ main	proc	near
 	mov	esi,fs:[EPSP_Struc.EPSP_MemBase]
 	mov	ecx,fs:[EPSP_Struc.EPSP_MemSize]
 	pop	fs
-	sys	LockMem32
+	sys LockMem32
 	jc	System
 ;
 ;Get a code segment alias.
 ;
 	mov	SystemError,2
 	mov	bx,cs
-	sys	AliasSel
+	sys AliasSel
 	jc	system
 	mov	CodeSegAlias,ax
 	mov	bx,_EXCEP
-	sys	AliasSel
+	sys AliasSel
 	jc	system
 	mov	ECodeSegAlias,ax
 ;
 ;Get a selector for video memory access.
 ;
-	sys	GetSel
+	sys GetSel
 	jc	system
 	mov	VideoSwapSel,bx
 ;
 ;Extend programs DS limit.
 ;
 	mov	bx,ds
-	sys	GetSelDet32
+	sys GetSelDet32
 	mov	ecx,-1
-	sys	SetSelDet32
-	sys	GetSelDet32
+	sys SetSelDet32
+	sys GetSelDet32
 	cmp	ecx,-1
 	jz	@@longlimit
 	or	OS2TypeMalloc,-1
@@ -1415,7 +1440,7 @@ main	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	cld
 	mov	edi,VideoOldUserBuffer
 	mov	ecx,[edi+4]
@@ -1430,11 +1455,12 @@ main	proc	near
 	;and can interrupt the program.
 	;
 	mov	bl,9
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@i932
 	movzx	edx,dx
-@@i932:	push	ds
+@@i932:
+	push	ds
 	mov	ds,CodeSegAlias
 	assume ds:_TEXT
 	mov	d[OldInt09],edx
@@ -1442,30 +1468,31 @@ main	proc	near
 	assume ds:DGROUP
 	pop	ds
 	mov	edx,offset BreakChecker
-	mov	cx,cs
+	mov	ecx,cs
 	mov	bl,9
-	sys	SetVect
+	sys SetVect
 	mov	bl,31h
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@i3132
 	movzx	edx,dx
-@@i3132:	push	ds
+@@i3132:
+	push	ds
 	mov	ds,CodeSegAlias
 	assume ds:_TEXT
 	mov	d[OldInt31],edx
 	mov	w[OldInt31+4],cx
 	push	es
-	mov	es,cx
+	mov	es,ecx
 	mov	ax,es:[edx-2]
 	pop	es
 	mov	w[cwMajorVersion],ax
 	assume ds:DGROUP
 	pop	ds
 	mov	edx,offset Int31Intercept
-	mov	cx,cs
+	mov	ecx,cs
 	mov	bl,31h
-	sys	SetVect
+	sys SetVect
 ;
 ;Check command line for CWD options and retrieve name of program to load.
 ;
@@ -1714,210 +1741,164 @@ main	proc	near
 ;Patch int 10h for mode checks.
 ;
 	mov	bl,10h
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@v32_0
 	movzx	edx,dx
-@@v32_0:	push	ds
-	mov	ds,CodeSegAlias
-	assume ds:_Text
+@@v32_0:
+	mov	es,CodeSegAlias
+	assume es:_TEXT
+	mov	d[OldInt10+0],edx
 	mov	w[OldInt10+4],cx
-	mov	d[OldInt10],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	cx,cs
+	mov	ecx,cs
 	mov	edx,offset Int10Handler
-	sys	SetVect
+	sys SetVect
 ;
 ;Patch exception 0 interupt.
 ;
 	mov	bl,0
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@v32_1
 	movzx	edx,dx
-@@v32_1:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_1:
+	mov	es,ECodeSegAlias
+	assume es:_EXCEP
+	mov	d[OldInt00+0],edx
 	mov	w[OldInt00+4],cx
-	mov	d[OldInt00],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,0
 	mov	cx,_EXCEP
 	mov	edx,offset Int00Handler
-	sys	SetVect
+	sys SetVect
 ;
 ;Patch debug interupt.
 ;
 	mov	bl,1
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@v32_20
 	movzx	edx,dx
-@@v32_20:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_20:
+	mov	d[OldInt01+0],edx
 	mov	w[OldInt01+4],cx
-	mov	d[OldInt01],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,1
 	mov	cx,_EXCEP
 	mov	edx,offset Int01Handler
-	sys	SetVect
+	sys SetVect
 ;
 ;Patch trap interupt.
 ;
 	mov	bl,3
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@v32_2
 	movzx	edx,dx
-@@v32_2:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_2:
+	mov	d[OldInt03+0],edx
 	mov	w[OldInt03+4],cx
-	mov	d[OldInt03],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,3
 	mov	cx,_EXCEP
 	mov	edx,offset Int03Handler
-	sys	SetVect
+	sys SetVect
 ;
-;Patch debug interupt.
+;Patch debug exception.
 ;
 	mov	bl,1
-	sys	GetEVect
+	sys GetEVect
 	test	SystemFlags,1
 	jz	@@v32_30
 	movzx	edx,dx
-@@v32_30:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_30:
+	mov	d[OldEInt01+0],edx
 	mov	w[OldEInt01+4],cx
-	mov	d[OldEInt01],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,1
 	mov	cx,_EXCEP
 	mov	edx,offset EInt01Handler
-	sys	SetEVect
+	sys SetEVect
 ;
-;Patch trap interupt.
+;Patch trap exception.
 ;
 	mov	bl,3
-	sys	GetEVect
+	sys GetEVect
 	test	SystemFlags,1
 	jz	@@v32_3
 	movzx	edx,dx
-@@v32_3:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_3:
+	mov	d[OldEInt03+0],edx
 	mov	w[OldEInt03+4],cx
-	mov	d[OldEInt03],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,3
 	mov	cx,_EXCEP
 	mov	edx,offset EInt03Handler
-	sys	SetEVect
+	sys SetEVect
 ;
-;Patch exception 12 interupt.
+;Patch exception 12.
 ;
 	mov	bl,12
-	sys	GetEVect
+	sys GetEVect
 	test	SystemFlags,1
 	jz	@@v32_4
 	movzx	edx,dx
-@@v32_4:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_4:
+	mov	d[OldExc12+0],edx
 	mov	w[OldExc12+4],cx
-	mov	d[OldExc12],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,12
 	mov	cx,_EXCEP
 	mov	edx,offset Exc12Handler
-	sys	SetEVect
+	sys SetEVect
 ;
-;Patch exception 13 interupt.
+;Patch exception 13.
 ;
 	mov	bl,13
-	sys	GetEVect
+	sys GetEVect
 	test	SystemFlags,1
 	jz	@@v32_5
 	movzx	edx,dx
-@@v32_5:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_5:
+	mov	d[OldExc13+0],edx
 	mov	w[OldExc13+4],cx
-	mov	d[OldExc13],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,13
 	mov	cx,_EXCEP
 	mov	edx,offset Exc13Handler
-	sys	SetEVect
+	sys SetEVect
 ;
-;Patch exception 14 interupt.
+;Patch exception 14.
 ;
 	mov	bl,14
-	sys	GetEVect
+	sys GetEVect
 	test	SystemFlags,1
 	jz	@@v32_6
 	movzx	edx,dx
-@@v32_6:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_6:
+	mov	d[OldExc14+0],edx
 	mov	w[OldExc14+4],cx
-	mov	d[OldExc14],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,14
 	mov	cx,_EXCEP
 	mov	edx,offset Exc14Handler
-	sys	SetEVect
+	sys SetEVect
 ;
 ;Patch CTRL-C handler.
 ;
 	mov	bl,23h
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@v32_7
 	movzx	edx,dx
-@@v32_7:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@v32_7:
+	mov	d[OldInt23+0],edx
 	mov	w[OldInt23+4],cx
-	mov	d[OldInt23],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,23h
 	mov	cx,_EXCEP
 	mov	edx,offset Int23Handler
-	sys	SetVect
+	sys SetVect
 ;
 ;Patch terminate interrupt.
 ;
 	mov	bl,21h
-	sys	GetVect
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@Use32_0
 	movzx	edx,dx
-@@Use32_0:	push	ds
-	mov	ds,ECodeSegAlias
-	assume ds:_EXCEP
+@@Use32_0:
+	mov	d[OldInt21+0],edx
 	mov	w[OldInt21+4],cx
-	mov	d[OldInt21],edx
-	assume ds:DGROUP
-	pop	ds
-	mov	bl,21h
 	mov	cx,_EXCEP
 	mov	edx,offset Int21Handler
-	sys	SetVect
+	sys SetVect
+
+	push ds
+	pop es
+	assume es:DGROUP
 ;
 ;Store current vector settings to ensure a clean exit.
 ;
@@ -2008,7 +1989,7 @@ main	proc	near
 	;Setup a new transfer buffer to stop CWD interfering.
 	;
 	mov	bx,8192/16
-	sys	GetMemDOS
+	sys GetMemDOS
 	jc	@@NoBigBuffer
 	push	eax
 	mov	bx,DebugPSP
@@ -2017,7 +1998,7 @@ main	proc	near
 	pop	eax
 	mov	bx,ax
 	mov	ecx,8192
-	sys	SetDOSTrans
+	sys SetDOSTrans
 	mov	bx,PSPSegment
 	mov	ah,50h
 	int	21h
@@ -2173,7 +2154,7 @@ main	proc	near
 	mov	eax,d[EvaluateBuffer+4]
 @@eg2:	mov	DisplayCS,ax
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -2233,70 +2214,70 @@ System	proc	near
 	mov	edx,d[OldInt23]
 	mov	cx,w[OldInt23+4]
 	mov	bl,23h
-	sys	SetVect
+	sys SetVect
 @@9:	;
 	cmp	w[OldInt21+4],0
 	jz	@@0
 	mov	edx,d[OldInt21]
 	mov	cx,w[OldInt21+4]
 	mov	bl,21h
-	sys	SetVect
+	sys SetVect
 @@0:	;
 	cmp	w[OldInt01+4],0
 	jz	@@10
 	mov	cx,w[OldInt01+4]
 	mov	edx,d[OldInt01]
 	mov	bl,1
-	sys	SetVect
+	sys SetVect
 @@10:	;
 	cmp	w[OldEInt01+4],0
 	jz	@@20
 	mov	cx,w[OldEInt01+4]
 	mov	edx,d[OldEInt01]
 	mov	bl,1
-	sys	SetEVect
+	sys SetEVect
 @@20:	;
 	cmp	w[OldEInt03+4],0
 	jz	@@30
 	mov	cx,w[OldEInt03+4]
 	mov	edx,d[OldEInt03]
 	mov	bl,3
-	sys	SetVect
+	sys SetVect
 @@30:	;
 	cmp	w[OldInt03+4],0
 	jz	@@1
 	mov	cx,w[OldInt03+4]
 	mov	edx,d[OldInt03]
 	mov	bl,3
-	sys	SetVect
+	sys SetVect
 	;
 @@1:	cmp	w[OldExc12+4],0
 	jz	@@2
 	mov	cx,w[OldExc12+4]
 	mov	edx,d[OldExc12]
 	mov	bl,12
-	sys	SetEVect
+	sys SetEVect
 	;
 @@2:	cmp	w[OldExc13+4],0
 	jz	@@3
 	mov	cx,w[OldExc13+4]
 	mov	edx,d[OldExc13]
 	mov	bl,13
-	sys	SetEVect
+	sys SetEVect
 @@3:	;
 	cmp	w[OldExc14+4],0
 	jz	@@4
 	mov	cx,w[OldExc14+4]
 	mov	edx,d[OldExc14]
 	mov	bl,14
-	sys	SetEVect
+	sys SetEVect
 @@4:	;
 	cmp	w[OldInt00+4],0
 	jz	@@8
 	mov	cx,w[OldInt00+4]
 	mov	edx,d[OldInt00]
 	mov	bl,0
-	sys	SetVect
+	sys SetVect
 	;
 @@8:	assume ds:DGROUP
 	pop	ds
@@ -2305,7 +2286,7 @@ System	proc	near
 	mov	edx,d[OldInt10]
 	mov	cx,w[OldInt10+4]
 	mov	bl,10h
-	sys	SetVect
+	sys SetVect
 	;
 @@7:	cmp	WindowsOpened,0
 	jz	@@5
@@ -2318,7 +2299,7 @@ System	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
 	push	es
@@ -2354,7 +2335,7 @@ System	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
 	push	es
@@ -2372,7 +2353,7 @@ System	proc	near
 	mov	edx,cs:d[OldInt31]
 	mov	cx,cs:w[OldInt31+4]
 	mov	bl,31h
-	sys	SetVect
+	sys SetVect
 	assume ds:DGROUP
 	;
 @@noi31:	assume ds:nothing
@@ -2381,7 +2362,7 @@ System	proc	near
 	mov	edx,cs:d[OldInt09]
 	mov	cx,cs:w[OldInt09+4]
 	mov	bl,9
-	sys	SetVect
+	sys SetVect
 	assume ds:DGROUP
 @@noi9:	;
 	cmp	SystemError,0
@@ -2390,7 +2371,8 @@ System	proc	near
 	mov	edx,[SErrorList+edx*4]
 	call	StringPrint
 	;
-@@6:	movzx	eax,SystemError
+@@6:
+	movzx	eax,SystemError
 	mov	ah,4ch
 	int	21h
 System	endp
@@ -2627,7 +2609,7 @@ ReadConfig	proc	near
 	jnc	@@ConfigOK
 @@NotCurrent:	;
 	push	es
-	sys	Info
+	sys Info
 	mov	es,bx
 	mov	es,es:w[2ch]
 	xor	esi,esi
@@ -2992,7 +2974,7 @@ RestartALL	proc	near
 	pushm	ds,ds,ds
 	popm	es,fs,gs
 	mov	bx,DebugPSP
-	sys	RelMem		;release memory.
+	sys RelMem		;release memory.
 ;
 ;Lose all break points.
 ;
@@ -3039,7 +3021,7 @@ RestartALL	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
 	push	es
@@ -3166,7 +3148,7 @@ RestartALL	proc	near
 ;Setup a new transfer buffer to stop CWD interfering.
 ;
 	mov	bx,8192/16
-	sys	GetMemDOS
+	sys GetMemDOS
 	jc	@@NoBigBuffer
 	push	eax
 	mov	bx,DebugPSP
@@ -3175,7 +3157,7 @@ RestartALL	proc	near
 	pop	eax
 	mov	bx,ax
 	mov	ecx,8192
-	sys	SetDOSTrans
+	sys SetDOSTrans
 	mov	bx,PSPSegment
 	mov	ah,50h
 	int	21h
@@ -3254,7 +3236,7 @@ RestartALL	proc	near
 	mov	eax,d[EvaluateBuffer+4]
 @@eg2:	mov	DisplayCS,ax
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -3348,38 +3330,31 @@ SaveVectors	proc	near
 	;
 	mov	ebp,256
 	xor	bl,bl
-@@0:	pushm	ebx,edi,ebp
-	sys	GetVect
-	popm	ebx,edi,ebp
-	mov	[edi],edx
+@@0:
+	sys GetVect
+	mov	[edi+0],edx
 	mov	[edi+4],cx
 	add	edi,6
 	inc	bl
-	dec	ebp
 	jnz	@@0
 	;
-	mov	ebp,32
 	xor	bl,bl
-@@1:	pushm	ebx,edi,ebp
-	sys	GetEVect
-	popm	ebx,edi,ebp
-	mov	[edi],edx
+@@1:
+	sys GetEVect
+	mov	[edi+0],edx
 	mov	[edi+4],cx
 	add	edi,6
 	inc	bl
-	dec	ebp
+	cmp	bl,32
 	jnz	@@1
 	;
-	mov	ebp,256
 	xor	bl,bl
-@@2:	pushm	ebx,edi,ebp
-	sys	GetRVect
-	popm	ebx,edi,ebp
-	mov	[edi],dx
+@@2:
+	sys GetRVect
+	mov	[edi+0],dx
 	mov	[edi+2],cx
 	add	edi,4
 	inc	bl
-	dec	ebp
 	jnz	@@2
 	;
 	ret
@@ -3392,43 +3367,36 @@ RestoreVectors	proc	near
 	jz	@@9
 	add	edi,4
 	;
-	mov	ebp,256
 	xor	bl,bl
-@@0:	pushm	ebx,edi,ebp
-	mov	edx,[edi]
+@@0:
+	mov	edx,[edi+0]
 	mov	cx,[edi+4]
-	sys	SetVect
-	popm	ebx,edi,ebp
+	sys SetVect
 	add	edi,6
 	inc	bl
-	dec	ebp
 	jnz	@@0
 	;
-	mov	ebp,32
 	xor	bl,bl
-@@1:	pushm	ebx,edi,ebp
-	mov	edx,[edi]
+@@1:
+	mov	edx,[edi+0]
 	mov	cx,[edi+4]
-	sys	SetEVect
-	popm	ebx,edi,ebp
+	sys SetEVect
 	add	edi,6
 	inc	bl
-	dec	ebp
+	cmp	bl,32
 	jnz	@@1
 	;
-	mov	ebp,256
 	xor	bl,bl
-@@2:	pushm	ebx,edi,ebp
-	mov	dx,[edi]
+@@2:
+	mov	dx,[edi+0]
 	mov	cx,[edi+2]
-	sys	SetRVect
-	popm	ebx,edi,ebp
+	sys SetRVect
 	add	edi,4
 	inc	bl
-	dec	ebp
 	jnz	@@2
 	;
-@@9:	ret
+@@9:
+	ret
 RestoreVectors	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -3736,7 +3704,7 @@ GetWatchSource	proc	near
 	;
 	pushm	ebx,esi,edi
 	mov	bx,ax
-	sys	GetSelDet
+	sys GetSelDet
 	pushf
 	shl	ecx,16
 	mov	cx,dx
@@ -6049,7 +6017,7 @@ DisasHandler	proc	near
 @@k6:	cmp	b[Keys+1],60	;F2
 	jnz	@@k7
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -6102,7 +6070,7 @@ DisasHandler	proc	near
 	jmp	@@9
 	;
 @@k0_1:	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -6131,7 +6099,7 @@ DisasHandler	proc	near
 @@k13:	cmp	b[Keys],'+'
 	jnz	@@k14
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -6148,7 +6116,7 @@ DisasHandler	proc	near
 @@k14:	cmp	b[Keys],'-'
 	jnz	@@k15
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -6337,7 +6305,7 @@ AddHardBreak	proc	near
 	;Got the segment, now do the offset.
 	;
 	mov	bx,ax
-	sys	GetSelDet32
+	sys GetSelDet32
 	mov	eax,edx
 	mov	edi,offset EvaluateBuffer
 @@4:	movsb
@@ -8500,7 +8468,7 @@ END COMMENT !
 	pushm	ecx,esi
 	push	edx
 	mov	bx,DebugSS
-	sys	GetSelDet32
+	sys GetSelDet32
 	test	edx,edx	; check if FLAT stack
 	pop	edx			; KEEP COMPARE FLAG STATUS
 	jnz	notflat		; no
@@ -8526,7 +8494,7 @@ notflat:
 	mov	ebp,edx
 
 @@findseg:
-	sys	GetSelDet32
+	sys GetSelDet32
 	cmp	ebp,edx
 	jz	@@gotseg
 	add	ebx,8
@@ -8648,7 +8616,7 @@ notflat:
 @@FLATUpdate:	;Now try and make symbols work if we're in FLAT mode.
 	;
 	mov	bx,DebugSS
-	sys	GetSelDet32
+	sys GetSelDet32
 	or	edx,edx		;FLAT stack seg?
 	jnz	@@fs9
 	;
@@ -9705,7 +9673,7 @@ BreaksON	proc	near
 	jnz	@@1
 	pushm	ecx,esi,edi
 	mov	bx,DisplayCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -10185,7 +10153,7 @@ ExecuteInst	proc	near
 	cmp	DebugRetCode,RetCode_MOVS
 	jnz	@@Normalea
 	mov	bx,TargetCS2
-	sys	GetSelDet32
+	sys GetSelDet32
 	jc	@@SetSwapChk
 	add	edx,TargetEIP2
 	cmp	edx,0a0000h
@@ -10194,7 +10162,7 @@ ExecuteInst	proc	near
 	jc	@@SetSwapChk
 	;
 @@Normalea:	mov	bx,TargetCS
-	sys	GetSelDet32
+	sys GetSelDet32
 	jc	@@SetSwapChk
 	add	edx,TargetEIP
 	cmp	edx,0a0000h
@@ -10456,7 +10424,8 @@ ExecuteInst	proc	near
 	jmp	@@Trace_INT2
 @@Trace_INT3:	mov	VidSwapMode,0
 	jmp	@@Next_0
-@@Trace_INT2:	sys	GetVect
+@@Trace_INT2:
+	sys GetVect
 	test	SystemFlags,1
 	jz	@@Trace_INT1
 	movzx	edx,dx
@@ -10488,7 +10457,7 @@ ExecuteInst	proc	near
 	jnc	@@NoRegCall
 @@RegCall:	pushad
 	mov	bx,NextCS
-	sys	GetSelDet32
+	sys GetSelDet32
 	add	edx,NextEIP
 	call	AddRetAddress
 	popad
@@ -10515,7 +10484,7 @@ ExecuteInst	proc	near
 	mov	d[DebuggerESP],esp
 	mov	w[ExecBreakHandle+4],-1
 	mov	bx,DebugCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -10538,7 +10507,7 @@ ExecuteInst	proc	near
 @@GetBreak:	;Setup a brake point at next execution address.
 	;
 	mov	bx,NextCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -10548,7 +10517,7 @@ ExecuteInst	proc	near
 	mov	w[ExecBreakHandle],ax
 	;
 	mov	bx,TargetCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -10641,7 +10610,7 @@ ExecuteInst	proc	near
 	;enough iterations.
 	;
 	mov	bx,DebugCS		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	edx,ecx
@@ -11072,7 +11041,7 @@ RegisterDisplay proc near
 
 	pushm	bx,edx
 	mov	bx,cx		;Need segment linear base address
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	esi,ecx
@@ -11220,7 +11189,7 @@ DebugSegment	proc	near
 	cmp	ax,cx
 	jnc	@@9		;outside application startup selectors.
 	mov	bx,dx
-	sys	GetSelDet
+	sys GetSelDet
 	shl	ecx,16
 	mov	cx,dx
 	mov	eax,ecx
@@ -11254,7 +11223,7 @@ DisasScreen	proc	near
 	int	33h
 @@NoMSaveRes:	;
 	mov	bl,09h
-	sys	GetVect
+	sys GetVect
 	mov	d[UserInt09h],edx
 	mov	w[UserInt09h+4],cx
 	;
@@ -11263,7 +11232,7 @@ DisasScreen	proc	near
 	mov	edx,d[DisasInt09h]
 	mov	cx,w[DisasInt09h+4]
 	mov	bl,09h
-	sys	SetVect
+	sys SetVect
 @@NoInt09Rest:	;
 @@NoSwitch0:	cmp	MonoSwap,0
 	jz	@@NoMono
@@ -11297,7 +11266,7 @@ DisasScreen	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	cld
 	mov	edi,VideoUserBuffer
 	mov	ecx,[edi+4]
@@ -11329,7 +11298,7 @@ DisasScreen	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	cld
 	mov	edi,VideoUserBuffer
 	mov	ecx,[edi+4]
@@ -11346,7 +11315,7 @@ DisasScreen	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	mov	esi,VideoDebugBuffer
 	mov	ecx,[esi+4]
 	add	esi,4+4
@@ -11396,7 +11365,7 @@ DisasScreen	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	cld
 	mov	edi,VideoUserBuffer
 	mov	ecx,[edi+4]
@@ -11460,7 +11429,7 @@ DisasScreen	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	mov	esi,VideoDebugBuffer
 	mov	ecx,[esi+4]
 	add	esi,4+4
@@ -11506,7 +11475,7 @@ UserScreen	proc	near
 	int	33h
 @@NoMSaveRes:	;
 	mov	bl,09h
-	sys	GetVect
+	sys GetVect
 	mov	d[DisasInt09h],edx
 	mov	w[DisasInt09h+4],cx
 	;
@@ -11515,7 +11484,7 @@ UserScreen	proc	near
 	mov	edx,d[UserInt09h]
 	mov	cx,w[UserInt09h+4]
 	mov	bl,09h
-	sys	SetVect
+	sys SetVect
 @@NoInt09Rest:	;
 @@NoSwitch0:	cmp	MonoSwap,0
 	jz	@@NoMono
@@ -11528,7 +11497,7 @@ UserScreen	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	mov	edi,VideoDebugBuffer
 	mov	ecx,[esi+4]
 	add	edi,4+4
@@ -11544,7 +11513,7 @@ UserScreen	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
 	push	es
@@ -11602,7 +11571,7 @@ UserScreen	proc	near
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	mov	edi,VideoDebugBuffer
 	mov	ecx,[esi+4]
 	add	edi,4+4
@@ -11662,7 +11631,7 @@ UserScreen	proc	near
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
-	sys	SetSelDet32
+	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
 	push	es
@@ -11713,11 +11682,12 @@ Bord	endp
 ;
 Malloc	proc	near
 	pushm	eax,ebx,ecx,edx
-l2:	sys	GetMemLinear32
+l2:
+	sys GetMemLinear32
 	jc	l0
 	mov	bx,ds
 	push	ecx
-	sys	GetSelDet32
+	sys GetSelDet32
 	pop	ecx
 	cmp	esi,edx		;below CWD?
 	jnc	l3
@@ -11753,14 +11723,14 @@ ReMalloc	proc	near
 	pushm	eax,ebx,ecx,edx
 	push	ecx
 	mov	bx,ds
-	sys	GetSelDet32
+	sys GetSelDet32
 	jc	l0
 	add	esi,edx
 	pop	ecx
-	sys	ResMemLinear32
+	sys ResMemLinear32
 	jc	l0
 	mov	bx,ds
-	sys	GetSelDet32
+	sys GetSelDet32
 	jc	l0
 	sub	esi,edx
 	clc
@@ -11786,14 +11756,14 @@ ReMalloc	endp
 Free	proc	near
 	pushm	eax,ebx,ecx,edx,esi
 	mov	bx,ds
-	sys	GetSelDet32
+	sys GetSelDet32
 	add	esi,edx
-	sys	RelMemLinear32
+	sys RelMemLinear32
 	popm	eax,ebx,ecx,edx,esi
 	ret
 Free	endp
 
-	include files.inc
+	include fileacc.inc
 	include print.inc
 	include getkeys.inc
 	include win.inc

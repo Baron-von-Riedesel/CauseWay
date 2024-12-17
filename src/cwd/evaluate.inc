@@ -1,10 +1,11 @@
 
 	.data
 
-
+	.data?
 EvaluateBuffer	db MaxLineLength dup (?)
 EvaluateBuffer2 db MaxLineLength dup (?)
 EvaluateBuffer3 db MaxLineLength dup (?)
+	.data
 VarSizeMask	dd 0,0
 Temp	dd ?,?
 ResultBuffer	dd 2*4 dup (0)
