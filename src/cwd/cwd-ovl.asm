@@ -1340,7 +1340,8 @@ externdef _end:abs
 ;
 ;Allocate video state save buffers.
 ;
-@@NoMouse:	mov	ah,0fh
+@@NoMouse:
+	mov	ah,0fh
 	int	10h		;get current page.
 	mov	UserOldPage,bh
 	mov	UserOldMode,al
@@ -1437,7 +1438,7 @@ externdef _end:abs
 	mov	edx,0b8000h
 	mov	ecx,16384
 @@vg1:	mov	esi,VideoOldUserBuffer
-	mov	[esi],edx
+	mov	[esi+0],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
 	sys SetSelDet32
@@ -1460,39 +1461,35 @@ externdef _end:abs
 	jz	@@i932
 	movzx	edx,dx
 @@i932:
-	push	ds
-	mov	ds,CodeSegAlias
-	assume ds:_TEXT
-	mov	d[OldInt09],edx
+	mov	es,CodeSegAlias
+	assume es:_TEXT
+	mov	d[OldInt09+0],edx
 	mov	w[OldInt09+4],cx
-	assume ds:DGROUP
-	pop	ds
 	mov	edx,offset BreakChecker
 	mov	ecx,cs
-	mov	bl,9
 	sys SetVect
+
 	mov	bl,31h
 	sys GetVect
 	test	SystemFlags,1
 	jz	@@i3132
 	movzx	edx,dx
 @@i3132:
-	push	ds
-	mov	ds,CodeSegAlias
-	assume ds:_TEXT
-	mov	d[OldInt31],edx
+	mov	d[OldInt31+0],edx
 	mov	w[OldInt31+4],cx
 	push	es
 	mov	es,ecx
 	mov	ax,es:[edx-2]
 	pop	es
 	mov	w[cwMajorVersion],ax
-	assume ds:DGROUP
-	pop	ds
 	mov	edx,offset Int31Intercept
 	mov	ecx,cs
 	mov	bl,31h
 	sys SetVect
+
+	push ds
+	pop es
+	assume es:DGROUP
 ;
 ;Check command line for CWD options and retrieve name of program to load.
 ;
@@ -1753,31 +1750,18 @@ externdef _end:abs
 	mov	ecx,cs
 	mov	edx,offset Int10Handler
 	sys SetVect
-;
-;Patch exception 0 interupt.
-;
-	mov	bl,0
-	sys GetVect
-	test	SystemFlags,1
-	jz	@@v32_1
-	movzx	edx,dx
-@@v32_1:
+
 	mov	es,ECodeSegAlias
 	assume es:_EXCEP
-	mov	d[OldInt00+0],edx
-	mov	w[OldInt00+4],cx
-	mov	cx,_EXCEP
-	mov	edx,offset Int00Handler
-	sys SetVect
 ;
 ;Patch debug interupt.
 ;
 	mov	bl,1
 	sys GetVect
 	test	SystemFlags,1
-	jz	@@v32_20
+	jz	@F
 	movzx	edx,dx
-@@v32_20:
+@@:
 	mov	d[OldInt01+0],edx
 	mov	w[OldInt01+4],cx
 	mov	cx,_EXCEP
@@ -1789,84 +1773,38 @@ externdef _end:abs
 	mov	bl,3
 	sys GetVect
 	test	SystemFlags,1
-	jz	@@v32_2
+	jz	@F
 	movzx	edx,dx
-@@v32_2:
+@@:
 	mov	d[OldInt03+0],edx
 	mov	w[OldInt03+4],cx
 	mov	cx,_EXCEP
 	mov	edx,offset Int03Handler
 	sys SetVect
-;
-;Patch debug exception.
-;
-	mov	bl,1
+
+;--- patch exceptions 0,1,3,6,12,13,14
+
+	mov esi, offset vectorno
+	mov edi, offset vectorval
+nextexc:
+	lodsb es:[esi]
+	mov	bl,al
 	sys GetEVect
 	test	SystemFlags,1
-	jz	@@v32_30
+	jz	@F
 	movzx	edx,dx
-@@v32_30:
-	mov	d[OldEInt01+0],edx
-	mov	w[OldEInt01+4],cx
+@@:
+	mov eax, edx
+	stosd
+	mov eax, ecx
+	stosw
+	mov eax, esi
+	sub eax, offset vectorno + 1
 	mov	cx,_EXCEP
-	mov	edx,offset EInt01Handler
+	movzx edx, w[eax*2+offset vectorno + sizeof vectorno]
 	sys SetEVect
-;
-;Patch trap exception.
-;
-	mov	bl,3
-	sys GetEVect
-	test	SystemFlags,1
-	jz	@@v32_3
-	movzx	edx,dx
-@@v32_3:
-	mov	d[OldEInt03+0],edx
-	mov	w[OldEInt03+4],cx
-	mov	cx,_EXCEP
-	mov	edx,offset EInt03Handler
-	sys SetEVect
-;
-;Patch exception 12.
-;
-	mov	bl,12
-	sys GetEVect
-	test	SystemFlags,1
-	jz	@@v32_4
-	movzx	edx,dx
-@@v32_4:
-	mov	d[OldExc12+0],edx
-	mov	w[OldExc12+4],cx
-	mov	cx,_EXCEP
-	mov	edx,offset Exc12Handler
-	sys SetEVect
-;
-;Patch exception 13.
-;
-	mov	bl,13
-	sys GetEVect
-	test	SystemFlags,1
-	jz	@@v32_5
-	movzx	edx,dx
-@@v32_5:
-	mov	d[OldExc13+0],edx
-	mov	w[OldExc13+4],cx
-	mov	cx,_EXCEP
-	mov	edx,offset Exc13Handler
-	sys SetEVect
-;
-;Patch exception 14.
-;
-	mov	bl,14
-	sys GetEVect
-	test	SystemFlags,1
-	jz	@@v32_6
-	movzx	edx,dx
-@@v32_6:
-	mov	d[OldExc14+0],edx
-	mov	w[OldExc14+4],cx
-	mov	cx,_EXCEP
-	mov	edx,offset Exc14Handler
-	sys SetEVect
+	cmp esi, offset vectorno + sizeof vectorno
+	jnz nextexc
 ;
 ;Patch CTRL-C handler.
 ;
@@ -2211,79 +2149,51 @@ System	proc	near
 	assume ds:_EXCEP
 	cmp	w[OldInt23+4],0
 	jz	@@9
-	mov	edx,d[OldInt23]
+	mov	edx,d[OldInt23+0]
 	mov	cx,w[OldInt23+4]
 	mov	bl,23h
 	sys SetVect
 @@9:	;
 	cmp	w[OldInt21+4],0
 	jz	@@0
-	mov	edx,d[OldInt21]
+	mov	edx,d[OldInt21+0]
 	mov	cx,w[OldInt21+4]
 	mov	bl,21h
 	sys SetVect
 @@0:	;
 	cmp	w[OldInt01+4],0
-	jz	@@10
+	jz	@F
+	mov	edx,d[OldInt01+0]
 	mov	cx,w[OldInt01+4]
-	mov	edx,d[OldInt01]
 	mov	bl,1
 	sys SetVect
-@@10:	;
-	cmp	w[OldEInt01+4],0
-	jz	@@20
-	mov	cx,w[OldEInt01+4]
-	mov	edx,d[OldEInt01]
-	mov	bl,1
-	sys SetEVect
-@@20:	;
-	cmp	w[OldEInt03+4],0
-	jz	@@30
-	mov	cx,w[OldEInt03+4]
-	mov	edx,d[OldEInt03]
-	mov	bl,3
-	sys SetVect
-@@30:	;
+@@:	;
 	cmp	w[OldInt03+4],0
-	jz	@@1
+	jz	@F
+	mov	edx,d[OldInt03+0]
 	mov	cx,w[OldInt03+4]
-	mov	edx,d[OldInt03]
 	mov	bl,3
 	sys SetVect
-	;
-@@1:	cmp	w[OldExc12+4],0
-	jz	@@2
-	mov	cx,w[OldExc12+4]
-	mov	edx,d[OldExc12]
-	mov	bl,12
+@@:
+	mov esi, offset vectorno
+	mov edi, offset vectorval
+nextexc:
+	lodsb
+	mov edx, [edi+0]
+	mov cx, [edi+4]
+	add edi, 6
+	jcxz @F
+	mov bl, al
 	sys SetEVect
-	;
-@@2:	cmp	w[OldExc13+4],0
-	jz	@@3
-	mov	cx,w[OldExc13+4]
-	mov	edx,d[OldExc13]
-	mov	bl,13
-	sys SetEVect
-@@3:	;
-	cmp	w[OldExc14+4],0
-	jz	@@4
-	mov	cx,w[OldExc14+4]
-	mov	edx,d[OldExc14]
-	mov	bl,14
-	sys SetEVect
-@@4:	;
-	cmp	w[OldInt00+4],0
-	jz	@@8
-	mov	cx,w[OldInt00+4]
-	mov	edx,d[OldInt00]
-	mov	bl,0
-	sys SetVect
-	;
-@@8:	assume ds:DGROUP
+@@:
+	cmp esi, offset vectorno + sizeof vectorno
+	jnz nextexc
+
 	pop	ds
+	assume ds:DGROUP
 	cmp	w[OldInt10+4],0
 	jz	@@7
-	mov	edx,d[OldInt10]
+	mov	edx,d[OldInt10+0]
 	mov	cx,w[OldInt10+4]
 	mov	bl,10h
 	sys SetVect
@@ -2332,7 +2242,7 @@ System	proc	near
 	int	10h
 	;
 	mov	esi,VideoOldUserBuffer
-	mov	edx,[esi]
+	mov	edx,[esi+0]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
 	sys SetSelDet32
@@ -2347,23 +2257,21 @@ System	proc	near
 	mov	al,UserOldPage
 	int	10h
 @@5:	;
-@@done:	assume ds:nothing
+@@done:
 	cmp	cs:w[OldInt31+4],0
 	jz	@@noi31
-	mov	edx,cs:d[OldInt31]
+	mov	edx,cs:d[OldInt31+0]
 	mov	cx,cs:w[OldInt31+4]
 	mov	bl,31h
 	sys SetVect
-	assume ds:DGROUP
 	;
-@@noi31:	assume ds:nothing
+@@noi31:
 	cmp	cs:w[OldInt09+4],0
 	jz	@@noi9
-	mov	edx,cs:d[OldInt09]
+	mov	edx,cs:d[OldInt09+0]
 	mov	cx,cs:w[OldInt09+4]
 	mov	bl,9
 	sys SetVect
-	assume ds:DGROUP
 @@noi9:	;
 	cmp	SystemError,0
 	jz	@@6
@@ -2482,7 +2390,8 @@ BreakChecker	proc	near
 ;We should be running on the applications stack with the applications registers
 ;now.
 ;
-@@3:	pushfd
+@@3:
+	pushfd
 	pushm	eax,ebp,ds
 	mov	ax,DGROUP
 	mov	ds,ax
@@ -2490,7 +2399,8 @@ BreakChecker	proc	near
 	test	SystemFlags,1
 	jz	@@4
 	movzx	ebp,bp
-@@4:	mov	eax,[ebp+4+4]
+@@4:
+	mov	eax,[ebp+4+4]
 	mov	DebugEAX,eax
 	mov	DebugEBX,ebx
 	mov	DebugECX,ecx
@@ -2521,17 +2431,17 @@ BreakChecker	proc	near
 	test	SystemFlags,1
 	jz	@@5
 	db 66h
-@@5:	retf
+@@5:
+	retf
 ;
-@@nope:	popad
+@@nope:
+	popad
 ;
 ;Pass control to the origional handler.
 ;
 @@old:	dec	InInt09
 	popm	eax,ebx,ebp,ds
-	assume ds:nothing
 	jmp	cs:f[OldInt09]
-	assume ds:DGROUP
 OldInt09	df 0
 BreakChecker	endp
 
@@ -2559,42 +2469,40 @@ Int31Intercept	proc	near
 	test	SystemFlags,1
 	jz	@@0
 	movzx	edx,dx
-@@0:	mov	ds,CodeSegAlias
+@@0:
+	mov	ds,CodeSegAlias
 	assume ds:_TEXT
-	mov	d[OldInt09],edx
+	mov	d[OldInt09+0],edx
 	mov	w[OldInt09+4],cx
-	assume ds:DGROUP
 	popm	eax,edx,ds
+	assume ds:DGROUP
 	jmp	@@ret
 	;
-@@notset:	cmp	ax,0204h		;Get vector?
+@@notset:
+	cmp	ax,0204h		;Get vector?
 	jnz	@@old
 	cmp	bl,9		;INT 9?
 	jnz	@@old
-	assume ds:nothing
 	mov	edx,cs:d[OldInt09]
 	mov	cx,cs:w[OldInt09+4]
-	assume ds:DGROUP
 	;
-@@ret:	pushm	eax,ebp,ds
+@@ret:
+	pushm	eax,ebp,ds
 	mov	ax,DGROUP
 	mov	ds,ax
 	test	SystemFlags,1
 	jz	@@r32
 	movzx	ebp,sp
-	add	ebp,4+4+4+2+2
-	and	ss:w[ebp],not 1	;clear carry.
+	and	w[ebp+3*4+2+2],not 1	;clear carry.
 	popm	eax,ebp,ds
 	iret
-@@r32:	mov	ebp,esp
-	add	ebp,4+4+4+4+4
-	and	ss:w[ebp],not 1	;clear carry.
+@@r32:
+	and	w[esp+3*4+4+4],not 1	;clear carry.
 	popm	eax,ebp,ds
 	iretd
 	;
-@@old:	assume ds:nothing
+@@old:
 	jmp	cs:f[OldInt31]
-	assume ds:DGROUP
 OldInt31	df 0
 Int31Intercept	endp
 
@@ -3018,7 +2926,7 @@ RestartALL	proc	near
 	int	10h
 	;
 	mov	esi,VideoOldUserBuffer
-	mov	edx,[esi]
+	mov	edx,[esi+0]
 	mov	ecx,[esi+4]
 	mov	bx,VideoSwapSel
 	sys SetSelDet32
@@ -11224,12 +11132,12 @@ DisasScreen	proc	near
 @@NoMSaveRes:	;
 	mov	bl,09h
 	sys GetVect
-	mov	d[UserInt09h],edx
+	mov	d[UserInt09h+0],edx
 	mov	w[UserInt09h+4],cx
 	;
 	cmp	w[DisasInt09h+4],0
 	jz	@@NoInt09Rest
-	mov	edx,d[DisasInt09h]
+	mov	edx,d[DisasInt09h+0]
 	mov	cx,w[DisasInt09h+4]
 	mov	bl,09h
 	sys SetVect
@@ -11251,8 +11159,8 @@ DisasScreen	proc	near
 	push	es
 	mov	ax,40h
 	mov	es,ax
-	and	es:b[10h],11001111b
-	or	es:b[10h],00110000b
+	and	es:b[10h],11001111b	;clear "initial video mode"
+	or	es:b[10h],00110000b	;set this mode to 80x25 mono
 	pop	es
 	cmp	FirstMono,0
 	jnz	@@noforce
@@ -11327,7 +11235,9 @@ DisasScreen	proc	near
 	cmp	NoContextSwitch,0
 	jnz	@@NoSwitch1
 	call	MouseON
-@@NoSwitch1:	ret
+@@NoSwitch1:
+	ret
+
 @@NoMono:	;
 @@0:	;Get current video state.
 	;
@@ -11361,11 +11271,12 @@ DisasScreen	proc	near
 	jz	@@1
 	mov	edx,0b8000h
 	mov	ecx,16384
-@@1:	mov	esi,VideoUserBuffer
-	mov	[esi],edx
+@@1:
+	mov	esi,VideoUserBuffer
+	mov	[esi+0],edx
 	mov	[esi+4],ecx
 	mov	bx,VideoSwapSel
-	sys SetSelDet32
+	sys SetSelDet32     ; set base & limit of BX descriptor
 	cld
 	mov	edi,VideoUserBuffer
 	mov	ecx,[edi+4]
@@ -11775,87 +11686,33 @@ Free	endp
 _EXCEP	segment para public 'code' use16
 	assume cs:_EXCEP, ds:DGROUP
 
-;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
-Int00Handler	proc	near
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
-	cmp	Executing,0
-	jz	@@Old
-	mov	Executing,0
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
-	;
-	;Retrieve general registers.
-	;
-	mov	eax,es:[ebp+4+2+2]
-	mov	DebugEAX,eax
-	mov	DebugEBX,ebx
-	mov	DebugECX,ecx
-	mov	DebugEDX,edx
-	mov	DebugESI,esi
-	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
-	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
-	mov	DebugFS,fs
-	mov	DebugGS,gs
-	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
-	;
-	test	SystemFlags,1
-	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2+2)+(2+2)]
-	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2+2)+(2)]
-	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2+2)+(0)]
-	mov	DebugEIP,eax
-	mov	DebugSS,ss
-	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(2+2+2)
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2+2)+(4+4)]
-	mov	DebugEFL,eax
-	mov	eax,es:[ebp+(4+4+2+2)+(4)]
-	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2+2)+(0)]
-	mov	DebugEIP,eax
-	mov	DebugSS,ss
-	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(4+4+4)
-	jmp	@@Use0_1
-	;
-@@Use0_1:	mov	ExceptionFlag,0
-	;
-	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],ax
-	mov	es:w[ebp+(4+4+2+2)+(2)],_EXCEP
-	popm	eax,ebp,ds,es
-	iret
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],eax
-	mov	es:w[ebp+(4+4+2+2)+(4)],_EXCEP
-	popm	eax,ebp,ds,es
-	iretd
-	;
+dataseg dw DGROUP
+
+OldInt01	df 0
+OldInt03	df 0
+OldInt21	df 0
+OldInt23	df 0
+
+vectorval label fword
+OldExc00	df 0
+OldExc01	df 0
+OldExc03	df 0
+OldExc06	df 0
+OldExc12	df 0
+OldExc13	df 0
+OldExc14	df 0
+
+vectorno db 0,1,3,6,12,13,14
+	dw Exc00Handler
+	dw Exc01Handler
+	dw Exc03Handler
+	dw Exc06Handler
+	dw Exc12Handler
+	dw Exc13Handler
+	dw Exc14Handler
+
+	align 2
+
 @@Use0_2:	;Now return control to exec caller.
 	;
 	mov	ax,DGROUP
@@ -11864,53 +11721,56 @@ Int00Handler	proc	near
 	mov	fs,ax
 	mov	gs,ax
 	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
+	retd
 ;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldInt00]
-	assume ds:DGROUP
-;
-OldInt00	df 0
-Int00Handler	endp
 
+IFRAME struc
+rEs		dw ?
+rDs		dw ?
+rEbp	dd ?
+rEax	dd ?   
+IFRAME ends
+
+IFRAME16 struc
+		IFRAME <>
+rIp		dw ?
+rCs		dw ?
+rFl		dw ?
+IFRAME16 ends
+
+IFRAME32 struc
+		IFRAME <>
+rIp		dd ?
+rCs		dd ?
+rFl		dd ?
+IFRAME32 ends
+
+if 0
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
-Int01Handler	proc	near
+Int00Handler	proc	near
 	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
+	mov	ds,dataseg
 	cmp	Executing,0
 	jz	@@Old
-	call	IsHardBreak
-	jnz	@@Old
 	mov	Executing,0
-	mov	ExceptionFlag,1
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
 	;
 	;Retrieve general registers.
 	;
-	mov	eax,es:[ebp+4+2+2]
 	mov	DebugEAX,eax
 	mov	DebugEBX,ebx
 	mov	DebugECX,ecx
 	mov	DebugEDX,edx
 	mov	DebugESI,esi
 	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
+	mov	DebugEBP,ebp
+	mov	ebp,esp		;make stack addresable.
+	test	SystemFlags,1
+	jz	@@Use32_0
+	movzx	ebp,bp		;use 16 bit stack.
+@@Use32_0:	;
+	mov	ax,[ebp].IFRAME.rDs
 	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
+	mov	DebugES,es
 	mov	DebugFS,fs
 	mov	DebugGS,gs
 	;
@@ -11918,26 +11778,111 @@ Int01Handler	proc	near
 	;
 	test	SystemFlags,1
 	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2+2)+(2+2)]
+	mov	ax,[ebp].IFRAME16.rFl
 	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2+2)+(2)]
+	mov	ax,[ebp].IFRAME16.rCs
 	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2+2)+(0)]
+	movzx	eax,[ebp].IFRAME16.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(2+2+2)
+	add	DebugESP,sizeof IFRAME16
 	jmp	@@Use0_1
 	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2+2)+(4+4)]
+@@Use32_1:
+	mov	eax,[ebp].IFRAME32.rFl
 	mov	DebugEFL,eax
-	mov	eax,es:[ebp+(4+4+2+2)+(4)]
+	mov	eax,[ebp].IFRAME32.rCs
 	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2+2)+(0)]
+	mov	eax,[ebp].IFRAME32.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(4+4+4)
+	add	DebugESP,sizeof IFRAME32
+	;
+@@Use0_1:
+	mov	ExceptionFlag,0
+	;
+	;Now modify origional CS:EIP,SS:ESP values and return control
+	;to this code via interupt structure to restore stacks.
+	;
+	test	SystemFlags,1
+	jz	@@Use32_2
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	[ebp].IFRAME16.rCs,_EXCEP
+	popm	eax,ebp,ds,es
+	iret
+	;
+@@Use32_2:
+	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME32.rCs,_EXCEP
+	popm	eax,ebp,ds,es
+	iretd
+	;
+@@Old:
+	popm	eax,ebp,ds,es
+	jmp	cs:[OldInt00]
+;
+Int00Handler	endp
+endif
+
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+Int01Handler	proc	near
+	pushm	eax,ebp,ds,es
+	mov	ds,dataseg
+	cmp	Executing,0
+	jz	@@Old
+	call	IsHardBreak
+	jnz	@@Old
+	mov	Executing,0
+	mov	ExceptionFlag,1
+	;
+	;Retrieve general registers.
+	;
+;	mov	eax,[ebp].IFRAME.rEax
+	mov	DebugEAX,eax
+	mov	DebugEBX,ebx
+	mov	DebugECX,ecx
+	mov	DebugEDX,edx
+	mov	DebugESI,esi
+	mov	DebugEDI,edi
+	mov	DebugEBP,ebp
+	mov	ebp,esp		;make stack addresable.
+	test	SystemFlags,1
+	jz	@@Use32_0
+	movzx	ebp,bp		;use 16 bit stack.
+@@Use32_0:	;
+	mov	ax,[ebp].IFRAME.rDs
+	mov	DebugDS,ax
+	mov	DebugES,es
+	mov	DebugFS,fs
+	mov	DebugGS,gs
+	;
+	;Fetch origional Flags:CS:EIP,SS:ESP
+	;
+	test	SystemFlags,1
+	jz	@@Use32_1
+	mov	ax,[ebp].IFRAME16.rFl
+	mov	w[DebugEFL],ax
+	mov	ax,[ebp].IFRAME16.rCs
+	mov	DebugCS,ax
+	movzx	eax,[ebp].IFRAME16.rIp
+	mov	DebugEIP,eax
+	mov	DebugSS,ss
+	mov	DebugESP,esp
+	add	DebugESP,sizeof IFRAME16
+	jmp	@@Use0_1
+	;
+@@Use32_1:
+	mov	eax,[ebp].IFRAME32.rFl
+	mov	DebugEFL,eax
+	mov	eax,[ebp].IFRAME32.rCs
+	mov	DebugCS,ax
+	mov	eax,[ebp].IFRAME32.rIp
+	mov	DebugEIP,eax
+	mov	DebugSS,ss
+	mov	DebugESP,esp
+	add	DebugESP,sizeof IFRAME32
 	jmp	@@Use0_1
 	;
 @@Use0_1:
@@ -11953,71 +11898,49 @@ Int01Handler	proc	near
 	;
 	test	SystemFlags,1
 	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],ax
-	mov	es:w[ebp+(4+4+2+2)+(2)],_EXCEP
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME16.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iret
 	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],eax
-	mov	es:w[ebp+(4+4+2+2)+(4)],_EXCEP
+@@Use32_2:
+	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME32.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iretd
 	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
 ;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldInt01]
-	assume ds:DGROUP
+@@Old:
+	popm	eax,ebp,ds,es
+	jmp	cs:[OldInt01]
 ;
-OldInt01	df 0
 Int01Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Int03Handler	proc	near
 	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
+	mov	ds,dataseg
 	cmp	Executing,0
 	jz	@@Old
 	mov	Executing,0
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-
-@@Use32_0:
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
 	;
 	;Retrieve general registers.
 	;
-	mov	eax,es:[ebp+4+2+2]
 	mov	DebugEAX,eax
 	mov	DebugEBX,ebx
 	mov	DebugECX,ecx
 	mov	DebugEDX,edx
 	mov	DebugESI,esi
 	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
+	mov	DebugEBP,ebp
+	mov	ebp,esp		;make stack addresable.
+	test	SystemFlags,1
+	jz	@@Use32_0
+	movzx	ebp,bp		;use 16 bit stack.
+@@Use32_0:
+	mov	ax,[ebp].IFRAME.rDs
 	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
+	mov	DebugES,es
 	mov	DebugFS,fs
 	mov	DebugGS,gs
 
@@ -12031,28 +11954,28 @@ Int03Handler	proc	near
 	mov	ax,ss
 	cmp	ax,KernalSS
 	jne	med2a
-	mov	ax,es:[ebp+(4+4+2+2)+(2+2)+(2+2+2)]
+	mov	ax,[ebp+3*2].IFRAME16.rFl
 	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2+2)+(2)+(2+2+2)]
+	mov	ax,[ebp+3*2].IFRAME16.rCs
 	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2+2)+(0)+(2+2+2)]
+	movzx	eax,w[ebp+3*2].IFRAME16.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
 ;	add	DebugESP,(4+4+2+2)+(2+2+2)+(2+2+2)
-	add	DebugESP,(4+4+2+2)+(2+2+2)
+	add	DebugESP,sizeof IFRAME16
 	jmp	@@Use0_1
 med2a:
 
-	mov	ax,es:[ebp+(4+4+2+2)+(2+2)]
+	mov	ax,[ebp].IFRAME16.rFl
 	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2+2)+(2)]
+	mov	ax,[ebp].IFRAME16.rCs
 	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2+2)+(0)]
+	movzx	eax,[ebp].IFRAME16.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(2+2+2)
+	add	DebugESP,sizeof IFRAME16
 	jmp	@@Use0_1
 
 @@Use32_1:
@@ -12063,28 +11986,28 @@ med2a:
 	mov	ax,ss
 	cmp	ax,KernalSS
 	jne	med2b
-	mov	eax,es:[ebp+(4+4+2+2)+(4+4)+(4+4+4)]
+	mov	eax,[ebp+3*4].IFRAME32.rFl
 	mov	DebugEFL,eax
-	mov	eax,es:[ebp+(4+4+2+2)+(4)+(4+4+4)]
+	mov	eax,[ebp+3*4].IFRAME32.rCs
 	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2+2)+(0)+(4+4+4)]
+	mov	eax,[ebp+3*4].IFRAME32.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
 ;	add	DebugESP,(4+4+2+2)+(4+4+4)+(4+4+4)
-	add	DebugESP,(4+4+2+2)+(4+4+4)
+	add	DebugESP,sizeof IFRAME32
 	jmp	@@Use0_1
 med2b:
 
-	mov	eax,es:[ebp+(4+4+2+2)+(4+4)]
+	mov	eax,[ebp].IFRAME32.rFl
 	mov	DebugEFL,eax
-	mov	eax,es:[ebp+(4+4+2+2)+(4)]
+	mov	eax,[ebp].IFRAME32.rCs
 	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2+2)+(0)]
+	mov	eax,[ebp].IFRAME32.rIp
 	mov	DebugEIP,eax
 	mov	DebugSS,ss
 	mov	DebugESP,esp
-	add	DebugESP,(4+4+2+2)+(4+4+4)
+	add	DebugESP,sizeof IFRAME32
 	jmp	@@Use0_1
 
 @@Use0_1:
@@ -12100,35 +12023,22 @@ med2b:
 	;
 	test	SystemFlags,1
 	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],ax
-	mov	es:w[ebp+(4+4+2+2)+(2)],_EXCEP
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	[ebp].IFRAME16.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iret
 	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],eax
-	mov	es:w[ebp+(4+4+2+2)+(4)],_EXCEP
+@@Use32_2:
+	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME32.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iretd
 	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
 ;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldInt03]
-	assume ds:DGROUP
+@@Old:
+	popm	eax,ebp,ds,es
+	jmp	cs:[OldInt03]
 ;
-OldInt03	df 0
 Int03Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -12142,7 +12052,8 @@ Int23Handler	proc	near
 	popm	ds,eax
 	jz	@@Use32_10
 	iret
-@@Use32_10:	iretd
+@@Use32_10:
+	iretd
 	;
 @@Close:
 	mov	TerminationFlag,-1
@@ -12158,38 +12069,23 @@ Int23Handler	proc	near
 	movzx	ebp,bp		;use 16 bit stack.
 @@Use32_0:
 
-	;Need a stack alias for DPMI.
-	mov	ax,ss
-	mov	es,ax
 	;
 	;Now modify original CS:EIP,SS:ESP values and return control
 	;to this code via interrupt structure to restore stacks.
 	;
 	test	SystemFlags,1
 	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],ax
-	mov	es:w[ebp+(4+4+2+2)+(2)],_EXCEP
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	[ebp].IFRAME16.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iret
 
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:[ebp+(4+4+2+2)+(0)],eax
-	mov	es:w[ebp+(4+4+2+2)+(4)],_EXCEP
+@@Use32_2:
+	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME32.rCs,_EXCEP
 	popm	eax,ebp,ds,es
 	iretd
 
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
-OldInt23	df 0
 Int23Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -12216,548 +12112,213 @@ Int21Handler	proc	near
 	test	SystemFlags,1
 	jz	@@Use32
 	movzx	eax,ax
-@@Use32:	mov	al,ss:[eax]
+@@Use32:
+	mov	al,ss:[eax]
 	mov	TerminateCode,al
 	popm	ds,eax
 	jmp	Int03Handler
+
 @@Old:	;
 	popf
-	assume ds:nothing
-	jmp	cs:f[OldInt21]
-	assume ds:DGROUP
-OldInt21	df 0
+	jmp	cs:[OldInt21]
 Int21Handler	endp
 
-;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
-EInt01Handler	proc	near
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
-	cmp	Executing,0
-	jz	@@Old
-	call	IsHardBreak
-	jnz	@@Old
-	mov	Executing,0
-	mov	ExceptionFlag,1
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	mov	ax,ss
-	mov	es,ax
-	;
-	;Retrieve general registers.
-	;
-	mov	eax,es:[ebp+2+2+4]
-	mov	DebugEAX,eax
-	mov	DebugEBX,ebx
-	mov	DebugECX,ecx
-	mov	DebugEDX,edx
-	mov	DebugESI,esi
-	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
-	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
-	mov	DebugFS,fs
-	mov	DebugGS,gs
-	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
-	;
-	test	SystemFlags,1
-	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2)+2]
-	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2)+2]
-	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(2)+2]
-	mov	DebugSS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(0)+2]
-	mov	DebugESP,eax
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4)+2]
-	mov	DebugEFL,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4)+2]
-	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(4)+2]
-	mov	DebugSS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(0)+2]
-	mov	DebugESP,eax
-	;
-@@Use0_1:
-;	cmp	ExceptionFlag,-1
-;	jnz	@@NoEIPDec
-;	dec	DebugEIP		;account for int 3 instruction length.
-;	cmp	TerminationFlag,-1
-;	jnz	@@NoEIPDec
-;	dec	DebugEIP
-@@NoEIPDec:	;
-	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(0)+2],ax
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(2)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(2+2+2)+(2+2)+2],65535-256
-	popm	eax,ebp,ds,es
-	retf
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:d[ebp+(4+4+2)+(4+4+4)+(0)+2],eax
-	mov	es:w[ebp+(4+4+2)+(4+4+4)+(4)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(4+4+4)+(4+4)+2],65535-256
-	popm	eax,ebp,ds,es
-	db 66h
-	retf
-	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
-;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldEInt01]
-	assume ds:DGROUP
-;
-OldEInt01	df 0
-EInt01Handler	endp
+EFRAME struc
+rDs		dw ?
+rEbp	dd ?
+rEax	dd ?   
+		dw ?	; caller return addr
+wExc	dw ?
+EFRAME ends
 
-;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
-EInt03Handler	proc	near
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
+EFRAME16 struc
+		EFRAME <>
+		dw ?	; DPMI host ret IP
+		dw ?	; DPMI host ret CS
+wErr	dw ?	; error code
+rIp		dw ?
+rCs		dw ?
+rFl		dw ?
+rSp		dw ?
+rSs		dw ?
+EFRAME16 ends
+
+EFRAME32 struc
+		EFRAME <>
+		dd ?	; DPMI host ret IP
+		dd ?	; DPMI host ret CS
+wErr	dd ?	; error code
+rIp		dd ?
+rCs		dd ?
+rFl		dd ?
+rSp		dd ?
+rSs		dd ?
+EFRAME32 ends
+
+GenericException proc
+	pushm	eax,ebp,ds
+	mov	ds,dataseg
 	cmp	Executing,0
-	jz	@@Old
-	mov	Executing,0
-	mov	ebp,esp		;make stack addresable.
+	jnz	brk
+old:
+	popm	eax,ebp,ds
+	ret	2
+brk:
+	mov	ebp,esp		;make stack addressable
 	test	SystemFlags,1
-	jz	@@Use32_0
+	jz	@F
 	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	mov	ax,ss
-	mov	es,ax
+@@:
+	cmp [ebp].EFRAME.wExc, 1
+	jnz @F
+	call	IsHardBreak
+	jnz	old
+@@:
+	mov	Executing,0
 	;
 	;Retrieve general registers.
 	;
-	mov	eax,es:[ebp+2+2+4]
 	mov	DebugEAX,eax
 	mov	DebugEBX,ebx
 	mov	DebugECX,ecx
 	mov	DebugEDX,edx
 	mov	DebugESI,esi
 	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
+	mov	ax,[ebp].EFRAME.wExc
+	cmp	al, 3
+	jz	@F
+	mov	ExceptionFlag, al
+@@:
+	mov	eax,[ebp].EFRAME.rEbp
 	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
+	mov	ax,[ebp].EFRAME.rDs
 	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
+	mov	DebugES,es
 	mov	DebugFS,fs
 	mov	DebugGS,gs
 	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
+	;Fetch origional Flags, CS:EIP, SS:ESP
 	;
 	test	SystemFlags,1
 	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2)+2]
+	mov	ax,[bp].EFRAME16.rFl
 	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2)+2]
+	mov	ax,[bp].EFRAME16.rCs
 	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(0)+2]
+	movzx	eax,[bp].EFRAME16.rIp
 	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(2)+2]
+	mov	ax,[bp].EFRAME16.rSs
 	mov	DebugSS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(0)+2]
+	movzx	eax,[bp].EFRAME16.rSp
 	mov	DebugESP,eax
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4)+2]
+	call adjusteip
+
+;Now modify origional CS:EIP,SS:ESP values and return control
+;to this code via interupt structure to restore stacks.
+
+	mov	[bp].EFRAME16.rIp,offset @@Use0_2
+	mov	[bp].EFRAME16.rCs,_EXCEP
+	and	[bp].EFRAME16.rFl,not 100h	;reset TF
+	popm	eax,ebp,ds
+	add sp, 2+2
+	retf
+@@Use32_1:
+	mov	eax,[ebp].EFRAME32.rFl
 	mov	DebugEFL,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4)+2]
+	mov	ax,w[ebp].EFRAME32.rCs
 	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(0)+2]
+	mov	eax,[ebp].EFRAME32.rIp
 	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(4)+2]
+	mov	ax,w[ebp].EFRAME32.rSs
 	mov	DebugSS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(0)+2]
+	mov	eax,[ebp].EFRAME32.rSp
 	mov	DebugESP,eax
-	;
-@@Use0_1:	cmp	ExceptionFlag,-1
-	jnz	@@NoEIPDec
+	call adjusteip
+
+;Now modify origional CS:EIP,SS:ESP values and return control
+;to this code via interupt structure to restore stacks.
+
+	mov	[ebp].EFRAME32.rIp,offset @@Use0_2
+	mov	w[ebp].EFRAME32.rCs,_EXCEP
+	and	w[ebp].EFRAME32.rFl,not 100h
+	popm	eax,ebp,ds
+	add esp, 2+2
+	retd
+
+adjusteip:
+	cmp	ExceptionFlag,-1
+	jnz	@F
 	dec	DebugEIP		;account for int 3 instruction length.
 	cmp	TerminationFlag,-1
-	jnz	@@NoEIPDec
+	jnz	@F
 	dec	DebugEIP
-@@NoEIPDec:	;
-	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(0)+2],ax
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(2)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(2+2+2)+(2+2)+2],65535-256
-	popm	eax,ebp,ds,es
-	retf
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:d[ebp+(4+4+2)+(4+4+4)+(0)+2],eax
-	mov	es:w[ebp+(4+4+2)+(4+4+4)+(4)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(4+4+4)+(4+4)+2],65535-256
-	popm	eax,ebp,ds,es
-	db 66h
-	retf
-	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
+@@:
+	retn
+
+GenericException endp
+
+
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+Exc00Handler	proc	near
+
+	push 0
+	call GenericException
+	jmp	cs:[OldExc00]
 ;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldEInt03]
-	assume ds:DGROUP
+Exc00Handler	endp
+
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+Exc01Handler	proc	near
+
+	push 1
+	call GenericException
+	jmp	cs:[OldExc01]
 ;
-OldEInt03	df 0
-EInt03Handler	endp
+Exc01Handler	endp
+
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+Exc03Handler	proc	near
+
+	push 3
+	call GenericException   
+	jmp	cs:[OldExc03]
+;
+Exc03Handler	endp
+
+;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+Exc06Handler	proc	near
+
+	push 6
+	call GenericException
+	jmp	cs:[OldExc06]
+;
+Exc06Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Exc12Handler	proc	near
+
+	push 12
+	call GenericException
+	jmp	cs:[OldExc12]
 ;
-;Exception has been generated.
-;
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
-	cmp	Executing,0
-	jz	@@Old
-	mov	Executing,0
-	mov	ExceptionFlag,12
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
-	;
-	;Retrieve general registers.
-	;
-	mov	eax,es:[ebp+4+2+2]
-	mov	DebugEAX,eax
-	mov	DebugEBX,ebx
-	mov	DebugECX,ecx
-	mov	DebugEDX,edx
-	mov	DebugESI,esi
-	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
-	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
-	mov	DebugFS,fs
-	mov	DebugGS,gs
-	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
-	;
-	test	SystemFlags,1
-	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2)+2]
-	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2)+2]
-	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(2)+2]
-	mov	DebugSS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(0)+2]
-	mov	DebugESP,eax
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4)+2]
-	mov	DebugEFL,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4)+2]
-	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(4)+2]
-	mov	DebugSS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(0)+2]
-	mov	DebugESP,eax
-	;
-@@Use0_1:	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(0)+2],ax
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(2)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(2+2+2)+(2+2)+2],65535-256
-	popm	eax,ebp,ds,es
-	retf
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:d[ebp+(4+4+2)+(4+4+4)+(0)+2],eax
-	mov	es:w[ebp+(4+4+2)+(4+4+4)+(4)+2],_EXCEP
-	and	es:w[ebp+(4+4+2)+(4+4+4)+(4+4)+2],65535-256
-	popm	eax,ebp,ds,es
-	db 66h
-	retf
-	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
-	;
-@@Old:	popm	eax,ebp,ds
-	assume ds:nothing
-	jmp	cs:f[OldExc12]
-	assume ds:DGROUP
-;
-OldExc12	df 0
 Exc12Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Exc13Handler	proc	near
+
+	push 13
+	call GenericException
+	jmp	cs:[OldExc13]
 ;
-;Exception has been generated.
-;
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
-	cmp	Executing,0
-	jz	@@Old
-	mov	Executing,0
-	mov	ExceptionFlag,13
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
-	;
-	;Retrieve general registers.
-	;
-	mov	eax,es:[ebp+4+2+2]
-	mov	DebugEAX,eax
-	mov	DebugEBX,ebx
-	mov	DebugECX,ecx
-	mov	DebugEDX,edx
-	mov	DebugESI,esi
-	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
-	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
-	mov	DebugFS,fs
-	mov	DebugGS,gs
-	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
-	;
-	test	SystemFlags,1
-	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2)+2]
-	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2)+2]
-	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(2)+2]
-	mov	DebugSS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(0)+2]
-	mov	DebugESP,eax
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4)+2]
-	mov	DebugEFL,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4)+2]
-	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(4)+2]
-	mov	DebugSS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(0)+2]
-	mov	DebugESP,eax
-	;
-@@Use0_1:	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(0)+2],ax
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(2)+2],_EXCEP
-	popm	eax,ebp,ds,es
-	retf
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:d[ebp+(4+4+2)+(4+4+4)+(0)+2],eax
-	mov	es:w[ebp+(4+4+2)+(4+4+4)+(4)+2],_EXCEP
-	popm	eax,ebp,ds,es
-	db 66h
-	retf
-	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
-	;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldExc13]
-	assume ds:DGROUP
-;
-OldExc13	df 0
 Exc13Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Exc14Handler	proc	near
+
+	push 14
+	call GenericException
+	jmp	cs:[OldExc14]
 ;
-;Exception has been generated.
-;
-	pushm	eax,ebp,ds,es
-	mov	ax,DGROUP		;make our data addresable.
-	mov	ds,ax
-	cmp	Executing,0
-	jz	@@Old
-	mov	Executing,0
-	mov	ExceptionFlag,14
-	mov	ebp,esp		;make stack addresable.
-	test	SystemFlags,1
-	jz	@@Use32_0
-	movzx	ebp,bp		;use 16 bit stack.
-@@Use32_0:	;
-	;Need a stack alias for DPMI.
-	;
-	mov	ax,ss
-	mov	es,ax
-	;
-	;Retrieve general registers.
-	;
-	mov	eax,es:[ebp+4+2+2]
-	mov	DebugEAX,eax
-	mov	DebugEBX,ebx
-	mov	DebugECX,ecx
-	mov	DebugEDX,edx
-	mov	DebugESI,esi
-	mov	DebugEDI,edi
-	mov	eax,es:[ebp+2+2]
-	mov	DebugEBP,eax
-	mov	ax,es:[ebp+2]
-	mov	DebugDS,ax
-	mov	ax,es:[ebp+0]
-	mov	DebugES,ax
-	mov	DebugFS,fs
-	mov	DebugGS,gs
-	;
-	;Fetch origional Flags:CS:EIP,SS:ESP
-	;
-	test	SystemFlags,1
-	jz	@@Use32_1
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2)+2]
-	mov	w[DebugEFL],ax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2)+2]
-	mov	DebugCS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(2)+2]
-	mov	DebugSS,ax
-	movzx	eax,es:w[ebp+(4+4+2)+(2+2+2)+(2+2+2)+(0)+2]
-	mov	DebugESP,eax
-	jmp	@@Use0_1
-	;
-@@Use32_1:	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4)+2]
-	mov	DebugEFL,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4)+2]
-	mov	DebugCS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(0)+2]
-	mov	DebugEIP,eax
-	mov	ax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(4)+2]
-	mov	DebugSS,ax
-	mov	eax,es:[ebp+(4+4+2)+(4+4+4)+(4+4+4)+(0)+2]
-	mov	DebugESP,eax
-	;
-@@Use0_1:	;Now modify origional CS:EIP,SS:ESP values and return control
-	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	eax,offset @@Use0_2
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(0)+2],ax
-	mov	es:w[ebp+(4+4+2)+(2+2+2)+(2)+2],_EXCEP
-	popm	eax,ebp,ds,es
-	retf
-	;
-@@Use32_2:	mov	eax,offset @@Use0_2
-	mov	es:d[ebp+(4+4+2)+(4+4+4)+(0)+2],eax
-	mov	es:w[ebp+(4+4+2)+(4+4+4)+(4)+2],_EXCEP
-	popm	eax,ebp,ds,es
-	db 66h
-	retf
-	;
-@@Use0_2:	;Now return control to exec caller.
-	;
-	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	lss	esp,f[DebuggerESP]
-	db 66h
-	retf
-	;
-@@Old:	popm	eax,ebp,ds,es
-	assume ds:nothing
-	jmp	cs:f[OldExc14]
-	assume ds:DGROUP
-;
-OldExc14	df 0
 Exc14Handler	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -12783,12 +12344,13 @@ BordE	endp
 ;
 IsHardBreak	proc	near
 	pushad
-	push	ds
-	mov	ax,DGROUP
-	mov	ds,ax
+;	push	ds
+;	mov	ax,DGROUP
+;	mov	ds,ax
 	mov	esi,offset HardBreakTable
 	mov	ecx,4
-@@0:	cmp	HBRK.HBRK_Flags[esi],0
+@@0:
+	cmp	HBRK.HBRK_Flags[esi],0
 	jz	@@1
 	mov	bx,HBRK.HBRK_Handle[esi]
 	mov	ax,0b02h
@@ -12796,7 +12358,8 @@ IsHardBreak	proc	near
 	jc	@@1
 	test	ax,1
 	jnz	@@8
-@@1:	add	esi,size HBRK
+@@1:
+	add	esi,size HBRK
 	dec	ecx
 	jnz	@@0
 	or	eax,-1
@@ -12804,7 +12367,8 @@ IsHardBreak	proc	near
 	;
 @@8:	xor	eax,eax
 	;
-@@10:	pop	ds
+@@10:
+;	pop	ds
 	popad
 	ret
 IsHardBreak	endp

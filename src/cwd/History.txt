@@ -1,0 +1,9 @@
+
+   Changelog
+
+   - changed code so OPTION OLDSTRUCTS could be removed.
+   - moved uninitialized arrays from .data to .data?, reducing
+     binary size of CWD.OVL by about 32kB.
+   - fixed: missing POP in handler for exception 0Ch.
+   - trap EXCeption 00 instead of INTerrupt 00.
+   - trap invalid opcode exception 06.

@@ -1,7 +1,5 @@
 
-# make CWD.EXE, now using WL32 instead of CWL.
-
-EXTENDERSTUB=\div\cwstub.exe
+# make CWD.EXE & CWD.OVL, now using WL32 instead of CWL.
 
 ALL	: Build Build\cwd.exe Build\cwd.ovl
 
@@ -20,7 +18,7 @@ Build\cwd.ovl: Build\cwd-ovl.obj
 
 Build\cwd-ovl.obj: cwd-ovl.asm disas.inc generr.inc fpu.inc disaseq.inc win.inc evaluate.inc macros.inc \
 		getkeys.inc print.inc fileacc.inc ..\cw.inc ..\strucs.inc
-	@ml /c /nologo /DENGLISH=1 /FlBuild\ /FoBuild\ /I.. cwd-ovl.asm
+	@ml /c /nologo /FlBuild\ /FoBuild\ /I.. cwd-ovl.asm
 
 clean:
 	@del Build\cwd.exe

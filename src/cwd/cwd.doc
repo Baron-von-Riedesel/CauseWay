@@ -22,3 +22,8 @@ LockMem32		equ	0ff1ch
 GetMemDOS		equ	0ff21h
 SetDOSTrans		equ	0ff26h
 
+;--- encoded directly in cwd-ovl.asm:
+load program for debugging  0fffdh
+close all files             0fffeh
+
+
