@@ -10,8 +10,9 @@ _apiCodeStart   label byte
 ;
 apiSystemFlags  dw 0,0
 DescriptorBuffer db 8 dup (?)
-apiDSeg dw ?
-apiDDSeg        dw ?
+
+apiDSeg         dd ?	;data selector _cwMain
+apiDDSeg        dd ?	;data selector _apiCode
 ;
 apiNewHeader    NewHeaderStruc <>       ;make space for a header.
 ;
@@ -200,8 +201,10 @@ api1_n32:
         jmp     FWORD PTR cs:[OldIntSys]        ;pass it onto previous handler.
         assume ds:_apiCode
 ;
+	align 4
 OldIntSys       df 0
 ;
+	align 4
 APICallTable    dd cwAPI_Info       ;00
         dd cwAPI_IntXX              ;01
         dd cwAPI_FarCallReal        ;02
@@ -513,7 +516,7 @@ cwAPI_CWErrName PROC    NEAR
 
 cen2:
         mov     ax,[ebp+Int_CX]
-        mov     es,ax
+        mov     es,eax
         mov     ebx,OFFSET NewCWErrName ; ds:ebx -> destination, es:edx -> source
         mov     cx,80                   ; don't allow more than 80 chars in file name
 
@@ -558,7 +561,7 @@ cwAPI_UserDump  PROC    NEAR
         verr    ax
         jnz     udfail                  ; can't read to user selector
         mov     DebugUserSel,ax
-        mov     es,ax
+        mov     es,eax
 
         mov     edi,[ebp+Int_EDI]
         xor     eax,eax
@@ -666,7 +669,7 @@ cwAPI_ID        proc    near
         push    ds
         assume ds:nothing
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     esi,PageDirLinear
         mov     edi,Page1stLinear
@@ -692,7 +695,7 @@ cwAPI_ID        endp
 ;
 cwAPI_GetPatch  proc    near
         assume ds:nothing
-        mov     bx,cs:apiDDSeg
+        mov     bx,word ptr cs:apiDDSeg
         Sys     GetSelDet32
         add     edx,offset PatchTable
         assume ds:_apiCode
@@ -782,7 +785,7 @@ cwAPI_Info      proc    near
         mov     di,w[SystemFlags]
         mov     ax,RealSegment
         mov     bx,PSPSegment
-        mov     es,bx
+        mov     es,ebx
         mov     dx,WORD PTR es:[EPSP_Struc.EPSP_TransReal]
         mov     ecx,DWORD PTR es:[EPSP_Struc.EPSP_TransSize]
         mov     es,WORD PTR es:[EPSP_Struc.EPSP_TransProt]
@@ -1615,28 +1618,28 @@ cwAPI_RelMemSO  proc    near
         cmp     ax,bx
         jnz     api33_0
         mov     w[ebp+Int_DS],cx
-        mov     ds,cx
+        mov     ds,ecx
 api33_0:
         mov     ax,w[ebp+Int_ES]
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api33_1
         mov     w[ebp+Int_ES],cx
-        mov     es,cx
+        mov     es,ecx
 api33_1:
         mov     ax,w[ebp+Int_FS]
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api33_2
         mov     w[ebp+Int_FS],cx
-        mov     fs,cx
+        mov     fs,ecx
 api33_2:
         mov     ax,w[ebp+Int_GS]
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api33_3
         mov     w[ebp+Int_GS],cx
-        mov     gs,cx
+        mov     gs,ecx
 api33_3:
         mov     bx,w[ebp+Int_SI]
         Sys     GetSelDet32             ;get selectors details.
@@ -2606,8 +2609,8 @@ cwAPI_cwLoad    proc near
         mov     edx,[ebp+Int_EDX]
         mov     ebx,2
         xor     ax,ax
-        mov     es,ax
-        mov     fs,ax
+        mov     es,eax
+        mov     fs,eax
         push    ebp
         call    _Exec
         pop     ebp
@@ -2733,7 +2736,7 @@ api61_GotSel:
         push    bx
         mov     ecx,d[api61_SelectorSize]
         mov     esi,d[api61_SelectorBase]
-        mov     ax,ds                       ;need RPL to base DPL on.
+        mov     eax,ds                       ;need RPL to base DPL on.
         lar     ax,ax
         and     ah,DescPL3
         or      ah,DescPresent+DescMemory+DescRWData
@@ -2822,29 +2825,29 @@ _RelSelector    proc    near
         push    cx
         and     bx,0ffffh-3
         xor     cx,cx
-        mov     ax,ds
+        mov     eax,ds
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api62_0
-        mov     ds,cx
+        mov     ds,ecx
 api62_0:
-        mov     ax,es
+        mov     eax,es
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api62_1
-        mov     es,cx
+        mov     es,ecx
 api62_1:
-        mov     ax,fs
+        mov     eax,fs
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api62_2
-        mov     fs,cx
+        mov     fs,ecx
 api62_2:
-        mov     ax,gs
+        mov     eax,gs
         and     ax,0ffffh-3
         cmp     ax,bx
         jnz     api62_3
-        mov     gs,cx
+        mov     gs,ecx
 api62_3:
         pop     cx
         pop     bx
@@ -4211,7 +4214,7 @@ COMMENT ! MED 02/15/96
         ;
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    eax
@@ -5247,7 +5250,7 @@ SaveExecState   proc    near    uses ds es eax ebx ecx edx edi esi
         xor     ebx,ebx
 api80_GetPVect:
         Sys     GetVect
-        mov     DWORD PTR es:[edi],edx
+        mov     DWORD PTR es:[edi+0],edx
         mov     WORD PTR es:[edi+4],cx
         add     edi,6
         inc     ebx
@@ -5259,7 +5262,7 @@ api80_GetPVect:
         xor     ebx,ebx
 api80_GetEVect:
         Sys     GetEVect
-        mov     DWORD PTR es:[edi],edx
+        mov     DWORD PTR es:[edi+0],edx
         mov     WORD PTR es:[edi+4],cx
         add     edi,6
         inc     ebx
@@ -5271,7 +5274,7 @@ api80_GetEVect:
         xor     ebx,ebx
 api80_GetRVect:
         Sys     GetRVect
-        mov     WORD PTR es:[edi],dx
+        mov     WORD PTR es:[edi+0],dx
         mov     WORD PTR es:[edi+2],cx
         add     edi,4
         inc     ebx
@@ -5290,7 +5293,7 @@ api80_GetRVect:
 ;
         mov     es,PSPSegment
         mov     WORD PTR es:[EPSP_Struc.EPSP_DPMIMem],bx
-        mov     es,bx
+        mov     es,ebx
         xor     edi,edi
         mov     al,0
         test    BYTE PTR SystemFlags,1
@@ -5321,13 +5324,14 @@ LoadExecState   proc    near    uses ds es eax ebx ecx edx edi
         or      edi,edi
         jz      api81_NoIntRel
         mov     es,RealSegment
+
         xor     ebx,ebx
 api81_SetPVect:
         Sys     GetVect
-        xchg    edx,DWORD PTR es:[edi]
+        xchg    edx,DWORD PTR es:[edi+0]
         xchg    cx,WORD PTR es:[edi+4]
         Sys     SetVect
-        cmp     edx,DWORD PTR es:[edi]
+        cmp     edx,DWORD PTR es:[edi+0]
         jnz     api81_Pdone
         cmp     cx,WORD PTR es:[edi+4]
         jnz     api81_Pdone
@@ -5343,10 +5347,10 @@ api81_Pdone:
         xor     ebx,ebx
 api81_SetEVect:
         Sys     GetEVect
-        xchg    edx,DWORD PTR es:[edi]
+        xchg    edx,DWORD PTR es:[edi+0]
         xchg    cx,WORD PTR es:[edi+4]
         Sys     SetEVect
-        cmp     edx,es:[edi]
+        cmp     edx,es:[edi+0]
         jnz     api81_Edone
         cmp     cx,es:[edi+4]
         jnz     api81_Edone
@@ -5362,10 +5366,10 @@ api81_Edone:
         xor     ebx,ebx
 api81_SetRVect:
         Sys     GetRVect
-        xchg    dx,WORD PTR es:[edi]
+        xchg    dx,WORD PTR es:[edi+0]
         xchg    cx,WORD PTR es:[edi+2]
         Sys     SetRVect
-        cmp     dx,es:[edi]
+        cmp     dx,es:[edi+0]
         jnz     api81_Rdone
         cmp     cx,es:[edi+2]
         jnz     api81_Rdone
@@ -5384,7 +5388,7 @@ api81_NoIntRel:
         or      ax,ax
         jz      api81_NoDPMIRel
         jmp     api81_NoDPMIRel
-        mov     es,ax
+        mov     es,eax
         xor     edi,edi
         mov     al,1
         test    BYTE PTR SystemFlags,1
@@ -5491,7 +5495,7 @@ api82_memOK2:
 ;Copy parent PSP to this PSP.
 ;
         push    ds
-        mov     es,bx
+        mov     es,ebx
         mov     ds,apiDSeg
         assume ds:_cwMain
         mov     ds,PSPSegment
@@ -5514,7 +5518,7 @@ api82_memOK2:
         assume fs:_cwMain
         mov     fs,fs:PSPSegment
         assume fs:nothing
-        mov     es,bx
+        mov     es,ebx
         xor     edx,edx
         mov     DWORD PTR es:[EPSP_Struc.EPSP_Resource],edx ;Clear memory fields.
         mov     DWORD PTR es:[EPSP_Struc.EPSP_INTMem],edx
@@ -5719,8 +5723,8 @@ api82_gp2:
         mov     WORD PTR es:[PSP_Struc.PSP_Environment],bx
         mov     ecx,esi                 ;get length again.
         push    ds
-        mov     ds,ax
-        mov     es,bx
+        mov     ds,eax
+        mov     es,ebx
         xor     esi,esi
         xor     edi,edi
         rep     movsb                   ;copy current strings.
@@ -6216,8 +6220,8 @@ UnFindModule    proc    near
         push    gs
         pushad
         mov     ax,fs
-        mov     ds,ax
-        mov     es,ax
+        mov     ds,eax
+        mov     es,eax
         test    eax,00400000h
         mov     eax,1
         jnz     api85_imp6
@@ -6311,7 +6315,7 @@ SearchModule    proc    near
 ;Get path length so we don't have to keep scanning the string.
 ;
         push    ds
-        mov     ds,ax
+        mov     ds,eax
         xor     ecx,ecx
 api86_0:
         cmp     b[edi],0
@@ -6635,8 +6639,8 @@ api86_3p1:
         pop     ds
 
         push    es
-        mov     ax,ds
-        mov     es,ax
+        mov     eax,ds
+        mov     es,eax
         mov     edi,esi
         Sys     cwcLoad
         pop     es
@@ -6662,8 +6666,8 @@ api86_3p3:
         Sys     RelMemLinear32
         jmp     api86_7
 api86_3p4:
-        mov     ax,ds
-        mov     es,ax
+        mov     eax,ds
+        mov     es,eax
         pop     ds
         ;
         ;See if this module has right name.
@@ -7185,7 +7189,7 @@ api88_exec:
         mov     esi,d[api88_Command]
         mov     es,w[api88_Command+4]
         mov     cx,w[api88_Environment]
-        mov     ds,ax
+        mov     ds,eax
         assume ds:nothing
         call    DWORD PTR cs:[api88_ExecAdd]
 
@@ -7316,7 +7320,7 @@ ExecModule      proc    near
         mov     w[api90_PSP],di
 ;
         push    es
-        mov     es,di
+        mov     es,edi
         mov     DWORD PTR es:[EPSP_Struc.EPSP_Links],8000000h
         pop     es
 ;
@@ -7367,8 +7371,8 @@ api90_NoPatch21h:
         mov     esi,eax
         mov     edi,eax
         mov     ebp,eax
-        mov     fs,ax
-        mov     gs,ax
+        mov     fs,eax
+        mov     gs,eax
         mov     ds,WORD PTR cs:[api90_EntryDS]
         sti
         assume ds:nothing
@@ -7382,8 +7386,7 @@ api90_Int21Patch:
 ;
 ;Clean things up and exit.
 ;
-        mov     ax,cs:apiDSeg
-        mov     ds,ax
+        mov     ds,cs:apiDSeg
         assume ds:_cwMain
         mov     ax,TSRSize
         assume ds:nothing
@@ -8056,6 +8059,8 @@ CriticalKeys    db 'aArRiIfF'
 CriticalCodes   db 2,2,1,1,0,0,3,3
 Int24Handler    endp
 
+	align 4
+
         include load3p.inc
         include loadle.inc
         include decode_c.inc
@@ -8068,6 +8073,7 @@ apiEXPORT_cwMainData equ 1
 apiEXPORT_apiCode equ 2
 apiEXPORT_apiData equ 3
 
+	align 4
 
 apiExports      dd 10
 ;

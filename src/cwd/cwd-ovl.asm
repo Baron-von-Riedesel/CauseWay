@@ -97,10 +97,12 @@ DisasBuffer	db 8192 dup (?)
 ABuffer	db 1024 dup (?)
 BBuffer	db 1024 dup (?)
 CBuffer	db 1024 dup (?)
+
 	.data
 CarriageReturn	db 13,10,0
 ;
 DebugMode	db 0,0
+align 2
 DebugRetCode	dw 0
 ;
 DebugBuffer	label byte
@@ -234,6 +236,7 @@ DebugEFLtl	db '         ',0
 DebugEAt	DB	'              ',0
 DebugTrailer	DB	13,10,1,30h,0
 
+	align 4
 DebugListFPU	DD	DebugNulltp
 	DD	DebugEAXtp
 	DD	DebugST0tp
@@ -373,7 +376,7 @@ ErrorLevel	db 0
 DebugPSP	dw ?
 
 RealSegment	dw ?
-SystemFlags	dw 0
+SystemFlags	dw 0	; bit 0:1=16-bit
 
 MenuHandle	dw ?
 MenuText	dd ?
@@ -825,11 +828,12 @@ DisasInt09h	df 0
 NoContextSwitch db 0
 ;
 EntryGotoOK	db 0
+align 4
 EntryGotoText	db 128 dup (?)
 ;
 SymBuffer	db 256 dup (?)
 ;
-VideoSwapSel	dw ?
+VideoSwapSel	dd ?
 ;
 _DDW_Base	dd ?
 _DDW_Flags	dw ?
@@ -881,8 +885,8 @@ _RG_DHandle	dw ?
 ;
 CodeSegAlias	dw ?
 ECodeSegAlias	dw ?
-PSPSegment	dw ?
 ENVSegment	dw ?
+PSPSegment	dd ?
 ;
 HBRKTitle	db "HBRK",0
 HardBreakEntry	dd 0
@@ -1163,9 +1167,9 @@ ERRFile	dd 0
 ;
 CallZero	proc	near
 	mov	ax,DGROUP
-	mov	ds,ax
-	mov	fs,ax
-	mov	gs,ax
+	mov	ds,eax
+	mov	fs,eax
+	mov	gs,eax
 	mov	SystemError,4
 	pop	eax		;Get return address.
 	mov	edi,offset SErrorM04Num
@@ -1180,9 +1184,9 @@ CallZero	endp
 ;
 main	proc	near
 	mov	ax,DGROUP
-	mov	ds,ax
-	mov	fs,ax
-	mov	gs,ax
+	mov	ds,eax
+	mov	fs,eax
+	mov	gs,eax
 	mov	PSPSegment,es
 	mov	ax,es:w[2ch]
 	mov	ENVSegment,ax
@@ -1250,7 +1254,7 @@ externdef _end:abs
 ;
 	sys GetSel
 	jc	system
-	mov	VideoSwapSel,bx
+	mov	VideoSwapSel,ebx
 ;
 ;Extend programs DS limit.
 ;
@@ -1265,15 +1269,16 @@ externdef _end:abs
 ;
 ;Move stack into data segment so we can use EBP without overides.
 ;
-@@longLimit:	mov	ax,ds
-	mov	ss,ax
+@@longLimit:
+	mov	eax,ds
+	mov	ss,eax
 	mov	esp,offset DataStack
 ;
 ;Set data segments D bit according to program type.
 ;
 	test	SystemFlags,1
 	jz	@@no16stack
-	mov	bx,ds
+	mov	ebx,ds
 	mov	ax,000bh
 	push	ds
 	pop	es
@@ -1285,7 +1290,8 @@ externdef _end:abs
 ;
 ;Read configuration file if any.
 ;
-@@no16stack:	call	ReadConfig
+@@no16stack:
+	call	ReadConfig
 ;
 ;Get memory for source file list.
 ;
@@ -1440,7 +1446,7 @@ externdef _end:abs
 @@vg1:	mov	esi,VideoOldUserBuffer
 	mov	[esi+0],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	cld
 	mov	edi,VideoOldUserBuffer
@@ -1729,11 +1735,11 @@ externdef _end:abs
 	movzx	ebx,ErrorNumber
 	or	ebx,ebx
 	jz	@@NoE0
-	shl	ebx,2
-	mov	ebx,[ErrorList+ebx]
+	mov	ebx,[ErrorList+ebx*4]
 	call	WindowPopup
 	jmp	System
-@@NoE0:	mov	ErrorNumber,0
+@@NoE0:
+	mov	ErrorNumber,0
 ;
 ;Patch int 10h for mode checks.
 ;
@@ -1877,7 +1883,7 @@ nextexc:
 	mov	ebx,offset EXEFileName
 	call	PrintWindow
 ;
-;Ask CW32 to load target program ready for debugging.
+;Ask CW32/CWSTUB to load target program ready for debugging.
 ;
 	mov	edx,offset EXEFileName
 	mov	esi,80h
@@ -1895,10 +1901,10 @@ nextexc:
 	movzx	ebx,ErrorNumber
 	or	ebx,ebx
 	jz	@@NoE1
-	shl	ebx,2
-	mov	ebx,[ErrorList+ebx]
+	mov	ebx,[ErrorList+ebx*4]
 	call	WindowPopup
-@@NoE1:	mov	ErrorNumber,0
+@@NoE1:
+	mov	ErrorNumber,0
 	mov	bp,TempHandle
 	call	CloseWindow
 	jmp	System
@@ -1937,7 +1943,7 @@ nextexc:
 	mov	bx,ax
 	mov	ecx,8192
 	sys SetDOSTrans
-	mov	bx,PSPSegment
+	mov	ebx,PSPSegment
 	mov	ah,50h
 	int	21h
 @@NoBigBuffer:	;
@@ -1948,13 +1954,14 @@ nextexc:
 ;
 ;Check if another error message is needed.
 ;
-@@se0:	movzx	ebx,ErrorNumber
+@@se0:
+	movzx	ebx,ErrorNumber
 	or	ebx,ebx
 	jz	@@NoE2
-	shl	ebx,2
-	mov	ebx,[ErrorList+ebx]
+	mov	ebx,[ErrorList+ebx*4]
 	call	WindowPopup
-@@NoE2:	mov	ErrorNumber,0
+@@NoE2:
+	mov	ErrorNumber,0
 	mov	bp,TempHandle
 	call	CloseWindow
 ;
@@ -2208,7 +2215,7 @@ nextexc:
 	mov	esi,VideoUserBuffer
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
@@ -2244,7 +2251,7 @@ nextexc:
 	mov	esi,VideoOldUserBuffer
 	mov	edx,[esi+0]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
@@ -2293,7 +2300,7 @@ System	endp
 BreakChecker	proc	near
 	pushm	eax,ebx,ebp,ds
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	inc	InInt09
 ;
 ;Update the key table.
@@ -2331,21 +2338,24 @@ BreakChecker	proc	near
 ;
 ;Check if return CS:EIP & stack belong to the program we're running.
 ;
-@@7:	pushad
+@@7:
+	pushad
 	test	SystemFlags,1
 	jz	@@0
 	movzx	ebp,sp
 	add	ebp,4+4+4+4+(4*8)+2+2+2
+	movzx	edx,w[ebp+0]		;return EIP
 	movzx	ecx,w[ebp+2]		;return CS
-	movzx	edx,w[ebp]		;return EIP
 	jmp	@@1
 	;
-@@0:	mov	ebp,esp
+@@0:
+	mov	ebp,esp
 	add	ebp,4+4+4+4+(4*8)+4+4+4
+	mov	edx,d[ebp+0]
 	mov	ecx,d[ebp+4]		;return CS
-	mov	edx,d[ebp]
 	;
-@@1:	push	es
+@@1:
+	push	es
 	mov	es,DebugPSP
 	mov	ax,es:[EPSP_Struc.EPSP_SegBase]
 	pop	es
@@ -2370,19 +2380,20 @@ BreakChecker	proc	near
 ;
 	test	SystemFlags,1
 	jz	@@2
-	movzx	ebp,sp
-	add	ebp,4+4+4+4+(4*8)+2+2+2
+;	movzx	ebp,sp
+;	add	ebp,4+4+4+4+(4*8)+2+2+2
 	mov	eax,offset @@3
+	mov	w[ebp+0],ax		;return EIP
 	mov	w[ebp+2],cs		;return CS
-	mov	w[ebp],ax		;return EIP
 	popad
 	popm	eax,ebx,ebp,ds
 	iret
 	;
-@@2:	mov	ebp,esp
-	add	ebp,4+4+4+4+(4*8)+4+4+4
+@@2:
+;	mov	ebp,esp
+;	add	ebp,4+4+4+4+(4*8)+4+4+4
+	mov	d[ebp+0],offset @@3
 	mov	w[ebp+4],cs		;return CS
-	mov	d[ebp],offset @@3
 	popad
 	popm	eax,ebx,ebp,ds
 	iretd
@@ -2394,7 +2405,7 @@ BreakChecker	proc	near
 	pushfd
 	pushm	eax,ebp,ds
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	mov	ebp,esp
 	test	SystemFlags,1
 	jz	@@4
@@ -2423,9 +2434,9 @@ BreakChecker	proc	near
 ;Return to the debugger exec routine.
 ;
 	mov	ax,DGROUP
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
+	mov	es,eax
+	mov	fs,eax
+	mov	gs,eax
 	dec	InInt09
 	lss	esp,f[DebuggerESP]
 	test	SystemFlags,1
@@ -2439,7 +2450,8 @@ BreakChecker	proc	near
 ;
 ;Pass control to the origional handler.
 ;
-@@old:	dec	InInt09
+@@old:
+	dec	InInt09
 	popm	eax,ebx,ebp,ds
 	jmp	cs:f[OldInt09]
 OldInt09	df 0
@@ -2459,13 +2471,18 @@ cwMinorVersion	db 0
 ;first in the chain. Also monitor exec calls.
 ;
 Int31Intercept	proc	near
-	cmp	ax,0205h		;Set vector?
-	jnz	@@notset
 	cmp	bl,9		;INT 9?
 	jnz	@@old
+	cmp	ax,0204h		;Get vector?
+	jz	is204
+	cmp	ax,0205h		;Set vector?
+	jz	is205
+@@old:
+	jmp	cs:f[OldInt31]
+is205:
 	pushm	eax,edx,ds
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	test	SystemFlags,1
 	jz	@@0
 	movzx	edx,dx
@@ -2475,21 +2492,26 @@ Int31Intercept	proc	near
 	mov	d[OldInt09+0],edx
 	mov	w[OldInt09+4],cx
 	popm	eax,edx,ds
-	assume ds:DGROUP
 	jmp	@@ret
 	;
-@@notset:
-	cmp	ax,0204h		;Get vector?
-	jnz	@@old
-	cmp	bl,9		;INT 9?
-	jnz	@@old
-	mov	edx,cs:d[OldInt09]
+is204:
+	pushm eax, ds
+	mov	ax,DGROUP
+	mov	ds,eax   
+	test	SystemFlags,1
+	popm eax, ds
+	jz	@F
+	mov	dx,cs:w[OldInt09+0]
+	mov	cx,cs:w[OldInt09+4]
+	jmp	@@ret
+@@:
+	mov	edx,cs:d[OldInt09+0]
 	mov	cx,cs:w[OldInt09+4]
 	;
 @@ret:
 	pushm	eax,ebp,ds
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	test	SystemFlags,1
 	jz	@@r32
 	movzx	ebp,sp
@@ -2501,10 +2523,10 @@ Int31Intercept	proc	near
 	popm	eax,ebp,ds
 	iretd
 	;
-@@old:
-	jmp	cs:f[OldInt31]
 OldInt31	df 0
 Int31Intercept	endp
+
+	assume ds:DGROUP
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 ;
@@ -2619,7 +2641,8 @@ ReadConfig	proc	near
 	jmp	@@10
 	;
 @@8:	;
-@@10:	mov	ErrorNumber,0
+@@10:
+	mov	ErrorNumber,0
 	xor	ax,ax
 	ret
 	;
@@ -2928,7 +2951,7 @@ RestartALL	proc	near
 	mov	esi,VideoOldUserBuffer
 	mov	edx,[esi+0]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
@@ -3006,10 +3029,10 @@ RestartALL	proc	near
 	movzx	ebx,ErrorNumber
 	or	ebx,ebx
 	jz	@@NoE1
-	shl	ebx,2
-	mov	ebx,[ErrorList+ebx]
+	mov	ebx,[ErrorList+ebx*4]
 	call	WindowPopup
-@@NoE1:	mov	ErrorNumber,0
+@@NoE1:
+	mov	ErrorNumber,0
 	mov	bp,TempHandle
 	call	CloseWindow
 	jmp	System
@@ -3066,7 +3089,7 @@ RestartALL	proc	near
 	mov	bx,ax
 	mov	ecx,8192
 	sys SetDOSTrans
-	mov	bx,PSPSegment
+	mov	ebx,PSPSegment
 	mov	ah,50h
 	int	21h
 @@NoBigBuffer:	;
@@ -3077,13 +3100,14 @@ RestartALL	proc	near
 ;
 ;Check if another error message is needed.
 ;
-@@se0:	movzx	ebx,ErrorNumber
+@@se0:
+	movzx	ebx,ErrorNumber
 	or	ebx,ebx
 	jz	@@NoE2
-	shl	ebx,2
-	mov	ebx,[ErrorList+ebx]
+	mov	ebx,[ErrorList+ebx*4]
 	call	WindowPopup
-@@NoE2:	mov	ErrorNumber,0
+@@NoE2:
+	mov	ErrorNumber,0
 	mov	bp,TempHandle
 	call	CloseWindow
 ;
@@ -3207,10 +3231,10 @@ Int10Handler	proc	near
 	pushm	ds,es,fs,gs
 	push	ax
 	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
+	mov	ds,eax
+	mov	es,eax
+	mov	fs,eax
+	mov	gs,eax
 	pop	ax
 	cmp	AutoFlip,0
 	jnz	@@CheckMode
@@ -3224,9 +3248,8 @@ Int10Handler	proc	near
 	;
 @@Done:	popm	ds,es,fs,gs
 	popad
-	assume ds:nothing
-@@NotUs:	jmp	cs:f[OldInt10]
-	assume ds:DGROUP
+@@NotUs:
+	jmp	cs:f[OldInt10]
 OldInt10	df 0
 Int10Handler	endp
 
@@ -8515,7 +8538,8 @@ notflat:
 	or	cx,cx		;Blank line?
 	jnz	@@LookSym		;Fetch next segment value.
 	;
-@@DoneMAPSyms:	mov	ErrorNumber,0
+@@DoneMAPSyms:
+	mov	ErrorNumber,0
 
 ; MED, fall through to flat update 12/15/95
 ;	jmp	@@DoneSyms
@@ -8742,7 +8766,8 @@ notflat:
 	add	ecx,eax
 	or	d[ecx],-1		;store pointer to this record.
 	;
-@@ln90:	mov	ErrorNumber,0
+@@ln90:
+	mov	ErrorNumber,0
 	clc
 @@90:	;
 @@9:	;
@@ -10510,7 +10535,7 @@ ExecuteInst	proc	near
 	int	21h
 	mov	DebugPSP,bx
 	;
-	mov	bx,PSPSegment
+	mov	ebx,PSPSegment
 	mov	ah,50h
 	int	21h
 	;
@@ -11173,7 +11198,7 @@ DisasScreen	proc	near
 	mov	esi,VideoUserBuffer
 	mov	[esi],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	cld
 	mov	edi,VideoUserBuffer
@@ -11205,7 +11230,7 @@ DisasScreen	proc	near
 	mov	esi,VideoUserBuffer
 	mov	[esi],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	cld
 	mov	edi,VideoUserBuffer
@@ -11222,7 +11247,7 @@ DisasScreen	proc	near
 	mov	esi,VideoDebugBuffer
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	mov	esi,VideoDebugBuffer
 	mov	ecx,[esi+4]
@@ -11275,7 +11300,7 @@ DisasScreen	proc	near
 	mov	esi,VideoUserBuffer
 	mov	[esi+0],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32     ; set base & limit of BX descriptor
 	cld
 	mov	edi,VideoUserBuffer
@@ -11339,7 +11364,7 @@ DisasScreen	proc	near
 	mov	esi,VideoDebugBuffer
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	mov	esi,VideoDebugBuffer
 	mov	ecx,[esi+4]
@@ -11407,7 +11432,7 @@ UserScreen	proc	near
 	mov	esi,VideoDebugBuffer
 	mov	[esi],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	mov	edi,VideoDebugBuffer
 	mov	ecx,[esi+4]
@@ -11423,7 +11448,7 @@ UserScreen	proc	near
 	mov	esi,VideoUserBuffer
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
@@ -11481,7 +11506,7 @@ UserScreen	proc	near
 @@1:	mov	esi,VideoDebugBuffer
 	mov	[esi],edx
 	mov	[esi+4],ecx
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	mov	edi,VideoDebugBuffer
 	mov	ecx,[esi+4]
@@ -11541,7 +11566,7 @@ UserScreen	proc	near
 	mov	esi,VideoUserBuffer
 	mov	edx,[esi]
 	mov	ecx,[esi+4]
-	mov	bx,VideoSwapSel
+	mov	ebx,VideoSwapSel
 	sys SetSelDet32
 	add	esi,4+4
 	xor	edi,edi
@@ -11684,7 +11709,7 @@ Free	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 _EXCEP	segment para public 'code' use16
-	assume cs:_EXCEP, ds:DGROUP
+	assume ds:DGROUP
 
 dataseg dw DGROUP
 
@@ -11753,6 +11778,7 @@ Int00Handler	proc	near
 	cmp	Executing,0
 	jz	@@Old
 	mov	Executing,0
+	mov	ExceptionFlag,0
 	;
 	;Retrieve general registers.
 	;
@@ -11787,7 +11813,14 @@ Int00Handler	proc	near
 	mov	DebugSS,ss
 	mov	DebugESP,esp
 	add	DebugESP,sizeof IFRAME16
-	jmp	@@Use0_1
+	;
+	;Now modify origional CS:EIP,SS:ESP values and return control
+	;to this code via interupt structure to restore stacks.
+	;
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	[ebp].IFRAME16.rCs,_EXCEP
+	popm	eax,ebp,ds,es
+	iret
 	;
 @@Use32_1:
 	mov	eax,[ebp].IFRAME32.rFl
@@ -11800,20 +11833,9 @@ Int00Handler	proc	near
 	mov	DebugESP,esp
 	add	DebugESP,sizeof IFRAME32
 	;
-@@Use0_1:
-	mov	ExceptionFlag,0
-	;
 	;Now modify origional CS:EIP,SS:ESP values and return control
 	;to this code via interupt structure to restore stacks.
 	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
-	mov	[ebp].IFRAME16.rCs,_EXCEP
-	popm	eax,ebp,ds,es
-	iret
-	;
-@@Use32_2:
 	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
 	mov	w[ebp].IFRAME32.rCs,_EXCEP
 	popm	eax,ebp,ds,es
@@ -11871,7 +11893,14 @@ Int01Handler	proc	near
 	mov	DebugSS,ss
 	mov	DebugESP,esp
 	add	DebugESP,sizeof IFRAME16
-	jmp	@@Use0_1
+
+	;Now modify origional CS:EIP,SS:ESP values and return control
+	;to this code via interupt structure to restore stacks.
+
+	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
+	mov	w[ebp].IFRAME16.rCs,_EXCEP
+	popm	eax,ebp,ds,es
+	iret
 	;
 @@Use32_1:
 	mov	eax,[ebp].IFRAME32.rFl
@@ -11883,27 +11912,10 @@ Int01Handler	proc	near
 	mov	DebugSS,ss
 	mov	DebugESP,esp
 	add	DebugESP,sizeof IFRAME32
-	jmp	@@Use0_1
-	;
-@@Use0_1:
-;	cmp	ExceptionFlag,-1
-;	jnz	@@NoEIPDec
-;	dec	DebugEIP		;account for int 3 instruction length.
-;	cmp	TerminationFlag,-1
-;	jnz	@@NoEIPDec
-;	dec	DebugEIP
-@@NoEIPDec:	;
+
 	;Now modify origional CS:EIP,SS:ESP values and return control
 	;to this code via interupt structure to restore stacks.
-	;
-	test	SystemFlags,1
-	jz	@@Use32_2
-	mov	[ebp].IFRAME16.rIp,offset @@Use0_2
-	mov	w[ebp].IFRAME16.rCs,_EXCEP
-	popm	eax,ebp,ds,es
-	iret
-	;
-@@Use32_2:
+
 	mov	[ebp].IFRAME32.rIp,offset @@Use0_2
 	mov	w[ebp].IFRAME32.rCs,_EXCEP
 	popm	eax,ebp,ds,es

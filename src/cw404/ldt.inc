@@ -20,10 +20,10 @@ RawGetDescriptors proc near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT memory addresable.
-        mov     es,ax
+        mov     es,eax
         mov     edi,MDTLinear+4 ;point to descriptor map.
         movzx   edx,cx
         mov     ecx,8192
@@ -119,26 +119,26 @@ RawRelDescriptor proc near
         and     ebx,0ffffh-7
         xor     ecx,ecx
         xor     eax,eax
-        mov     ax,ds
+        mov     eax,ds
         and     eax,not 7
         cmp     eax,ebx
         jnz     ldt2_0
-        mov     ds,cx
-ldt2_0: mov     ax,es
+        mov     ds,ecx
+ldt2_0: mov     eax,es
         and     eax,not 7
         cmp     eax,ebx
         jnz     ldt2_1
-        mov     es,cx
-ldt2_1: mov     ax,fs
+        mov     es,ecx
+ldt2_1: mov     eax,fs
         and     eax,not 7
         cmp     eax,ebx
         jnz     ldt2_2
-        mov     fs,cx
-ldt2_2: mov     ax,gs
+        mov     fs,ecx
+ldt2_2: mov     eax,gs
         and     eax,not 7
         cmp     eax,ebx
         jnz     ldt2_3
-        mov     gs,cx
+        mov     gs,ecx
 ldt2_3:
         pop     ecx
         pop     ebx
@@ -149,10 +149,10 @@ ldt2_3:
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,ax
+        mov     es,eax
         movzx   esi,bx          ;Get selector to use.
         shr     esi,3           ;/8 for descriptor number.
         add     esi,MDTLinear+4
@@ -198,7 +198,7 @@ RawReal2ProtSel proc    near
         push    edi
         push    ds
         mov     ax,DpmiEmuDS            ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         movzx   ebx,bx          ;Get the segment value.
         shl     ebx,4           ;convert to linear.
         mov     esi,offset Real2ProtList        ;point to list of selectors.
@@ -292,10 +292,10 @@ RawSetSelType   proc    near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,ax
+        mov     es,eax
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
@@ -331,10 +331,10 @@ RawSetSelLimit  proc    near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,ax
+        mov     es,eax
         movzx   esi,bx          ;Get the selector.
         and     si,0ffffh-7             ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
@@ -378,10 +378,10 @@ RawSetSelBase   proc    near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addressable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT addressable.
-        mov     es,ax
+        mov     es,eax
         movzx   esi,bx          ;Get the selector.
         and     si,0ffffh-7             ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
@@ -417,10 +417,10 @@ RawGetSelBase   proc    near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,ax
+        mov     es,eax
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
@@ -455,7 +455,7 @@ RawBPutDescriptor proc near
         push    ds
         push    es
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
@@ -465,7 +465,7 @@ RawBPutDescriptor proc near
         movzx   edi,di
 ldt8_Use32:
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     ds,ax
+        mov     ds,eax
         push    esi
         push    ds
         push    edi
@@ -507,7 +507,7 @@ RawBGetDescriptor proc near
         push    edi
         push    ds
         mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
@@ -517,7 +517,7 @@ RawBGetDescriptor proc near
         movzx   edi,di
 ldt9_Use32:
         mov     ax,KernalZero   ;make LDT addresable.
-        mov     ds,ax
+        mov     ds,eax
         cld
         movsd
         movsd

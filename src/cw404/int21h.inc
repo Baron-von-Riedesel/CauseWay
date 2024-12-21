@@ -9,8 +9,8 @@ Int21hStart     label byte
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 OldInt21h       df 0
 Int21hCSeg      dw ?
-Int21hDSeg      dw ?
-Int21hDDSeg     dw ?
+Int21hDSeg      dd ?
+Int21hDDSeg     dd ?
 Int21hSystemFlags dd ?
 ;
 Int21hCountryTab db size RealRegsStruc dup (?)
@@ -1026,7 +1026,7 @@ int2121_3:
         mov     bl,21h
         mov     ax,200h
         int     31h
-        mov     w[OldInt21hExec],dx
+        mov     w[OldInt21hExec+0],dx
         mov     w[OldInt21hExec+2],cx
         mov     dx,offset Int21hExecPatch
         mov     cx,_cwMain
@@ -1073,7 +1073,7 @@ medex1:
         cmp     NoEXECPatchFlag,0
         jne     medex2
         mov     bl,21h
-        mov     dx,w[OldInt21hExec]
+        mov     dx,w[OldInt21hExec+0]
         mov     cx,w[OldInt21hExec+2]
         mov     d[OldInt21hExec],0
         mov     ax,201h
@@ -2080,11 +2080,11 @@ Int21hOpen      proc    near
         jz      int2137_Use32
         movzx   edx,dx
 int2137_Use32:
-        mov     d[OldInt21h],edx
+        mov     d[OldInt21h+0],edx
         mov     w[OldInt21h+4],cx
 int2137_Use0:
         mov     edx,offset Int21h
-        mov     cx,cs
+        mov     ecx,cs
         mov     bl,21h
         Sys     SetVect
         ;
@@ -2108,9 +2108,9 @@ Int21hClose     proc    near
         push    ds
         mov     ds,cs:Int21hDDSeg
         assume ds:_Int21h
-        cmp     d[OldInt21h+2],0
+        cmp     w[OldInt21h+4],0
         jz      int2138_9
-        mov     edx,d[OldInt21h]
+        mov     edx,d[OldInt21h+0]
         mov     cx,w[OldInt21h+4]
         mov     bl,21h
         Sys     SetVect

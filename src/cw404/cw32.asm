@@ -12,12 +12,9 @@
 ;Put in some sort of system stack overflow checking and terminate the program
 ;if it happens.
 ;
-;       option oldstructs
 
-;       include general.inc
         include strucs.inc
         include cw.inc
-;       include cw-undoc.inc
 
 ; MED 02/03/2003, make sure some language is in there
         IFNDEF  ENGLISH
@@ -51,8 +48,9 @@ _cwMain segment para public 'Main code' use16
 Copyright       label byte
         db 'CauseWay DOS Extender v'
 VersionMajor    db '4.'
-VersionMinor    db '04'
+VersionMinor    db '06'
         db " No copyright. Public domain software.",13,10,"No rights retained. ",13,10,0
+	align 2
 
 ;-------------------------------------------------------------------------------
 ;
@@ -63,6 +61,7 @@ RealENVSegment  dw ?            ;Real mode environment segment.
 ProtectedFlags  dw 0            ;Bit significant, 0-DPMI,1-VCPI,2-RAW.
 ProtectedType   dw 0            ;0-RAW,1-VCPI,2-DPMI.
 ProtectedForce  db 0
+	align 2
 DOSVersion      dw 0
 SystemFlags     dd 0
 apiCodeSeg      dw 0
@@ -169,6 +168,7 @@ ForcedFind      dd 0,0
 mcbAllocations  dw 0
 LinearAddressCheck db 0
 ;
+	align 4
 TerminationHandler dd offset InitError,InitCS
 UserTermRoutine DF      0
 UserTermDump    DF      0       ; dump location for register info
@@ -196,6 +196,7 @@ VCPIHasNoMem    DB      0
 
 NewCWErrName    DB      81 DUP (0)
 DOS4GFlag       db 0
+	align 4
 ;
 Int21Buffer     db size RealRegsStruc dup (?)
 Int10Buffer     db size RealRegsStruc dup (?)
@@ -518,17 +519,17 @@ cw2_pe0:
         assume es:_apiCode
         test    BYTE PTR SystemFlags,1
         jz      cw2_Use32
-        mov     dx,WORD PTR es:[OldIntSys]
+        mov     dx,WORD PTR es:[OldIntSys+0]
         mov     cx,WORD PTR es:[OldIntSys+2]
         jmp     cw2_Use0
 cw2_Use32:
-        mov     edx,DWORD PTR es:[OldIntSys]
+        mov     edx,DWORD PTR es:[OldIntSys+4]
         mov     cx,WORD PTR es:[OldIntSys+4]
 cw2_Use0:
         mov     bl,31h
         mov     ax,205h
         int     31h
-        mov     DWORD PTR es:[cwIdentity],0
+        mov     DWORD PTR es:[cwIdentity+0],0
         mov     DWORD PTR es:[cwIdentity+4],0
         assume es:nothing
         ;
@@ -762,6 +763,7 @@ dpmiSelBuffer   db 8 dup (0)
 ;
 apiDataSegi     dw 0
 IProtectedMode  db 0
+	align 2
 IProtectedType  dw 0
 DPMISwitch      dw ?,?
 dpmiSelBase     dd 0
@@ -779,21 +781,27 @@ iRealSegment    dw KernalZero
 ;
 INewHeader      NewHeaderStruc <>   ;make space for a header.
 ;
-IExeSignature   db ?    ;00 Identifier text.
-                db ?    ;01 /
-IExeLength      dw ?    ;02 Length of file MOD 512
-                dw ?    ;04 Length of file in 512 byte blocks.
-IExeRelocNum    dw ?    ;06 Number of relocation items.
-IExeHeaderSize  dw ?    ;08 Length of header in 16 byte paragraphs.
-IExeMinAlloc    dw ?    ;0A Minimum number of para's needed above program.
-IExeMaxAlloc    dw ?    ;0C Maximum number of para's needed above program.
-IExeStackSeg    dw ?    ;0E Segment displacement of stack module.
-IExeEntrySP     dw ?    ;10 value for SP at entry.
-IExeCheckSum    dw ?    ;12 Check sum...
-IExeEntryIP     dw ?    ;14 Contents of IP at entry.
-IExeEntryCS     dw ?    ;16 Segment displacement of CS at entry.
-IExeRelocFirst  dw ?    ;18 First relocation item offset.
-IExeOverlayNum  db ?    ;1A Overlay number.
+
+MZHdr struct
+Signature	dw ?	;00 Identifier text 'MZ', '3P'.
+_Length		dw ?	;02 Length of file MOD 512
+			dw ?	;04 Length of file in 512 byte blocks.
+RelocNum	dw ?	;06 Number of relocation items.
+HeaderSize	dw ?	;08 Length of header in 16 byte paragraphs.
+MinAlloc	dw ?	;0A Minimum number of para's needed above program.
+MaxAlloc	dw ?	;0C Maximum number of para's needed above program.
+StackSeg	dw ?	;0E Segment displacement of stack module.
+EntrySP		dw ?	;10 value for SP at entry.
+CheckSum	dw ?	;12 Check sum...
+EntryIP		dw ?	;14 Contents of IP at entry.
+EntryCS		dw ?	;16 Segment displacement of CS at entry.
+RelocFirst	dw ?	;18 First relocation item offset.
+OverlayNum	db ?	;1A Overlay number.
+MZHdr ends
+
+IExeHdr MZHdr <>
+
+	align 2
 ;
 IErrorNumber    dw 0
 InitErrorList   dw IErrorM00,IErrorM01,IErrorM02,IErrorM03,IErrorM04,IErrorM05,IErrorM06,IErrorM07
@@ -912,7 +920,7 @@ ENDIF
         mov     ax,es
         mov     bx,_cwEnd               ;Get program end segment.
         sub     bx,ax                   ;Size program.
-        inc     bx
+;        inc     bx
         mov     ah,4ah
         int     21h                     ;Re-size memory block.
 
@@ -1705,6 +1713,41 @@ END COMMENT !
         mov     ax,252fh
         mov     dx,offset Int2FPatch
         int     21h
+
+ifdef KRNLDBG
+
+;--- check for kernel debugger (wdeb386 API)
+
+D386_Id            equ 0F386h
+D386_Identify      equ 43h
+D386_Prepare_PMode equ 44h
+
+    push es
+    push 0
+    pop es
+    cmp dword ptr es:[68h*4],0     ; int 68h != 0?
+    jz nokd
+    mov ah, D386_Identify
+    int 68h
+    cmp ax, D386_Id                ; kernel debugger waiting?
+    jnz nokd
+    push ds
+    mov ax, D386_Prepare_PMode shl 8
+    mov cx, GDTDbg     ; first of 3 selectors for debugger (code/data/scratch)
+    mov bx, KernalZero ; flat 4G selector
+    mov dx, GDTData    ; GDT selector
+    mov si, 0          ; DS:SI: GDT
+    mov ds, GDTReal
+    mov di, -1         ; ES:DI: IDT
+    int 68h
+    or [si+GDTDbg+2*8].Desc.Access,DescPresent	; ensure the scratch descriptor is marked as 'used'
+    pop ds
+    ; returns FAR32 address of init func in ES:EDI
+    mov dword ptr [pminit+0], edi
+    mov word ptr [pminit+4], es
+nokd:
+    pop es
+endif
 ;
 ;Now patch RAW specific calls.
 ;
@@ -1794,7 +1837,7 @@ cw5_VCPI:
         pop     ds
         or      ah,ah
         jnz     InitError
-        mov     d[VCPI_Entry],ebx       ;Store entry point.
+        mov     d[VCPI_Entry+0],ebx     ;Store entry point.
 
 ; MED 11/05/96
         mov     FirstUninitPage,di      ; VCPI server advanced to first uninitialized page
@@ -1944,7 +1987,7 @@ nosse:
         push    eax                     ;CS
         mov     eax,offset cw5_pl3
         push    eax                     ;EIP
-        db 66h
+;        db 66h
         iretd
         ;
 cw5_pl3:
@@ -2317,6 +2360,49 @@ cw5_3:  call    MakeDesc2
         mov     RealRegsStruc.Real_SP[edi],0
         call    d[fRawSimulateFCALL]
         pop     es
+
+ifdef KRNLDBG
+;--- kernel debugger init must be in PL0.
+;--- we are in PL3, so need a call gate to switch to PL0
+;--- the offset of the code to call must be set in the call gate!
+
+GATE struc
+ofslo	dw ?
+sel		dw ?
+		db ?
+acc		db ?
+ofshi	dw ?
+GATE ends
+
+PMINIT_INIT_IDT equ 0
+		cmp w[pminit+4], 0
+		jz nokdinit
+		push es
+		mov ax, GDTData
+		mov es, ax
+		mov bx, InitPL3_2_PL0 and 0F8h
+		mov eax, d[pminit+0]
+		mov es:[bx].GATE.ofslo, ax
+		shr eax, 16
+		mov es:[bx].GATE.ofshi, ax
+		mov ax, w[pminit+4]
+		xchg ax,es:[bx].GATE.sel
+		push ax
+		push es
+		push bx
+		mov ax, KernalZero
+		mov es, ax
+		mov edi,dword ptr IDTVal+2	;es:edi=IDT
+		mov ax, PMINIT_INIT_IDT
+		db 66h,09ah
+		dw 0, 0, InitPL3_2_PL0
+		pop bx
+		pop es
+		pop es:[bx].GATE.sel
+		pop es
+nokdinit:
+endif
+
 ;
 ;Get extended memory for DPMI emulator.
 ;
@@ -2491,10 +2577,13 @@ cw5_6:  call    d[fPhysicalGetPage]     ;try to allocate a page.
         mov     edi,GDTLinear
         mov     esi,MDTLinear+4
         mov     cx,GDT_Entries
-cw5_4:  test    BYTE PTR es:[edi+5],DescPresent ;this descriptor in use?
+
+cw5_4:
+        test    BYTE PTR es:[edi].Desc.Access,DescPresent ;this descriptor in use?
         jz      cw5_5
         or      BYTE PTR es:[esi],-1
-cw5_5:  add     edi,8                   ;next descriptor.
+cw5_5:
+        add     edi,8                   ;next descriptor.
         inc     esi                     ;update descriptor number.
         dec     cx
         jnz     cw5_4
@@ -3085,12 +3174,12 @@ cw5_InProtected:
 ;
         mov     IErrorNumber,5
         xor     bx,bx
-        mov     cx,offset _apiCodeEnd-_apiCodeStart
+        mov     cx, _apiCodeEnd - _apiCodeStart
         mov     ax,0501h
         int     31h                     ;Get memory.
         jc      InitError
         xor     si,si
-        mov     di,offset _apiCodeEnd-_apiCodeStart
+        mov     di, _apiCodeEnd - _apiCodeStart
         mov     ax,0600h
         int     31h                     ;Lock memory.
         jc      InitError
@@ -3111,7 +3200,7 @@ cw5_InProtected:
         pop     es
         mov     di,offset dpmiSelBuffer
         mov     esi,dpmiSelBase
-        mov     ecx,offset _apiCodeEnd-_apiCodeStart
+        mov     ecx, _apiCodeEnd-_apiCodeStart
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
         call    MakeDesc
@@ -3134,7 +3223,7 @@ cw5_InProtected:
         pop     es
         mov     di,offset dpmiSelBuffer
         mov     esi,dpmiSelBase
-        mov     ecx,offset _apiCodeEnd-_apiCodeStart
+        mov     ecx, _apiCodeEnd - _apiCodeStart
         xor     al,al
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
@@ -3154,7 +3243,7 @@ cw5_InProtected:
         mov     esi,edi
         mov     si,seg _apiCode
         shl     esi,4
-        mov     ecx,offset _apiCodeEnd-_apiCodeStart
+        mov     ecx, _apiCodeEnd - _apiCodeStart
         rep     movs b[edi],[esi]
         pop     es
         pop     ds
@@ -3179,11 +3268,11 @@ cw5_InProtected:
         int     31h
         test    BYTE PTR SystemFlags,1
         jz      cw5_Use32
-        mov     WORD PTR es:[OldIntSys],dx
+        mov     WORD PTR es:[OldIntSys+0],dx
         mov     WORD PTR es:[OldIntSys+2],cx
         jmp     cw5_Use0
 cw5_Use32:
-        mov     DWORD PTR es:[OldIntSys],edx
+        mov     DWORD PTR es:[OldIntSys+0],edx
         mov     WORD PTR es:[OldIntSys+4],cx
 cw5_Use0:
         mov     bl,31h
@@ -3710,17 +3799,17 @@ cw6_pe0:
         assume es:_apiCode
         test    BYTE PTR SystemFlags,1
         jz      cw6_Use32
-        mov     dx,WORD PTR es:[OldIntSys]
+        mov     dx,WORD PTR es:[OldIntSys+0]
         mov     cx,WORD PTR es:[OldIntSys+2]
         jmp     cw6_Use0
 cw6_Use32:
-        mov     edx,DWORD PTR es:[OldIntSys]
+        mov     edx,DWORD PTR es:[OldIntSys+0]
         mov     cx,WORD PTR es:[OldIntSys+4]
 cw6_Use0:
         mov     bl,31h
         mov     ax,205h
         int     31h
-        mov     DWORD PTR es:[cwIdentity],0
+        mov     DWORD PTR es:[cwIdentity+0],0
         mov     DWORD PTR es:[cwIdentity+4],0
         assume es:nothing
         ;
@@ -4513,19 +4602,19 @@ GetSystemFlags  proc    near
         pop     ds
         assume ds:_cwInit
         mov     bx,ax
-        mov     dx,offset IExeSignature ;somewhere to put the info.
-        mov     cx,1bh                  ;size of it.
+        mov     dx,offset IExeHdr       ;somewhere to put the info.
+        mov     cx,sizeof MZHdr         ;size of it.
         mov     ah,3fh
         int     21h
         jc      cw12_4
-        cmp     ax,1bh                  ;did we read right amount?
+        cmp     ax,sizeof MZHdr         ;did we read right amount?
         jnz     cw12_4
-        cmp     w[IExeSignature],'ZM'   ;Normal EXE?
+        cmp     [IExeHdr.Signature],'ZM';Normal EXE?
         jnz     cw12_4
-        mov     ax,w[IExeLength+2]      ;get length in 512 byte blocks
+        mov     ax,[IExeHdr._Length+2]  ;get length in 512 byte blocks
 
 ; MED 01/17/96
-        cmp     WORD PTR [IExeLength],0
+        cmp     [IExeHdr._Length],0
         je      medexe2                 ; not rounded if no modulo
 
         dec     ax                      ;lose 1 cos its rounded up
@@ -4536,7 +4625,7 @@ medexe2:
         mov     dl,ah
         mov     ah,al
         mov     al,dh                   ;mult by 256=*512
-        add     ax,w[IExeLength]        ;add length mod 512
+        add     ax,[IExeHdr._Length]    ;add length mod 512
         adc     dx,0                    ;add any carry to dx
         mov     cx,ax
         xchg    cx,dx                   ;swap round for DOS.
@@ -4892,8 +4981,8 @@ MakeDesc        proc    near
 ;On Entry:-
 ;
 ;ES:DI  - Descriptor entry to use.
-;ESI    - Linear base to set.
-;ECX    - limit in bytes.
+;ESI    - Linear base to set
+;ECX    - limit in bytes
 ;AL     - Code size bit.
 ;AH     - Present/PL/memory|system/type bits.
 ;
@@ -4925,7 +5014,7 @@ MakeDesc        endp
 ;
 ;On Entry:-
 ;
-;ES:DI  - Descriptor entry to use.
+;ES:EDI - Descriptor entry to use.
 ;ESI    - Linear base to set.
 ;ECX    - limit in bytes.
 ;AL     - Code size bit.

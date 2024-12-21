@@ -1,4 +1,6 @@
 
+# build the CauseWay extender (CW32.EXE, also named CWSTUB.EXE)
+
 ALL	: Build Build\cw32.exe
 
 Build:
@@ -12,15 +14,17 @@ Build\cw32.exe: Build\cw32.obj
 #	jwlink format dos f cw32.obj op q,m
 #	linkold cw32;
 	@cd ..
-	cwc /m2 /l85 Build\cw32.exe
+	@copy Build\cw32.exe Build\cwstub.exe
+	..\..\bin\cwc /m2 /l85 Build\cwstub.exe
 
 # Masm can be replaced by JWasm.
 
 Build\cw32.obj: cw32.asm raw_vcpi.inc interrup.inc ldt.inc memory.inc api.inc \
 		int10h.inc int21h.inc int33h.inc decode_c.inc exceptn.inc \
-		..\strucs.inc ..\cw.inc ..\loadle\loadle.inc
-	ml /c /Cp /nologo /DCW4 /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
-#	jwasm /c /Cp /nologo /DCW4 /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
+		..\strucs.inc ..\cw.inc loadle.inc load3p.inc
+#	ml /c /Cp /nologo /DCW4 /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
+#	ml /c /Cp /nologo /DCW4 /DKRNLDBG /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
+	jwasm /c /Cp /nologo /DCW4 /DKRNLDBG /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
 
 clean:
 	@del Build\cw32.exe

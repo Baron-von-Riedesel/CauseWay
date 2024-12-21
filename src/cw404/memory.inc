@@ -21,14 +21,14 @@ RAWGetMemory    proc    near
         push    ds
         push    es
         mov     ax,KernalDS             ;make data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    ebx
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -36,21 +36,21 @@ RAWGetMemory    proc    near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
         pop     es
 
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         shl     ebx,16          ;get block size as 32-bit.
         mov     bx,cx
         add     ebx,4095                ;round up to next 4k.
@@ -251,14 +251,14 @@ RAWResMemory    proc    near
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    ebx
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -266,21 +266,21 @@ RAWResMemory    proc    near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
         pop     es
 
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         shl     esi,16
         mov     si,di           ;Get real address.
         shl     ecx,16
@@ -532,14 +532,14 @@ RAWRelMemory    proc    near
         shl     esi,16          ;Get block base address.
         mov     si,di
         mov     ax,KernalDS             ;make data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    ebx
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -547,21 +547,21 @@ RAWRelMemory    proc    near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
         pop     es
 
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         ;
         ;Check for a legal address.
         ;
@@ -644,10 +644,10 @@ RawDiscardPages proc    near
         push    es
         pushad
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
 ;
 ;Get base address.
 ;
@@ -729,10 +729,10 @@ RawMapPhys2Lin  proc    near
         push    edi
         push    ebp
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
 ;
 ;Get physical address as 32-bit & check for none-page boundary.
 ;
@@ -911,14 +911,14 @@ RAWLockMemory   proc    near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    ebx
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -926,14 +926,14 @@ RAWLockMemory   proc    near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
@@ -1092,7 +1092,7 @@ RAWUnLockMemory proc near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
 
@@ -1100,7 +1100,7 @@ RAWUnLockMemory proc near
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -1108,14 +1108,14 @@ RAWUnLockMemory proc near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
@@ -1189,14 +1189,14 @@ RAWGetMemoryMax proc near
         push    ds
         push    es
         mov     ax,KernalDS             ;make data addresable.
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
 
         push    ebx
         push    ecx
         push    edx
         xor     ebx,ebx
-        mov     bx,ss
+        mov     ebx,ss
         mov     ecx,esp
         pushf
         cli
@@ -1204,21 +1204,21 @@ RAWGetMemoryMax proc near
         sub     d[RawStackPos],RawStackDif
         popf
         mov     ax,KernalSS
-        mov     ss,ax
+        mov     ss,eax
         mov     esp,edx
         add     ecx,4+4+4
         push    ebx
         push    ecx
         sub     ecx,4+4+4
         push    es
-        mov     es,bx
+        mov     es,ebx
         mov     edx,es:[ecx]
         mov     ebx,es:[ecx+4+4]
         mov     ecx,es:[ecx+4]
         pop     es
 
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         ;
         ;Look in existing memory first.
         ;
@@ -1419,10 +1419,10 @@ ExtendLinearMemory proc near
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         mov     ebp,ecx
 
         mov     eax,ecx
@@ -1732,10 +1732,10 @@ MapPhysical     proc    near
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     ax,KernalZero   ;make everything addresable.
-        mov     es,ax
+        mov     es,eax
         ;
         and     ecx,1           ;put user bits in useful place.
         shl     ecx,10
@@ -1950,11 +1950,11 @@ UnMapPhysical   proc    near
         push    fs
         ;
         mov     ax,KernalDS
-        mov     ds,ax
-        mov     es,ax
+        mov     ds,eax
+        mov     es,eax
         assume ds:_cwRaw
         mov     ax,KernalZero
-        mov     fs,ax
+        mov     fs,eax
         ;
         mov     ProposedPresentFlag,0
         mov     ProposedRecentFlag,0
@@ -2097,8 +2097,8 @@ mem12_GotPage:
         push    es
         mov     edi,PageBufferLinear    ;copy it to somewhere we can deal with it.
         mov     ax,KernalZero
-        mov     ds,ax
-        mov     es,ax
+        mov     ds,eax
+        mov     es,eax
         mov     ecx,4096/4
         rep     movsd
         pop     ds
@@ -2213,7 +2213,7 @@ RawLockPage     proc    near
         push    es
         shr     eax,12          ;get page number.
         mov     bx,KernalZero
-        mov     es,bx
+        mov     es,ebx
         mov     esi,1024*4096*1022      ;base of page DET's.
         mov     ebx,es:[esi+eax*4]
         shr     ebx,MEM_LOCK_SHIFT
@@ -2225,7 +2225,7 @@ RawLockPage     proc    near
         push    ax
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         dec     NoneLockedPages
         assume ds:_cwDPMIEMU
@@ -2253,7 +2253,7 @@ RawClearPageLock proc near
         push    esi
         push    es
         mov     bx,KernalZero
-        mov     es,bx
+        mov     es,ebx
         shr     eax,12
         mov     esi,1024*4096*1022      ;base of page alias's.
         mov     ebx,MEM_LOCK_MASK shl MEM_LOCK_SHIFT
@@ -2284,7 +2284,7 @@ RawUnLockPage   proc    near
         push    esi
         push    es
         mov     bx,KernalZero
-        mov     es,bx
+        mov     es,ebx
         shr     eax,12
         mov     esi,1024*4096*1022      ;base of page alias's.
         sub     DWORD PTR es:[esi+eax*4],1 shl MEM_LOCK_SHIFT   ;un-lock it.
@@ -2297,7 +2297,7 @@ RawUnLockPage   proc    near
         ;
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         inc     NoneLockedPages
         assume ds:_cwDPMIEMU
@@ -2331,7 +2331,7 @@ RawPageLocked   proc    near
         push    esi
         push    es
         mov     bx,KernalZero
-        mov     es,bx
+        mov     es,ebx
         shr     eax,12          ;get page number.
         mov     esi,1024*4096*1022      ;base of page alias's.
         mov     ebx,DWORD PTR es:[esi+eax*4]
@@ -2367,11 +2367,11 @@ GetPageStatus   proc    near
         push    es
         push    ax
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         pop     ax
         assume ds:_cwRaw
         mov     bx,KernalZero
-        mov     es,bx
+        mov     es,ebx
         push    eax
         mov     esi,PageDirLinear
         shr     eax,12          ;get page number.
@@ -2411,10 +2411,10 @@ VirtualFault    proc    far
         push    edx
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         mov     eax,ExceptionCR2
         mov     cx,KernalDS
-        mov     ds,cx
+        mov     ds,ecx
         assume ds:_cwRaw
         cmp     eax,LinearBase  ;address below our memory space?
         jc      mem18_OldExit
@@ -2472,7 +2472,7 @@ RawGetDOSMemory proc near
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         cmp     bx,-1           ;maximum?
@@ -2516,7 +2516,7 @@ mem19_1:
         ;
         push    ecx
         mov     dx,KernalZero
-        mov     es,dx
+        mov     es,edx
         movzx   esi,bx          ;get segment address.
         shl     esi,4           ;get linear address.
         mov     WORD PTR es:[esi],cx            ;store block size.
@@ -2569,7 +2569,7 @@ mem19_8:
         ;
         mov     edi,offset MemIntBuffer
         mov     ax,KernalDS
-        mov     es,ax
+        mov     es,eax
         mov     es:RealRegsStruc.Real_EAX[edi],4900h    ;release memory.
         mov     es:RealRegsStruc.Real_ES[edi],bx        ;segment.
         mov     es:RealRegsStruc.Real_SS[edi],0
@@ -2606,7 +2606,7 @@ RawResDOSMemory proc near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         push    bx
@@ -2620,7 +2620,7 @@ RawResDOSMemory proc near
         pop     dx
         pop     bx
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         cmp     bx,WORD PTR es:[esi]            ;shrinking or expanding?
         jz      mem20_8
         jnc     mem20_Expand
@@ -2665,7 +2665,7 @@ mem20_Shrink:
         push    ecx
         push    edx
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         mov     ax,WORD PTR es:[esi]            ;get old size.
         mov     WORD PTR es:[esi],cx            ;store new size.
         shr     ax,12
@@ -2782,29 +2782,29 @@ RawRelDOSMemory proc near
         and     ebx,0ffffh-7
         xor     ecx,ecx
         xor     eax,eax
-        mov     ax,ds
+        mov     eax,ds
         and     eax,not 7
-        cmp     eax,ebx
+        cmp     ax,bx
         jnz     mem21_z0
-        mov     ds,cx
+        mov     ds,ecx
 mem21_z0:
-        mov     ax,es
+        mov     eax,es
         and     eax,not 7
-        cmp     eax,ebx
+        cmp     ax,bx
         jnz     mem21_z1
-        mov     es,cx
+        mov     es,ecx
 mem21_z1:
-        mov     ax,fs
+        mov     eax,fs
         and     eax,not 7
-        cmp     eax,ebx
+        cmp     ax,bx
         jnz     mem21_z2
-        mov     fs,cx
+        mov     fs,ecx
 mem21_z2:
-        mov     ax,gs
+        mov     eax,gs
         and     eax,not 7
-        cmp     eax,ebx
+        cmp     ax,bx
         jnz     mem21_z3
-        mov     gs,cx
+        mov     gs,ecx
 mem21_z3:
         pop     ecx
         pop     ebx
@@ -2819,7 +2819,7 @@ mem21_z3:
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         ;Get segment base address.
@@ -2835,7 +2835,7 @@ mem21_z3:
         mov     eax,esi
         shr     eax,4           ;real mode paragraph address.
         mov     dx,KernalZero
-        mov     es,dx
+        mov     es,edx
         mov     cx,WORD PTR es:[esi]            ;get block size.
         ;
         ;Release selectors.

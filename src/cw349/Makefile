@@ -1,4 +1,6 @@
 
+# build the causeway extender (CW32.EXE)
+
 ALL	: Build\cw32.exe
 
 Build\cw32.exe: Build\cw32.obj

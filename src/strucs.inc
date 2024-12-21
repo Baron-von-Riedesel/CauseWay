@@ -137,7 +137,12 @@ DpmiEmuPL3_2_PL0	equ	0d8h+3
 ;
 GDTData		equ	0e0h+3
 ;
+ifdef KRNLDBG
+GDTDbg		equ	0f0h
+GDT_Entries		equ	108h/8
+else
 GDT_Entries		equ	0f0h/8		;GDT entries to allocate.
+endif
 ;
 KernalB000		equ	0b000h+3
 KernalB800		equ	0b800h+3

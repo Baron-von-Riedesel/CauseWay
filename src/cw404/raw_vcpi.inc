@@ -9,16 +9,20 @@
 ;simulator and low level memory managers etc.
 ;
 _cwRaw  segment para public 'raw kernal code' use16
-        assume cs:_cwRaw, ds:_cwRaw
+
+        assume ds:_cwRaw
 ;
 InWindows       db 0
+	align 2
 BreakAddress    dd ?
 VMMHandle       dw ?
 VMMName db '?:\',128 dup (0)
 ;
+	align 2
 PageStackSize   equ     32
 ProposedPresentFlag db 0
 ProposedRecentFlag db 0
+	align 4
 ProposedPage    dd 0
 CompareCount    dd 0
 NoneLockedPages dd 0
@@ -28,7 +32,7 @@ PageingPointer  dd 0
 SwapFileLength  dd 0
 ;
 FreePages       dd 1
-medAllocPages   dd      0
+medAllocPages   dd 0
 TotalPages      dd 1
 TotalPhysical   dd 0
 ;
@@ -87,7 +91,7 @@ Big1Flag        DB      1
 ELSE
 Big1Flag        DB      0
 ENDIF
-
+	align 4
 ;
 VCPI_CR3        dd 0            ;CR3
 VCPI_pGDT       dd ?            ;Pointer to GDT descriptor.
@@ -100,8 +104,9 @@ VCPI_CS         dw 0            ;/
 VCPI_GDT        df 0            ;GDTR
 VCPI_IDT        df 0            ;IDTR
 ;
-VCPI_Entry      dd ?
-                dw VCPI_0
+VCPI_Entry label fword
+        dd ?
+        dw VCPI_0
 ;
 VCPI_SP dw ?,?
 ;
@@ -113,6 +118,9 @@ CR0Sav  dd ?
 CR3Sav  dd ?
 
 CR0ProtSav      DD ?            ; MED 10/15/96
+ifdef KRNLDBG
+pminit          df ?
+endif
 
 ;EFlagsSav      dd ?
 ;
@@ -142,7 +150,8 @@ PageInt         db size v86CallStruc dup (0)
 ;
 RawSystemFlags  dw 0,0
 ;
-Int2CallCheck   db 8 dup (0)            ;00-07
+Int2CallCheck label byte        ; byte table for 256 interrupts
+        db 8 dup (0)                    ;00-07
         db 8 dup (8)                    ;08-0F
 
 ;; MED 02/16/96, force INT15h to be treated as hardware interrupt
@@ -161,6 +170,7 @@ ALLCallBack     dw ?
 ALLICallBack    dw ?
 CallBackList    label byte
 ICallBackList   label byte
+	align 2
 ;; MED 02/16/96
 ;;      rept 16+4
         rept 16+3
@@ -178,6 +188,7 @@ VDiskSigOffs    equ     12h
 VDiskLoOffs     equ     2ch
 VDiskHiOffs     equ     2eh
 ;
+	align 4
 RawStackPos     dd RawStackTotal
 RawStackReal    dw ?
 ;
@@ -188,14 +199,15 @@ DbgSize2Dr      db 0,0,1,0,3
 DbgType2Dr      db 0,1,3
 ;
 Dbg     struc
-Dbg_Address     dd 0
-Dbg_Size        db 0
-Dbg_Type        db 0
-Dbg_Flags       db 0
-                db 0
+Dbg_Address     dd ?
+Dbg_Size        db ?
+Dbg_Type        db ?
+Dbg_Flags       db ?
+                db ?
 Dbg     ends
 ;
-DbgTable        db 4*size Dbg dup (0)
+	align 4
+DbgTable        Dbg 4 dup (<0,0,0,0>)
 ;
 MaxMemLin       dd 1021 shl 20
 MaxMemPhys      dd -1
@@ -205,6 +217,8 @@ NoPassFlag      DB      0       ; nonzero if not passing real mode hardware inte
 PreAllocSize    DD      0       ; size of VMM disk preallocation
 DesiredVMMName  DB      13 DUP (0)      ; VMM name desired by user via CAUSEWAY e-var
 FirstUninitPage DW      0
+
+	align 2
 
 fCR3Flush       label dword
         dw _fCR3Flush,KernalCS
@@ -219,15 +233,16 @@ fRawSimulateFCALL label dword
 fRawSimulateFCALLI label dword
         dw _fRawSimulateFCALLI,KernalCS
 
-
-
 ;-------------------------------------------------------------------------------
+
+;--- final switch back to real-mode
+
 RawVCPIRealMode proc far
 ;
 ;Disable hardware INT call-backs.
 ;
 
-        pop     d[rv1_RetAdd]
+        pop     [rv1_RetAdd]
         ;
         mov     bx,offset CallBackTable ;list of call backs.
 ;; MED 02/16/96
@@ -241,9 +256,9 @@ rv1_6:  test    CallBackStruc.CallBackFlags[bx],1       ;in use?
         mov     CallBackStruc.CallBackFlags[bx],0
         push    bx
         push    cx
-        mov     cx,w[CallBackStruc.CallBackReal+2+bx]   ;get original vector value.
-        mov     dx,w[CallBackStruc.CallBackReal+bx]
-        mov     bl,CallBackStruc.CallBackNum[bx]        ;get vector number.
+        mov     dx,w[bx].CallBackStruc.CallBackReal+0   ;get original vector value.
+        mov     cx,w[bx].CallBackStruc.CallBackReal+2
+        mov     bl,[bx].CallBackStruc.CallBackNum       ;get vector number.
         xor     bh,bh
         shl     bx,2
         mov     WORD PTR es:[bx+0],dx
@@ -351,11 +366,11 @@ rv1_NoDIRMove:
         mov     eax,PageBufferLinear
         mov     DWORD PTR [IDTVal+2],eax
         pushad
-        mov     DWORD PTR [rv1_StackAdd],esp
+        mov     DWORD PTR [rv1_StackAdd+0],esp
         mov     WORD PTR [rv1_StackAdd+4],ss
         call    RawPL32PL0
         lidt    FWORD PTR [IDTVal]
-        mov     edx,DWORD PTR [rv1_StackAdd]
+        mov     edx,DWORD PTR [rv1_StackAdd+0]
         mov     cx,WORD PTR [rv1_StackAdd+4]
         call    RAWPL02PL3
         popad
@@ -380,7 +395,7 @@ rv1_NoDIRMove:
 ;Switch back to real mode.
 ;
 
-        mov     ax,KernalDS             ;Get supervisor data descriptor,
+        mov     ax,KernalDS     ;Get supervisor data descriptor,
         mov     ds,ax           ;DS,ES,FS,GS,SS must be data with 64k limit
         mov     es,ax           ;expand up, read/write for switch back to real
         mov     fs,ax           ;mode.
@@ -390,15 +405,13 @@ rv1_NoDIRMove:
         add     edi,KernalPL3_2_PL0
         and     edi,not 7
         push    es
-        push    ax
         mov     ax,KernalZero
         mov     es,ax
-        mov     WORD PTR es:[edi],offset rv1_pl0        ;store low word of limit.
-        pop     ax
+        mov     WORD PTR es:[edi],offset rv1_pl0  ;store low word of limit (=offset for call gate).
         pop     es
         pop     edi
-        db 09ah         ;Absolute 16-bit call, to clear
-        dw rv1_pl0,KernalPL3_2_PL0      ;instruction pre-fetch & load CS.
+        db 09ah                    ;direct 16-bit call
+        dw rv1_pl0,KernalPL3_2_PL0 ;to enter PL0
 rv1_pl0:
         mov     ax,KernalSwitchPL0
         mov     ss,ax
@@ -441,7 +454,10 @@ rv1_RAW0:
 ;       popfd
         jmp     rv1_InReal
 ;
-;Use VCPI mode to switch back.
+;Use VCPI to switch back.
+; SS:ESP -> IRETV86
+; DS = FLAT
+; Entry must be FAR32 called!
 ;
 rv1_VCPI:
         xor     eax,eax
@@ -455,30 +471,18 @@ rv1_VCPI:
         mov     ax,offset _cwStackEnd-4
         push    eax             ;ESP
         push    eax             ;EFLags (reserved for)
-        xor     eax,eax
         mov     ax,_cwRaw
         push    eax             ;CS
         mov     ax,offset rv1_VCPI0
         push    eax             ;EIP
-        mov     ax,KernalZero
-        mov     es,ax
-        xor     esi,esi
-        mov     si,_cwRaw
-        shl     esi,4
-        add     esi,offset rv1_Call5
-        mov     ax,w[VCPI_Entry+4]
-        mov     es:[esi+4],ax
-        mov     eax,d[VCPI_Entry]
-        mov     es:[esi],eax
+
         mov     ax,KernalZero
         mov     ds,ax
         mov     ax,0DE0Ch
-        assume ds:nothing
-        call    FWORD PTR cs:[rv1_Call5]        ;switch back.
-        assume ds:_cwRaw
-rv1_Call5:
-        df ?
+        call    cs:[VCPI_Entry]        ;switch back.
+
 rv1_VCPI0:
+if 0
         mov     ax,_cwStack
         mov     ss,ax
         mov     esp,offset _cwStackEnd-4
@@ -487,6 +491,7 @@ rv1_VCPI0:
         mov     es,ax           ;/
         mov     fs,ax
         mov     gs,ax
+endif
 ;
 ;We're back in real mode so remove any patches.
 ;
@@ -499,6 +504,16 @@ rv1_InReal:
         int     21h
         pop     ds
 rv1_ir0:
+
+ifdef KRNLDBG
+        cmp w[pminit+4],0
+        jz nokdbg
+D386_Real_Mode_Init equ 45h
+        mov ah,D386_Real_Mode_Init
+        int 68h
+nokdbg:
+endif
+
         cmp     VMMHandle,0             ;Any VMM file?
         jz      rv1_v0
         mov     bx,VMMHandle            ;close VMM file.
@@ -511,14 +526,15 @@ rv1_v0:
 ;
 ;Go back to _cwMain/Init caller.
 ;
-        push    d[rv1_RetAdd]
-        retf
-rv1_RetAdd:
-        dd 0
+         jmp    [rv1_RetAdd]
+;        push    [rv1_RetAdd]
+;        retf
+
+	align 4
+rv1_RetAdd      dd 0
 
 ; MED 10/31/96
-rv1_StackAdd:
-        df ?
+rv1_StackAdd    df ?
 
 RawVCPIRealMode endp
 
@@ -557,12 +573,12 @@ _fRawSimulateFCALLI proc far
         ret
 _fRawSimulateFCALLI endp
 
-
 ;-------------------------------------------------------------------------------
 ;
 ;Allocate a page of physical memory.
 ;
 _fPhysicalGetPage proc far
+if 0
         xor     eax,eax
         mov     ax,cs
         push    eax
@@ -572,9 +588,14 @@ _fPhysicalGetPage proc far
         push    eax
         mov     eax,offset _ffPhysicalGetPage
         push    eax
-        db 66h
-        retf
-rv7_0:  ret
+        retd
+rv7_0:
+else
+        db 66h,09ah
+        dd offset _ffPhysicalGetPage
+        dw DpmiEmuCS
+endif
+        ret
 _fPhysicalGetPage endp
 
 
@@ -583,6 +604,7 @@ _fPhysicalGetPage endp
 ;Find out how many physical page of memory are free.
 ;
 _fPhysicalGetPages proc far
+if 0
         xor     eax,eax
         mov     ax,cs
         push    eax
@@ -592,9 +614,14 @@ _fPhysicalGetPages proc far
         push    eax
         mov     eax,offset _ffPhysicalGetPages
         push    eax
-        db 66h
-        retf
-rv8_0:  ret
+        retd
+rv8_0:
+else
+        db 66h,09ah
+        dd offset _ffPhysicalGetPages
+        dw DpmiEmuCS
+endif
+        ret
 _fPhysicalGetPages endp
 
 
@@ -1094,8 +1121,8 @@ Int15Rel        endp
 ;CX:EDX - target stack.
 ;
 RAWReal2Prot    proc    near
-        pop     w[rv16_Return]
-        mov     d[rv16_ReturnStack],edx ;store return stack.
+        pop     [rv16_Return]
+        mov     d[rv16_ReturnStack+0],edx ;store return stack.
         mov     w[rv16_ReturnStack+4],cx
         ;
         mov     es,GDTReal
@@ -1110,7 +1137,7 @@ RAWReal2Prot    proc    near
         mov     CR3Sav,eax
         mov     eax,cr0
         mov     CR0Sav,eax
-        mov     eax,VCPI_CR3            ;PageDirLinear
+        mov     eax,VCPI_CR3    ;PageDirLinear
         mov     cr3,eax         ;set page dir address.
 
 ; MED 10/15/96
@@ -1119,12 +1146,13 @@ RAWReal2Prot    proc    near
         mov     eax,CR0ProtSav  ; restore protected mode cr0 status
 
         mov     cr0,eax         ;/
-        db 0eah         ;Absolute 16-bit jump, to clear
-        dw rv16_0,KernalCS0             ;instruction pre-fetch & load CS.
-rv16_0: mov     ax,KernalLDT            ;Point to empty LDT descriptor.
-        lldt    ax              ;and set LDT.
-        mov     cx,KernalTS             ;Get value for task register.
-        ltr     cx              ;and set it.
+        db 0eah                 ;Absolute 16-bit jump, to clear
+        dw rv16_0,KernalCS0     ;instruction pre-fetch & load CS.
+rv16_0:
+        mov     ax,KernalLDT    ;set empty LDT selector
+        lldt    ax
+        mov     cx,KernalTS     ;Set task register
+        ltr     cx
         ;
         ;Make our stuff addresable.
         ;
@@ -1142,7 +1170,7 @@ rv16_0: mov     ax,KernalLDT            ;Point to empty LDT descriptor.
         cld
         clts
         ;
-        mov     edx,d[rv16_ReturnStack]
+        mov     edx,d[rv16_ReturnStack+0]
         mov     cx,w[rv16_ReturnStack+4]
         call    RAWPL02PL3
         ;
@@ -1154,13 +1182,14 @@ rv16_0: mov     ax,KernalLDT            ;Point to empty LDT descriptor.
         mov     BYTE PTR es:[esi+5],DescPresent+DescPL3+Desc386Tss
         pop     es
         ;
-        push    w[rv16_Return]
-        ret
+        jmp     [rv16_Return]
+;        push    [rv16_Return]
+;        ret
         ;
-rv16_Return:
-        dw ?
-rv16_ReturnStack:
-        df ?
+	align 2
+rv16_Return      dw ?
+rv16_ReturnStack df ?
+
 RAWReal2Prot    endp
 
 
@@ -1173,9 +1202,9 @@ RAWReal2Prot    endp
 ;CX:DX  - target stack.
 ;
 RAWProt2Real    proc    near
-        pop     w[rv17_Return]
-        mov     w[rv17_ReturnSP],dx
-        mov     w[rv17_ReturnSS],cx
+        pop     [rv17_Return]
+        mov     [rv17_ReturnSP],dx
+        mov     [rv17_ReturnSS],cx
         mov     ax,KernalDS             ;Get supervisor data descriptor,
         mov     ds,ax           ;DS,ES,FS,GS,SS must be data with 64k limit
         mov     es,ax           ;expand up, read/write for switch back to real
@@ -1203,8 +1232,8 @@ RAWProt2Real    proc    near
 rv17_Resume:
         mov     ax,_cwRaw
         mov     ds,ax
-        mov     ss,w[rv17_ReturnSS]
-        movzx   esp,w[rv17_ReturnSP]
+        mov     ss,[rv17_ReturnSS]
+        movzx   esp,[rv17_ReturnSP]
         mov     eax,CR3Sav
         mov     cr3,eax
         lidt    IDTSav          ;restore old IDT 0(3ff)
@@ -1212,15 +1241,15 @@ rv17_Resume:
 ;       push    EFlagsSav
 ;       popfd
         ;
-        push    w[rv17_Return]
-        ret
+        jmp     [rv17_Return]
+;        push    [rv17_Return]
+;        ret
         ;
-rv17_Return:
-        dw ?
-rv17_ReturnSP:
-        dw ?
-rv17_ReturnSS:
-        dw ?
+	align 2
+rv17_Return        dw ?
+rv17_ReturnSP      dw ?
+rv17_ReturnSS      dw ?
+
 RAWProt2Real    endp
 
 
@@ -1233,8 +1262,8 @@ RAWProt2Real    endp
 ;CX:EDX - target stack.
 ;
 VCPIReal2Prot   proc    near
-        pop     w[rv18_Return]
-        mov     d[rv18_ReturnStack],edx
+        pop     [rv18_Return]
+        mov     d[rv18_ReturnStack+0],edx
         mov     w[rv18_ReturnStack+4],cx
         mov     VCPI_CS,KernalCS0
         mov     VCPI_EIP,offset rv18_Resume486
@@ -1253,7 +1282,7 @@ rv18_Resume486:
 ;       mov     esp,offset tPL0StackSize-4
         mov     esp,tPL0StackSize-4
 
-        mov     ax,KernalDS             ;Get data descriptor.
+        mov     ax,KernalDS     ;Get data descriptor.
         mov     ds,ax           ;/
         mov     es,ax           ;/
         mov     gs,ax           ;/
@@ -1266,7 +1295,7 @@ rv18_Resume486:
         popfd
         cld
         ;
-        mov     edx,d[rv18_ReturnStack]
+        mov     edx,d[rv18_ReturnStack+0]
         mov     cx,w[rv18_ReturnStack+4]
         call    RAWPL02PL3
         ;
@@ -1278,13 +1307,13 @@ rv18_Resume486:
         mov     BYTE PTR es:[esi+5],DescPresent+DescPL3+Desc386Tss
         pop     es
         ;
-        push    w[rv18_Return]
-        ret
+        jmp     [rv18_Return]
+;        push    [rv18_Return]
+;        ret
 ;
-rv18_Return:
-        dw ?
-rv18_ReturnStack:
-        df ?
+	align 2
+rv18_Return      dw ?
+rv18_ReturnStack df ?
 ;
 VCPIReal2Prot   endp
 
@@ -1298,9 +1327,9 @@ VCPIReal2Prot   endp
 ;CX:DX  - Target stack.
 ;
 VCPIProt2Real   proc    near
-        pop     w[rv19_Return]
-        mov     w[rv19_ReturnSP],dx
-        mov     w[rv19_ReturnSS],cx
+        pop     [rv19_Return]
+        mov     [rv19_ReturnSP],dx
+        mov     [rv19_ReturnSS],cx
         ;
         mov     ax,KernalDS             ;Get supervisor data descriptor,
         mov     ds,ax           ;DS,ES,FS,GS,SS must be data with 64k limit
@@ -1328,8 +1357,7 @@ VCPIProt2Real   proc    near
         mov     ax,KernalZero
         mov     ds,ax
         mov     ax,0DE0Ch
-        assume ds:nothing
-        call    FWORD PTR cs:[VCPI_Entry]       ;switch back.
+        call    cs:[VCPI_Entry]       ;switch back.
         assume ds:_cwRaw
         ;
 rv19_Resume:
@@ -1337,23 +1365,23 @@ rv19_Resume:
         ;
         mov     ax,_cwRaw
         mov     ds,ax
-        mov     ss,w[rv19_ReturnSS]
-        movzx   esp,w[rv19_ReturnSP]
-        push    w[rv19_Return]
-        ret
+        mov     ss,[rv19_ReturnSS]
+        movzx   esp,[rv19_ReturnSP]
+        jmp     [rv19_Return]
+;        push    [rv19_Return]
+;        ret
 ;
-rv19_Return:
-        dw ?
-rv19_ReturnSP:
-        dw ?
-rv19_ReturnSS:
-        dw ?
+	align 2
+rv19_Return        dw ?
+rv19_ReturnSP      dw ?
+rv19_ReturnSS      dw ?
+
 VCPIProt2Real   endp
 
 
 ;-------------------------------------------------------------------------------
 RAWPL02PL3      proc    near
-        pop     w[rv20_RetAdd]
+        pop     [rv20_RetAdd]
         movzx   ecx,cx
         push    ecx             ;SS
         push    edx             ;ESP
@@ -1361,29 +1389,31 @@ RAWPL02PL3      proc    near
         pop     eax
         and     ax,1000111111111111b    ;clear NT & IOPL.
         or      ax,0011000000000000b    ;force IOPL.
+;        push    eax
+;        popfd
         push    eax
-        popfd
-        push    eax
-        xor     eax,eax
+;        xor     eax,eax
         mov     ax,KernalCS
         push    eax             ;CS
         mov     eax,offset rv20_pl3
         push    eax             ;EIP
-        db 66h
+;        db 66h
         iretd
         ;
 rv20_pl3:
-        push    w[rv20_RetAdd]
-        ret
+        jmp     [rv20_RetAdd]
+;        push    [rv20_RetAdd]
+;        ret
         ;
-rv20_RetAdd:
-        dw ?
+	align 2
+rv20_RetAdd     dw ?
+
 RAWPL02PL3      endp
 
 
 ;-------------------------------------------------------------------------------
 RawPL32PL0      proc    near
-        pop     w[rv21_RetAdd]
+        pop     [rv21_RetAdd]
         push    edi
         mov     edi,GDTLinear
         add     edi,KernalPL3_2_PL0
@@ -1392,19 +1422,21 @@ RawPL32PL0      proc    near
         push    ax
         mov     ax,KernalZero
         mov     es,ax
-        mov     WORD PTR es:[edi],offset rv21_pl0       ;store low word of limit.
+        mov     WORD PTR es:[edi],offset rv21_pl0       ;store low word of limit (=offset).
         pop     ax
         pop     es
         pop     edi
-        db 09ah         ;Absolute 16-bit call, to clear
+        db 09ah                         ;Absolute 16-bit call, to clear
         dw rv21_pl0,KernalPL3_2_PL0     ;instruction pre-fetch & load CS.
         ;
 rv21_pl0:
-        push    w[rv21_RetAdd]
-        ret
+        jmp     [rv21_RetAdd]
+;        push    [rv21_RetAdd]
+;        ret
         ;
-rv21_RetAdd:
-        dw ?
+	align 2
+rv21_RetAdd     dw ?
+
 RawPL32PL0      endp
 
 
@@ -1465,9 +1497,7 @@ rv23_exit:
 ;Let previous handlers have a go at it.
 ;
 rv23_ret:
-        assume ds:nothing
-        jmp     DWORD PTR cs:[OldInt2F]
-        assume ds:_cwRaw
+        jmp     cs:[OldInt2F]
 
 if 0
         push    ax
@@ -1483,13 +1513,13 @@ if 0
         int     21h
 
 rv23_Old:
-        jmp     DWORD PTR cs:[OldInt2F]
+        jmp     cs:[OldInt2F]
         assume ds:_cwRaw
 
 WinMessage      db 'Cannot run Windows in enhanced mode while a CauseWay application is active.',13,10
         db 'Run Windows in standard mode or remove the CauseWay application.',13,10,'$'
 endif
-
+	align 2
 OldInt2F        dd 0
 Int2FPatch      endp
 
@@ -1606,8 +1636,25 @@ RAWSimulateFCALLI endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Simulate either a real mode INT or far call.
+; Simulate either a real mode INT or far call.
+; BH: 0=INT, 1=far call, 2=far call with IRET frame
+; BL: int# if BH==0
+; CX: word params to copy to real-mode stack
+; this "proc" is never called, only jumped to, with
+; registers BX & CX on stack.
 ;
+
+;--- stack frame
+RV29FR struct
+    dw ?    ; rv29_ ...
+    dw ?
+    dd ?
+    dd ?
+    dw ?,?,?,?	;seg regs
+    dd ?,?,?,?,?,?,?,?	;pushad
+wFlgs dw ?
+RV29FR ends
+
 RAWSimulate     proc    near
         pushf                   ;Preserve IF state.
         cli                     ;Stop INTs interfering.
@@ -1621,11 +1668,12 @@ RAWSimulate     proc    near
         mov     ds,ax           ;/
         mov     ax,KernalZero
         mov     fs,ax
-        push    d[rv29_tVCPI_SP]
-        push    d[rv29_IntAdd]
-        push    w[rv29_CallAdd]
-        push    w[rv29_ourstack]
-        mov     w[rv29_ourstack],0
+        push    [rv29_tVCPI_SP]
+        push    [rv29_IntAdd]
+        push    [rv29_CallAdd]
+        push    [rv29_ourstack]
+
+        mov     [rv29_ourstack],0
 ;
 ;setup the real mode stack.
 ;
@@ -1641,7 +1689,7 @@ RAWSimulate     proc    near
         xor     esi,esi
         mov     si,RawStackReal
         mov     es:RealRegsStruc.Real_SS[edi],si
-        or      w[rv29_ourstack],-1
+        or      [rv29_ourstack],-1
 ;
 ;Point to the real mode stack.
 ;
@@ -1649,8 +1697,8 @@ rv29_GotStack:
         movzx   esi,es:RealRegsStruc.Real_SS[edi]
         movzx   eax,es:RealRegsStruc.Real_SP[edi]
         sub     eax,(4+4)+(4+4)
+        mov     w[rv29_tVCPI_SP+0],ax
         mov     w[rv29_tVCPI_SP+2],si
-        mov     w[rv29_tVCPI_SP],ax
         mov     edx,esi
         shl     esi,4
         add     esi,eax
@@ -1697,7 +1745,7 @@ rv29_NoStacked:
         jz      rv29_Its32
         movzx   ebp,bp
 rv29_Its32:
-        mov     ax,[ebp+(2+4+4)+(2+2+2+2)+(4+4+4+4+4+4+4+4)+2]
+        mov     ax,[ebp].RV29FR.wFlgs
         or      bh,bh           ;int or far?
         jnz     rv29_NoIF
         and     ax,1111110011111111b    ;clear Trap and INT flag.
@@ -1713,10 +1761,10 @@ rv29_NoIF:
         mov     cx,es:RealRegsStruc.Real_CS[edi]
         shl     ecx,16
         mov     cx,es:RealRegsStruc.Real_IP[edi]
-        mov     w[rv29_CallAdd],offset rv29_fcall
+        mov     [rv29_CallAdd],offset rv29_fcall
         cmp     bh,2
         jnz     rv29_NotInt
-        mov     w[rv29_CallAdd],offset rv29_fcalli
+        mov     [rv29_CallAdd],offset rv29_fcalli
         jmp     rv29_NotInt
         ;
 rv29_IsInt:
@@ -1745,7 +1793,7 @@ rv29_c3:
         mov     ecx,DWORD PTR fs:[bp]
         ;
 rv29_c2:
-        mov     w[rv29_CallAdd],offset rv29_int
+        mov     [rv29_CallAdd],offset rv29_int
         ;
 rv29_NotInt:
         sub     esi,4
@@ -1793,17 +1841,17 @@ rv29_NotInt:
         pop     gs
         pop     WORD PTR cs:[rv29_IntAdd]       ;lose dummy.
         ;
-        pop     DWORD PTR cs:[rv29_IntAdd]
-        jmp     WORD PTR cs:[rv29_CallAdd]
+        pop     cs:[rv29_IntAdd]
+        jmp     cs:[rv29_CallAdd]
         ;
 rv29_fcall:
         popf
-        call    DWORD PTR cs:[rv29_IntAdd]
+        call    cs:[rv29_IntAdd]
         jmp     rv29_Back
         ;
 rv29_fcalli:
 rv29_int:
-        call    DWORD PTR cs:[rv29_IntAdd]
+        call    cs:[rv29_IntAdd]
 rv29_Back:
         pushf
         cli
@@ -1813,8 +1861,9 @@ rv29_Back:
 ;
 ;Switch back to old stack.
 ;
-        mov     ss,WORD PTR cs:[rv29_tVCPI_SP+2]
-        mov     sp,WORD PTR cs:[rv29_tVCPI_SP]
+;        mov     ss,WORD PTR cs:[rv29_tVCPI_SP+2]
+;        mov     sp,WORD PTR cs:[rv29_tVCPI_SP+0]
+         lss     sp,cs:[rv29_tVCPI_SP]
 ;
 ;Save all registers.
 ;
@@ -1831,7 +1880,7 @@ rv29_Back:
         mov     ax,_cwRaw
         mov     ds,ax
         assume ds:_cwRaw
-        mov     w[rv29_tVCPI_SP],sp
+        mov     w[rv29_tVCPI_SP+0],sp
         mov     w[rv29_tVCPI_SP+2],ss
         mov     bp,sp
 ;
@@ -1851,7 +1900,7 @@ rv29_Back:
 ;
         movzx   esi,w[rv29_tVCPI_SP+2]
         shl     esi,4
-        movzx   eax,w[rv29_tVCPI_SP]
+        movzx   eax,w[rv29_tVCPI_SP+0]
         add     esi,eax
 ;
 ;Retrieve table address.
@@ -1871,18 +1920,18 @@ rv29_Back:
         pop     ds
         pop     edi
         pop     esi
-        mov     bx,[esp+(2+2+2+2)+(4+4+4+4+4+4+4+4)+(4+4+2)+2]
+        mov     bx,[esp].RV29FR.wFlgs
         and     bx,1111001100101010b
         or      es:RealRegsStruc.Real_Flags[edi],bx
         ;
-        cmp     w[rv29_ourstack],0
+        cmp     [rv29_ourstack],0
         jz      rv29_nostackadjust
         add     RawStackPos,RawStackDif ;update for re-entry.
 rv29_nostackadjust:
-        pop     w[rv29_ourstack]
-        pop     w[rv29_CallAdd]
-        pop     d[rv29_IntAdd]
-        pop     d[rv29_tVCPI_SP]
+        pop     [rv29_ourstack]
+        pop     [rv29_CallAdd]
+        pop     [rv29_IntAdd]
+        pop     [rv29_tVCPI_SP]
         ;
         pop     gs
         pop     fs
@@ -1896,18 +1945,17 @@ rv29_nostackadjust:
         pop     cx
         ret
         ;
-rv29_IntAdd:
-        dd ?
-rv29_CallAdd:
-        dw ?
-rv29_tVCPI_SP:
-        dd ?
-rv29_ourstack:
-        dw 0
+	align 4
+rv29_IntAdd   dd ?
+rv29_CallAdd  dw ?
+rv29_tVCPI_SP dd ?
+rv29_ourstack dw 0
+
 RAWSimulate     endp
 
 
 ;-------------------------------------------------------------------------------
+
 RAWCallBack     proc    near
         pushf
         cli
@@ -1956,7 +2004,7 @@ rv30_Normal:
         mov     es,ax
         mov     fs,ax
         mov     gs,ax
-        mov     VCPI_SP,sp
+        mov     VCPI_SP+0,sp
         mov     VCPI_SP+2,ss
         ;
         ;Check if this call back is int &| busy.
@@ -1993,7 +2041,7 @@ rv30_zero:
         add     bx,ax           ;point to this entry.
         movzx   esi,w[VCPI_SP+2]        ;point to stacked registers.
         shl     esi,4
-        movzx   eax,w[VCPI_SP]
+        movzx   eax,w[VCPI_SP+0]
         add     esi,eax
         mov     ax,KernalZero   ;/
         mov     fs,ax           ;/
@@ -2037,13 +2085,13 @@ rv30_zero:
         mov     ax,w[CallBackStruc.CallBackProt+4+bx]
         mov     w[rv30_CallB0+2],ax
         mov     eax,d[CallBackStruc.CallBackProt+bx]
-        mov     w[rv30_CallB0],ax
+        mov     w[rv30_CallB0+0],ax
         jmp     rv30_Use16Bit12
 rv30_Use32Bit12:
         mov     ax,w[CallBackStruc.CallBackProt+4+bx]
         mov     w[rv30_CallB0+4],ax
         mov     eax,d[CallBackStruc.CallBackProt+bx]
-        mov     d[rv30_CallB0],eax
+        mov     d[rv30_CallB0+0],eax
 rv30_Use16Bit12:
         push    bx              ;save call back structure pointer.
         ;
@@ -2134,7 +2182,7 @@ rv30_Use16Bit13:
         ;Switch back to v86 mode.
         ;
         mov     cx,VCPI_SP+2
-        mov     dx,VCPI_SP
+        mov     dx,VCPI_SP+0
         call    Protected2Real
         add     RawStackPos,RawStackDif
         pop     gs
@@ -2151,8 +2199,10 @@ rv30_Use16Bit13:
         popf
         retf
         ;
+	align 4
 rv30_CallB0:
-        df ?,0
+        df ?
+
 RAWCallBack     endp
 
 
@@ -2177,7 +2227,7 @@ RAWICallBack    proc    near
         mul     bx              ;get offset into table.
         mov     bx,offset CallBackTable
         add     bx,ax           ;point to this entry.
-        mov     WORD PTR cs:[rv31_CallTab],bx
+        mov     cs:[rv31_CallTab],bx
         ;
         cmp     cs:InWindows,0
         jnz     rv31_ForceOld
@@ -2191,14 +2241,12 @@ rv31_ForceOld:
         mov     ax,WORD PTR cs:[CallBackStruc.CallBackReal+2+bx]        ;fetch old real mode vector address.
         mov     WORD PTR cs:[rv31_tVCPI_SP+2],ax
         mov     ax,WORD PTR cs:[CallBackStruc.CallBackReal+bx]
-        mov     WORD PTR cs:[rv31_tVCPI_SP],ax
+        mov     WORD PTR cs:[rv31_tVCPI_SP+0],ax
         pop     dx
         pop     bx
         pop     ax
         jmp     DWORD PTR cs:[rv31_tVCPI_SP]    ;pass onto old handler.
         ;
-rv31_tVCPI_SP:
-        dd ?
         ;
 rv31_NotBusy:
         or      cs:CallBackStruc.CallBackFlags[bx],128  ;mark it as busy.
@@ -2213,9 +2261,9 @@ rv31_NotBusy:
         ;
         ;Switch to new stack.
         ;
-        mov     WORD PTR cs:[rv31_tVCPI_SP],sp  ;store current stack.
+        mov     WORD PTR cs:[rv31_tVCPI_SP+0],sp  ;store current stack.
         mov     WORD PTR cs:[rv31_tVCPI_SP+2],ss
-        mov     ss,cs:RawStackReal      ;_cwRaw         ;use new stack.
+        mov     ss,cs:RawStackReal      ;_cwRaw   ;use new stack.
         mov     esp,cs:RawStackPos
         sub     cs:RawStackPos,RawStackDif
         push    DWORD PTR cs:[rv31_tVCPI_SP]    ;put old stack onto new one.
@@ -2239,7 +2287,7 @@ rv31_NotBusy:
         mov     ax,_cwRaw
         mov     ds,ax           ;make our data addresable.
         assume ds:_cwRaw
-        mov     w[rv31_tVCPI_SP],sp
+        mov     w[rv31_tVCPI_SP+0],sp
         mov     w[rv31_tVCPI_SP+2],ss
         ;
         ;Switch to protected mode.
@@ -2253,7 +2301,7 @@ rv31_NotBusy:
         ;
         ;Get protected mode code address.
         ;
-        mov     bx,w[rv31_CallTab]
+        mov     bx,[rv31_CallTab]
         mov     bl,CallBackStruc.CallBackNum[bx]        ;get int number.
         push    ax
         push    ebx
@@ -2280,12 +2328,12 @@ rv31_NotBusy:
         pop     ax
         test    BYTE PTR RawSystemFlags,1
         jz      rv31_Use32Bit12
+        mov     w[rv31_CallB0+0],dx
         mov     w[rv31_CallB0+2],cx
-        mov     w[rv31_CallB0],dx
         jmp     rv31_Use16Bit12
 rv31_Use32Bit12:
+        mov     d[rv31_CallB0+0],edx
         mov     w[rv31_CallB0+4],cx
-        mov     d[rv31_CallB0],edx
 rv31_Use16Bit12:
         ;
         ;Retrieve register values.
@@ -2294,7 +2342,7 @@ rv31_Use16Bit12:
         mov     fs,ax
         movzx   esi,w[rv31_tVCPI_SP+2]
         shl     esi,4
-        movzx   eax,w[rv31_tVCPI_SP]
+        movzx   eax,w[rv31_tVCPI_SP+0]
         add     esi,eax         ;Point to stacked registers.
         pushfd
         pop     eax
@@ -2307,8 +2355,8 @@ rv31_Use16Bit12:
         mov     edi,fs:[esi+12]
         mov     ebp,fs:[esi+8]
         mov     esi,fs:[esi+16]
-        push    d[rv31_tVCPI_SP]
-        push    w[rv31_CallTab]
+        push    [rv31_tVCPI_SP]
+        push    [rv31_CallTab]
         push    ds
 
         test    BYTE PTR RawSystemFlags,1
@@ -2320,7 +2368,7 @@ rv31_Use16Bit12:
         push    w[rv31_zero]            ;/
 
         push    w[rv31_FlagsStore]
-        call    d[rv31_CallB0]
+        call    dword ptr [rv31_CallB0]
 
         lea     esp,[esp+(2*3)]
 
@@ -2337,7 +2385,7 @@ rv31_Use32Bit13:
         push    d[rv31_zero]
 
         push    d[rv31_FlagsStore]
-        call    f[rv31_CallB0]
+        call    fword ptr [rv31_CallB0]
 
         lea     esp,[esp+(4*3)]
 
@@ -2346,15 +2394,15 @@ rv31_Use16Bit13:
         pushfd
         cli
         pop     d[rv31_FlagsStore]
-        pop     w[rv31_CallTab]
-        pop     d[rv31_tVCPI_SP]
+        pop     [rv31_CallTab]
+        pop     [rv31_tVCPI_SP]
         push    esi
         push    eax
         mov     ax,KernalZero
         mov     fs,ax
         movzx   esi,w[rv31_tVCPI_SP+2]
         shl     esi,4
-        movzx   eax,w[rv31_tVCPI_SP]
+        movzx   eax,w[rv31_tVCPI_SP+0]
         add     esi,eax         ;Point to stacked registers.
         ;
         ;Set new register values.
@@ -2380,13 +2428,13 @@ rv31_Use16Bit13:
         and     WORD PTR fs:[(2+2)+esi],0000011100000000b
         or      fs:[(2+2)+esi],ax
         ;
-        mov     bx,w[rv31_CallTab]      ;restore call back structure.
+        mov     bx,[rv31_CallTab]      ;restore call back structure.
         and     CallBackStruc.CallBackFlags[bx],255-128 ;clear busy flag.
         ;
         ;Switch back to v86 mode.
         ;
         mov     cx,w[rv31_tVCPI_SP+2]
-        mov     dx,w[rv31_tVCPI_SP]
+        mov     dx,w[rv31_tVCPI_SP+0]
         call    Protected2Real
 ;       add     RawStackPos,RawStackDif
         ;
@@ -2407,14 +2455,13 @@ rv31_Use16Bit13:
         assume ds:_cwRaw
         iret
 ;
-rv31_CallB0:
-        df ?,0
-rv31_FlagsStore:
-        dd 0
-rv31_CallTab:
-        dw ?
-rv31_zero:
-        dd 0
+	align 4
+rv31_CallB0      df ?
+rv31_CallTab     dw ?
+rv31_FlagsStore  dd 0
+rv31_tVCPI_SP    dd ?
+rv31_zero        dd 0
+
 RAWICallBack    endp
 
 
@@ -2678,10 +2725,8 @@ cwDPMIEMUStart  label byte
 ;Call _cwRaw SimulateINT
 ;
 EmuRawSimulateInt proc near
-        assume ds:nothing
         db 66h
         call    FWORD PTR cs:[rv38_calladd]
-        assume ds:_cwDPMIEMU
         ret
         ;
 rv38_calladd:
@@ -2694,14 +2739,18 @@ EmuRawSimulateInt endp
 ;Call _cwRaw SimulateINT
 ;
 EmuRawSimulateInt2 proc near
-        assume ds:nothing
+if 0
         db 66h
         call    FWORD PTR cs:[rv39_calladd]
-        assume ds:_cwDPMIEMU
         ret
         ;
 rv39_calladd:
         dw offset _fRawSimulateINT2,KernalCS
+else
+        db 66h, 9ah
+        dw offset _fRawSimulateINT2,KernalCS
+        ret
+endif
 EmuRawSimulateInt2 endp
 
 
@@ -2710,14 +2759,18 @@ EmuRawSimulateInt2 endp
 ;Call _cwRaw SimulateFCALL
 ;
 EmuRawSimulateFCall proc near
-        assume ds:nothing
+if 0
         db 66h
         call    FWORD PTR cs:[rv40_calladd]
-        assume ds:_cwDPMIEMU
         ret
         ;
 rv40_calladd:
         dw offset _fRawSimulateFCALL,KernalCS
+else
+        db 66h, 9ah
+        dw offset _fRawSimulateFCALL,KernalCS
+        ret
+endif
 EmuRawSimulateFCall endp
 
 
@@ -2726,14 +2779,18 @@ EmuRawSimulateFCall endp
 ;Call _cwRaw SimulateFCALL
 ;
 EmuRawSimulateFCall2 proc near
-        assume ds:nothing
+if 0
         db 66h
         call    FWORD PTR cs:[rv41_calladd]
-        assume ds:_cwDPMIEMU
         ret
         ;
 rv41_calladd:
         dw offset _fRawSimulateFCALL2,KernalCS
+else
+        db 66h, 9ah
+        dw offset _fRawSimulateFCALL2,KernalCS
+        ret
+endif
 EmuRawSimulateFCall2 endp
 
 
@@ -2742,15 +2799,25 @@ EmuRawSimulateFCall2 endp
 ;Call _cwRaw SimulateFCALLI
 ;
 EmuRawSimulateFCallI proc near
-        assume ds:nothing
+if 0
         db 66h
         call    FWORD PTR cs:[rv42_calladd]
-        assume ds:_cwDPMIEMU
         ret
         ;
 rv42_calladd:
         dw offset _fRawSimulateFCALLI,KernalCS
+else
+        db 66h, 9ah
+        dw offset _fRawSimulateFCALLI,KernalCS
+        ret
+endif
 EmuRawSimulateFCallI endp
+
+	align 4
+
+erp0RetAdd   dd ?
+erp3RetAdd   dd ?
+rv43_StackAdd   df ?
 
 
 ;-------------------------------------------------------------------------------
@@ -2760,40 +2827,39 @@ EmuCR3Flush     proc    near
         pushad
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
-        push    d[rv43_StackAdd]
+        mov     ds,eax
+        push    d[rv43_StackAdd+0]
         push    w[rv43_StackAdd+4]
-        push    d[erp0RetAdd]
-        push    d[erp3RetAdd]
+        push    [erp0RetAdd]
+        push    [erp3RetAdd]
         ;
-        mov     d[rv43_StackAdd],esp
+        mov     d[rv43_StackAdd+0],esp
         mov     w[rv43_StackAdd+4],ss
         call    EmuRawPL32PL0
         ;
         mov     eax,cr3
         mov     cr3,eax         ;flush page cache.
         ;
-        mov     edx,d[rv43_StackAdd]
+        mov     edx,d[rv43_StackAdd+0]
         mov     cx,w[rv43_StackAdd+4]
         call    EmuRAWPL02PL3
         ;
-        pop     d[erp3RetAdd]
-        pop     d[erp0RetAdd]
+        pop     [erp3RetAdd]
+        pop     [erp0RetAdd]
         pop     w[rv43_StackAdd+4]
-        pop     d[rv43_StackAdd]
+        pop     d[rv43_StackAdd+0]
         pop     ds
         popad
         popf
         ret
         ;
-rv43_StackAdd:
-        df ?
+
 EmuCR3Flush     endp
 
 
 ;-------------------------------------------------------------------------------
 EmuRAWPL02PL3   proc    near
-        pop     d[erp0RetAdd]
+        pop     [erp0RetAdd]
         movzx   ecx,cx
         push    ecx             ;SS
         push    edx             ;ESP
@@ -2811,53 +2877,54 @@ EmuRAWPL02PL3   proc    near
         push    eax             ;EIP
         iretd
 rv44_pl3:
-        push    d[erp0RetAdd]
-        ret
+;        push    [erp0RetAdd]
+;        ret
+        jmp     [erp0RetAdd]
 EmuRAWPL02PL3   endp
 
 
-erp0RetAdd:
-        dd ?
-
 ;-------------------------------------------------------------------------------
 EmuRawPL32PL0   proc    near
-        pop     d[erp3RetAdd]
+        pop     [erp3RetAdd]
         push    edi
         push    eax
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     edi,GDTLinear
-        assume ds:_cwDPMIEMU
         pop     ds
+        assume ds:_cwDPMIEMU
         pop     eax
         add     edi,DpmiEmuPL3_2_PL0
         and     edi,not 7
         push    es
-        push    ax
+        push    eax
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         mov     eax,offset rv45_pl0
         mov     WORD PTR es:[edi],ax            ;store low word of limit.
-        pop     ax
+        pop     eax
         pop     es
         pop     edi
         db 9ah
-        dd offset rv45_pl0,DpmiEmuPL3_2_PL0 ;instruction pre-fetch & load CS.
+;--- the far32 call is 7 bytes (9A OOOOOOOO SSSS)
+;--- but the old code had 2 0x00 bytes more!
+;        dd offset rv45_pl0,DpmiEmuPL3_2_PL0 ;instruction pre-fetch & load CS.
+        dd offset rv45_pl0
+        dw DpmiEmuPL3_2_PL0
 rv45_pl0:
-        push    d[erp3RetAdd]
-        ret
+;        push    [erp3RetAdd]
+;        ret
+        jmp     [erp3RetAdd]
 EmuRawPL32PL0   endp
 
-
-erp3RetAdd:
-        dd ?
 
 ;-------------------------------------------------------------------------------
 ;
 ;DPMI int 31h service simulation patch. This provides DPMI API services in a
 ;Raw/Vcpi environment.
+;stack: IRET16/IRET32 frame
 ;
 RawDPMIPatch    proc    far
         or      ah,ah
@@ -2972,7 +3039,7 @@ rv46_000A_0:
         push    eax
         mov     edi,offset RawSelBuffer
         mov     ax,KernalDS     ;DpmiEmuDS
-        mov     es,ax
+        mov     es,eax
         call    RawBGetDescriptor       ;copy original details.
         mov     BYTE PTR es:[edi+5],DescPresent+DescPL3+DescMemory+DescRWData
         pop     ebx
@@ -3052,7 +3119,7 @@ rv46_DPMI_0101:
 ;  fails this attempt with a carry flag set (but invalid error code, ax not
 ;  updated).  CauseWay will now have to check if the release selector in
 ;  DX is the same as SS and fail the call if so.  Thanks Powersoft.
-        mov     ax,ss
+        mov     eax,ss
         cmp     ax,dx
         pop     eax
         push    eax
@@ -3493,7 +3560,7 @@ rv46_0: mov     DWORD PTR es:[edi+0],ebx
 
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
 
         call PhysicalGetPages   ;get number of un-claimed pages.
         add     edx,NoneLockedPages     ;include currently un-locked pages.
@@ -3744,70 +3811,33 @@ rv46_DPMI_0801:
         call    RawUnMapPhys2Lin
         jmp     rv46_Done
         ;
-rv46_DPMI_0900:
-        cmp     al,00h          ;get & disable virtual interupts.
-        jnz     rv46_DPMI_0901
+rv46_DPMI_0900:                 ;enable/disable/get virtual interupts.
+        cmp     al,3
+        jae     rv46_NotOurs
         push    ebp
-        assume ds:nothing
+        mov     ebp, esp
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
         jz      rv46_1
         movzx   ebp,bp
-        mov     al,[ebp+(4)+(2+2+2)+(2+2)+1]
-        and     al,2
-        shr     al,1
-        and     b[ebp+(4)+(2+2+2)+(2+2)+1],255-2
-        pop     ebp
-        clc
-        jmp     rv46_Done
-rv46_1: mov     al,[ebp+(4)+(4+4+4)+(4+4)+1]
-        and     al,2
-        shr     al,1
-        and     b[ebp+(4)+(4+4+4)+(4+4)+1],255-2
-        pop     ebp
-        clc
-        jmp     rv46_Done
-        ;
-rv46_DPMI_0901:
-        cmp     al,01h          ;get & enable virtual interupts.
-        jnz     rv46_DPMI_0902
-        push    ebp
-        assume ds:nothing
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
-        jz      rv46_2
-        movzx   ebp,bp
-        mov     al,[ebp+(4)+(2+2+2)+(2+2)+1]
-        and     al,2
-        shr     al,1
-        or      b[ebp+(4)+(2+2+2)+(2+2)+1],2
-        pop     ebp
-        clc
-        jmp     rv46_Done
-rv46_2: mov     al,[ebp+(4)+(4+4+4)+(4+4)+1]
-        and     al,2
-        shr     al,1
-        or      b[ebp+(4)+(4+4+4)+(4+4)+1],2
-        pop     ebp
-        clc
-        jmp     rv46_Done
-        ;
-rv46_DPMI_0902:
-        cmp     al,02h          ;get virtual interupt state?
-        jnz     rv46_NotOurs
-        push    ebp
-        assume ds:nothing
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
-        jz      rv46_3
-        movzx   ebp,bp
-        mov     al,[ebp+(4)+(2+2+2)+(2+2)+1]
-        and     al,2
-        shr     al,1
-        pop     ebp
-        clc
-        jmp     rv46_Done
-rv46_3: mov     al,[ebp+(4)+(4+4+4)+(4+4)+1]
+        lea     ebp,[ebp+4+2*2]
+        jmp     rv46_2
+rv46_1:
+        lea     ebp,[ebp+4+2*4]
+rv46_2:
+        cmp     al,01h
+        ja      rv46_0902
+        jz      rv46_0901
+rv46_0900:                      ;disable virtual IF
+        mov     al,[ebp+1]
+        and     b[ebp+1],not 2
+        jmp     rv46_3
+rv46_0901:                      ;enable virtual IF
+        mov     al,[ebp+1]
+        or      b[ebp+1],2
+        jmp     rv46_3
+rv46_0902:                      ;get virtual IF
+        mov     al,[ebp+1]
+rv46_3:
         and     al,2
         shr     al,1
         pop     ebp
@@ -3826,7 +3856,7 @@ rv46_DPMI_0A00:
         push    ds
 ;       mov     ax,_cwMain
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         test    DOS4GFlag,-1
         assume ds:_cwDPMIEMU
@@ -3898,7 +3928,7 @@ rv46_DPMI_0B00:
         jnc     rv46_0B00_9
         ;
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         shl     ebx,16
         mov     bx,cx
@@ -3927,13 +3957,13 @@ rv46_0B00_1:
         ;
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         mov     ebp,esp
         mov     di,ss
         call    EmuRawPL32PL0
         ;
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         ;
         mov     eax,Dbg.Dbg_Address[esi]
         or      ebx,ebx
@@ -4042,7 +4072,7 @@ rv46_DPMI_0B01:
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         ;Check handle range.
@@ -4068,7 +4098,7 @@ rv46_DPMI_0B01:
         ;
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         mov     ebp,esp
         mov     di,ss
         call    EmuRawPL32PL0
@@ -4114,7 +4144,7 @@ rv46_DPMI_0B02:
         push    es
         push    eax
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         ;
         ;Check handle range.
         ;
@@ -4135,7 +4165,7 @@ rv46_DPMI_0B02:
         ;
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         mov     ebp,esp
         mov     di,ss
         call    EmuRawPL32PL0
@@ -4186,7 +4216,7 @@ rv46_DPMI_0B03:
         push    ds
         push    es
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         ;
         ;Check handle range.
         ;
@@ -4207,7 +4237,7 @@ rv46_DPMI_0B03:
         ;
         push    ds
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         mov     ebp,esp
         mov     di,ss
         call    EmuRawPL32PL0
@@ -4241,8 +4271,8 @@ rv46_Done:
         ;
         push    eax
         push    ebx
-        pushf
-        pop     ax                      ;get new flags.
+        pushfd
+        pop     eax                             ;get new flags.
         assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
         assume ds:_cwDPMIEMU
@@ -4268,11 +4298,9 @@ rv46_Use32Bit9:
 rv46_Use16Bit9:
         pop     ebx
         pop     eax
-        assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
         jz      rv46_Use32Bit10
-        db 66h
+;        db 66h
         iret
 rv46_Use32Bit10:
         iretd
@@ -4280,11 +4308,10 @@ rv46_Use32Bit10:
 rv46_NotOurs:
         ;Not a function recognised by us so pass control to previous handler.
         ;
-        assume ds:nothing
         jmp     FWORD PTR cs:[OldInt31]         ;pass it onto previous handler.
-        assume ds:_cwDPMIEMU
         ;
-OldInt31        dd offset IntNN386Catch+(31h*8)
+	align 4
+OldInt31 dd offset IntNN386Catch+(31h*8)
         dw DpmiEmuCS
 RawDPMIPatch    endp
 
@@ -4301,13 +4328,13 @@ rv47_Save:
         push    eax
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         test    BYTE PTR RawSystemFlags,1
         jz      rv47_Save32
         movzx   edi,di
 rv47_Save32:
-        mov     eax,d[RawStackPos]
+        mov     eax,[RawStackPos]
         mov     es:[edi],eax
         pop     ds
         pop     eax
@@ -4317,13 +4344,13 @@ rv47_Restore:
         push    eax
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         test    BYTE PTR RawSystemFlags,1
         jz      rv47_Restore32
         movzx   edi,di
 rv47_Restore32:
         mov     eax,es:[edi]
-        mov     d[RawStackPos],eax
+        mov     [RawStackPos],eax
         pop     ds
         pop     eax
         jmp     rv47_Done
@@ -4333,8 +4360,7 @@ rv47_Done:
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
         assume ds:_cwRaw
         jz      rv47_Use32
-        db 66h
-        retf
+        retw
 rv47_Use32:
         retf
         ;
@@ -4376,7 +4402,7 @@ PhysicalGetPage proc near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         cmp     MaxMemPhys,0
         assume ds:_cwDPMIEMU
@@ -4395,7 +4421,7 @@ PhysicalGetPage proc near
         ;
 rv50_8: and     edx,not 4095
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         dec     MaxMemPhys
         dec     TotalPhysical
@@ -4439,18 +4465,18 @@ PhysicalGetPages proc near
         push    fs
         push    gs
         mov     ax,DpmiEmuDS
-        mov     ds,ax
+        mov     ds,eax
         ;
-        mov     d[rv51_Total],0
+        mov     [rv51_Total],0
         call    GetVCPIPages
-        add     d[rv51_Total],edx
+        add     [rv51_Total],edx
 
 ; MED, 11/11/99
         test    edx,edx
         jne     pgp2                    ; VCPI available memory exists
         push    ds
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         mov     VCPIHasNoMem,1  ; flag no memory, so XMS gets a crack at it
         pop     ds
@@ -4458,27 +4484,27 @@ PhysicalGetPages proc near
 pgp2:
 
         call    GetXMSPages
-        add     d[rv51_Total],edx
+        add     [rv51_Total],edx
 
 ; MED, 11/11/99
         push    ds
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         mov     VCPIHasNoMem,0  ; reset flag
         pop     ds
         assume ds:_cwDPMIEMU
 
         call    GetINT15Pages
-        add     d[rv51_Total],edx
+        add     [rv51_Total],edx
         call    GetCONVPages
         jc      pgp3                    ; error allocating pages, MED, 11/15/99
-        add     d[rv51_Total],edx
+        add     [rv51_Total],edx
 
 pgp3:
-        mov     edx,d[rv51_Total]
+        mov     edx,[rv51_Total]
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         cmp     edx,MaxMemPhys
         jc      rv51_0
@@ -4499,8 +4525,9 @@ rv51_0: mov     TotalPhysical,edx
         pop     eax
         ret
         ;
-rv51_Total:
-        dd ?
+	align 4
+rv51_Total  dd ?
+
 PhysicalGetPages endp
 
 
@@ -4519,15 +4546,15 @@ GetVCPIPage     proc    near
         push    fs
         push    gs
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         cmp     ProtectedType,1 ;VCPI?
         assume ds:_cwDPMIEMU
         jnz     rv52_9
 
         mov     ax,KernalDS
-        mov     ds,ax
-        mov     es,ax
+        mov     ds,eax
+        mov     es,eax
         assume ds:_cwRaw
         mov     ax,0DE04h               ;allocate 4k page.
         mov     edi,offset MemIntBuffer
@@ -4585,15 +4612,15 @@ GetVCPIPages    proc    near
         push    gs
         xor     edx,edx
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         cmp     ProtectedType,1 ;VCPI?
         assume ds:_cwDPMIEMU
         jnz     rv53_9
         ;
         mov     ax,KernalDS
-        mov     ds,ax
-        mov     es,ax
+        mov     ds,eax
+        mov     es,eax
         assume ds:_cwRaw
         mov     ax,0DE03h               ;get number of free pages.
         mov     edi,offset MemIntBuffer
@@ -4645,7 +4672,7 @@ GetXMSPage      proc    near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         cmp     XMSPresent,0
@@ -4826,13 +4853,13 @@ GetXMSPages     proc    near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         mov     d[XMSTotal],0
         push    ds
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
 
 ; MED, 11/11/99
@@ -5060,7 +5087,7 @@ GetINT15Page    proc    near
         ;
         push    ds
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         cmp     XMSPresent,0
         assume ds:_cwDPMIEMU
@@ -5068,7 +5095,7 @@ GetINT15Page    proc    near
         jnz     rv56_9
         ;
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
 rv56_3: mov     esi,offset Int15Table
@@ -5097,7 +5124,7 @@ rv56_2: add     esi,4+4
         push    edi
         push    ax
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         pop     ax
         movzx   edi,WORD PTR es:[(VDiskSigVec*4)+2]
         shl     edi,4
@@ -5248,7 +5275,7 @@ rv56_nomaxlimit:
         push    ebx
         push    es
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         movzx   ebx,bl
         shl     ebx,2
         mov     dx,es:0[ebx]
@@ -5266,7 +5293,7 @@ rv56_nomaxlimit:
         push    ebx
         push    es
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         movzx   ebx,bl
         shl     ebx,2
         pushf
@@ -5320,13 +5347,13 @@ GetINT15Pages   proc    near
         push    gs
         ;
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         mov     [INT15hTotal],0
         ;
         push    ds
         mov     ax,MainDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwMain
         cmp     ProtectedType,1 ;VCPI?
         assume ds:_cwRaw
@@ -5407,7 +5434,7 @@ rv57_0: ;Need to get another block of memory.
         jnc     rv57_1          ;can't cope with any more.
         push    ax
         mov     ax,KernalZero
-        mov     es,ax
+        mov     es,eax
         pop     ax
         movzx   edi,WORD PTR es:[(VDiskSigVec*4)+2]
         shl     edi,4
@@ -5538,7 +5565,7 @@ GetCONVPage     proc    near
         push    gs
         ;
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         cmp     CONVSaveSize,-1
@@ -5731,7 +5758,7 @@ GetCONVPages    proc    near
         push    fs
         push    gs
         mov     ax,KernalDS
-        mov     ds,ax
+        mov     ds,eax
         assume ds:_cwRaw
         ;
         mov     d[CONVTotal],0
@@ -5972,6 +5999,7 @@ rv62_0: mov     al,dl
         ret
 Bin2HexE        endp
 
+        assume ds:_cwDPMIEMU
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -5995,9 +6023,7 @@ rv64_Done:
         xor     eax,eax
         pushf
         pop     ax                      ;get new flags.
-        assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
         jz      rv64_Use32Bit8
         mov     bx,sp
         mov     bx,ss:[bx+(4+4)+(2+2)]          ;get original flags.
@@ -6008,9 +6034,7 @@ rv64_Use16Bit8:
         and     bx,0000111000000000b            ;retain IF.
         and     ax,1111000111111111b            ;lose IF.
         or      eax,ebx                 ;get old IF.
-        assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
         jz      rv64_Use32Bit9
         mov     bx,sp
         mov     ss:[bx+(4+4)+(2+2)],ax          ;modify stack flags.
@@ -6020,11 +6044,9 @@ rv64_Use32Bit9:
 rv64_Use16Bit9:
         pop     ebx
         pop     eax
-        assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1
-        assume ds:_cwDPMIEMU
         jz      rv64_Use32Bit10
-        db 66h
+;        db 66h
         iret
 rv64_Use32Bit10:
         iretd
@@ -6032,14 +6054,15 @@ rv64_Use32Bit10:
 rv64_NotOurs:
         ;Not a function recognised by us so pass control to previous handler.
         ;
-        assume ds:nothing
-        jmp     FWORD PTR cs:[OldpInt2f]                ;pass it onto previous handler.
-        assume ds:_cwDPMIEMU
+        jmp     cs:[OldpInt2f]                  ;pass it onto previous handler.
 ;
-OldpInt2f       dd offset IntNN386Catch+(2fh*8)
+OldpInt2f label fword
+        dd offset IntNN386Catch+(2fh*8)
         dw DpmiEmuCS
+
 Raw2FPatch      endp
 
+        assume ds:_cwDPMIEMU
 
         include interrup.inc
         include ldt.inc

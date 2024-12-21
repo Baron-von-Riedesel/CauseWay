@@ -2,5 +2,6 @@
 *.EXE
 *.MAP
 3plib
-watcom
 le23p
+Test
+watcom

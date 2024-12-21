@@ -28,24 +28,20 @@ Int10hOpen      proc    near
         mov     bl,10h
         Sys     GetVect
         test    BYTE PTR es:SystemFlags,1
-        jz      int101_Use32
-        mov     w[OldInt10h],dx
-        mov     w[OldInt10h+2],cx
-        jmp     int101_Use0
-int101_Use32:
-        mov     d[OldInt10h],edx
+        jz      @F
+        movzx edx, dx
+@@:
+        mov     d[OldInt10h+0],edx
         mov     w[OldInt10h+4],cx
-int101_Use0:
         mov     edx,offset Int10h
-        mov     cx,cs
+        mov     ecx,cs
         mov     bl,10h
         Sys     SetVect
         assume es:nothing
         assume ds:nothing
         clc
 int101_9:
-        db 66h
-        retf
+        retw
 Int10hOpen      endp
 
 
@@ -57,30 +53,17 @@ Int10hClose     proc    near
         push    ds
         mov     ds,cs:Int10hDDSeg
         assume ds:_Int10h
-        cmp     d[OldInt10h],0
+        cmp     w[OldInt10h+4],0
         jz      int102_9
-        mov     ds,Int10hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        mov     ds,cs:Int10hDDSeg
-        assume ds:_Int10h
-        jz      int102_Use32
-        movzx   edx,w[OldInt10h]
-        mov     cx,w[OldInt10h+2]
-        jmp     int102_Use0
-int102_Use32:
-        mov     edx,d[OldInt10h]
+        mov     edx,d[OldInt10h+0]
         mov     cx,w[OldInt10h+4]
-int102_Use0:
         mov     bl,10h
         Sys     SetVect
-        assume ds:nothing
 int102_9:
         pop     ds
+        assume ds:nothing
         ;
-        db 66h
-        retf
+        retw
 Int10hClose     endp
 
 
@@ -1067,25 +1050,15 @@ int103_Use32Bit10:
 int103_NotOurs:
         ;Not a function recognised by us so pass control to previous handler.
         ;
-        push    ds
-        mov     ds,cs:Int10hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
-        jz      int103_Use32Bit11
-        db 66h
-        jmp     FWORD PTR cs:[OldInt10h]                ;pass it onto previous handler.
-int103_Use32Bit11:
         jmp     FWORD PTR cs:[OldInt10h]                ;pass it onto previous handler.
 Int10h  endp
 ;
 
-
+	align 4
 OldInt10h       df 0
-Int10hCSeg      dw ?
-Int10hDSeg      dw ?
-Int10hDDSeg     dw ?
+Int10hCSeg      dd ?
+Int10hDSeg      dd ?
+Int10hDDSeg     dd ?
 ;
 Int10hStaticSel dw ?
 Int10hUltraFont dw ?

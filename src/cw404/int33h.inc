@@ -12,8 +12,8 @@ MouseEventStack df 0
 ;
 OldInt33h       df 0
 Int33hCSeg      dw ?
-Int33hDSeg      dw ?
-Int33hDDSeg     dw ?
+Int33hDSeg      dd ?
+Int33hDDSeg     dd ?
 ;
 Int33hCallBack  dd 0
 Int33hUserCode  df 0
@@ -36,11 +36,11 @@ Int33hOpen      proc    near
         test    BYTE PTR es:SystemFlags,1
         jz      int331_32bit
         mov     eax,offset Int33hDummy
-        mov     w[Int33hUserCode],ax
+        mov     w[Int33hUserCode+0],ax
         mov     w[Int33hUserCode+2],cs
         jmp     int331_0bit
 int331_32bit:
-        mov     d[Int33hUserCode],offset Int33hDummy
+        mov     d[Int33hUserCode+0],offset Int33hDummy
         mov     w[Int33hUserCode+4],cs
 int331_0bit:
         ;
@@ -74,15 +74,12 @@ int331_0bit:
         Sys     GetVect
         test    BYTE PTR es:SystemFlags,1
         jz      int331_Use32
-        mov     w[OldInt33h],dx
-        mov     w[OldInt33h+2],cx
-        jmp     int331_Use0
+        movzx edx, dx
 int331_Use32:
-        mov     d[OldInt33h],edx
+        mov     d[OldInt33h+0],edx
         mov     w[OldInt33h+4],cx
-int331_Use0:
         mov     edx,offset Int33h
-        mov     cx,cs
+        mov     ecx,cs
         mov     bl,33h
         Sys     SetVect
         ;
@@ -111,34 +108,22 @@ Int33hClose     proc    near
         jz      int332_8
 ;       mov     ax,0
 ;       int     33h
-        mov     dx,w[Int33hCallBack]
+        mov     dx,w[Int33hCallBack+0]
         mov     cx,w[Int33hCallBack+2]
         Sys     RelCallBack
         ;
 int332_8:
         ;Release interupt vector.
         ;
-        cmp     d[OldInt33h],0
+        cmp     w[OldInt33h+4],0
         jz      int332_9
-        mov     ds,Int33hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        mov     ds,cs:Int33hDDSeg
-        assume ds:_Int33h
-        jz      int332_Use32
-        movzx   edx,w[OldInt33h]
-        mov     cx,w[OldInt33h+2]
-        jmp     int332_Use0
-int332_Use32:
-        mov     edx,d[OldInt33h]
+        mov     edx,d[OldInt33h+0]
         mov     cx,w[OldInt33h+4]
-int332_Use0:
         mov     bl,33h
         Sys     SetVect
-        assume ds:nothing
 int332_9:
         pop     ds
+        assume ds:nothing
         ;
         db 66h
         retf
@@ -185,16 +170,16 @@ int333_SwapEvent:
         assume ds:_Int33h
         pop     ds
         jz      int333_se1
-        xchg    dx,w[Int33hUserCode]
+        xchg    dx,w[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+2]
         mov     w[Int33hUserCode+2],es
-        mov     es,ax
+        mov     es,eax
         jmp     int333_se2
 int333_se1:
-        xchg    edx,d[Int33hUserCode]
+        xchg    edx,d[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+4]
         mov     w[Int33hUserCode+4],es
-        mov     es,ax
+        mov     es,eax
 int333_se2:
         xchg    cx,w[Int33hUserMask]
         push    ecx
@@ -230,9 +215,9 @@ int333_se0:
         xchg    dx,w[Int33hUserCode]
         mov     ax,w[Int33hUserCode+2]
         mov     w[Int33hUserCode+2],es
-        mov     bx,es
-        mov     es,ax
-        mov     ax,cs
+        mov     ebx,es
+        mov     es,eax
+        mov     eax,cs
         cmp     ax,bx
         jnz     int333_se4
         mov     Int33hUserOK,0
@@ -246,9 +231,9 @@ int333_se3:
         xchg    edx,d[Int33hUserCode]
         mov     ax,w[Int33hUserCode+4]
         mov     w[Int33hUserCode+4],es
-        mov     bx,es
-        mov     es,ax
-        mov     ax,cs
+        mov     ebx,es
+        mov     es,eax
+        mov     eax,cs
         cmp     ax,bx
         jnz     int333_se4
         mov     Int33hUserOK,0
@@ -322,7 +307,7 @@ int333_SetCursor:
         push    fs
         push    eax
         xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int333_Use32Bit50
@@ -468,7 +453,7 @@ int333_SaveState:
         ;
         push    eax
         xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int333_Use32Bit58
@@ -681,16 +666,6 @@ int333_Use32Bit10:
 int333_NotOurs:
         ;Not a function recognised by us so pass control to previous handler.
         ;
-        push    ds
-        mov     ds,cs:Int33hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
-        jz      int333_Use32Bit11
-        db 66h
-        jmp     FWORD PTR cs:[OldInt33h]                ;pass it onto previous handler.
-int333_Use32Bit11:
         jmp     FWORD PTR cs:[OldInt33h]                ;pass it onto previous handler.
 Int33h  endp
 
@@ -750,8 +725,8 @@ int334_ok:
         ;
         mov     d[MouseEventStack],esp
         mov     w[MouseEventStack+4],ss
-        mov     ax,ds
-        mov     ss,ax
+        mov     eax,ds
+        mov     ss,eax
         mov     esp,offset MouseEventStack
         push    ds
         mov     ds,Int33hDSeg
