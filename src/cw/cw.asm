@@ -1,10 +1,12 @@
-;
-;Things waiting to be added.
-;
-;
-;Add an option to create a list of auto-load module names and append them.
-;
-;
+
+;--- CW converts LE to P3
+;--- if image is P3 already, it displays current format with /i
+;--- or sets various parameters for CW dos extender.
+
+;--- this version has been adjusted and needs to find cwstub.exe!
+
+;---  WL32 needs .dosseg to ensure that stack is last
+
 	.386
 	.model flat
 	.dosseg
@@ -23,9 +25,6 @@ _Seg_	ends
 if @Model ne 7
 DGROUP group _TEXT, _DATA, _BSS, STACK
 endif
-
-; WL32 doesn't organize segments if model is flat!
-; so ensure CONST is defined BEFORE _BSS ( so _BSS and STACK come last )
 
 	.const
 
@@ -404,6 +403,7 @@ endif
 	cmp	ax,1
 	jc	System		;need at least 2 names.
 	mov	ErrorNumber,5
+	@dbgmsg "debug messages ON",13,10
 	cmp	w[OptionTable+128],0	;get file name mask.
 	jz	System		;must have a name.
 	cmp	OptionTable+'N',0
@@ -690,7 +690,8 @@ System	proc	near
 	jnz	@@NoName
 	mov	edx,offset EXEFileName
 	call	StringPrint
-@@NoName:	movzx	ebx,ErrorNumber
+@@NoName:
+	movzx	ebx,ErrorNumber
 	shl	ebx,2
 	add	ebx,offset ErrorMessages	;get error message.
 	mov	edx,[ebx]
@@ -1365,6 +1366,7 @@ Create3PHeader	endp
 ;Create a 3P format relocation table from the LE fixup tables.
 ;
 CreateRelocations proc near
+	@dbgmsg "CreateRelocations start",13,10
 	mov	esi,offset BuildRelocsText
 	call	LEPrintString
 	;
@@ -1381,7 +1383,8 @@ CreateRelocations proc near
 	add	eax,4
 	mov	SegmentList,eax
 	;
-@@0:	mov	esi,ObjectBase
+@@0:
+	mov	esi,ObjectBase
 	mov	ecx,[esi+10h]	;Get number of pages.
 	mov	PageCount,ecx
 	mov	PageCount+4,0
@@ -1475,7 +1478,8 @@ CreateRelocations proc near
 	mov	ErrorNumber,36
 	jc	@@9
 	;
-@@Neg0:	add	esi,2+1
+@@Neg0:
+	add	esi,2+1
 	sub	ecx,2+1
 	jmp	@@3
 	;
@@ -1572,7 +1576,8 @@ CreateRelocations proc near
 	sub	eax,ebx
 	mov	[edi],eax
 	;
-@@sfNeg1:	add	esi,2+1+2
+@@sfNeg1:
+	add	esi,2+1+2
 	sub	ecx,2+1+2
 	test	dh,4
 	jz	@@3
@@ -1674,10 +1679,12 @@ CreateRelocations proc near
 	dec	ObjectCount
 	jnz	@@0
 	;
-@@8:	clc
+@@8:
+	clc
 	ret
 	;
-@@9:	stc
+@@9:
+	stc
 	ret
 CreateRelocations endp
 
@@ -1706,7 +1713,8 @@ AddRelocationEntry proc near
 	mov	RelocationList,esi
 	mov	d[esi],0
 	;
-@@0:	mov	esi,RelocationList
+@@0:
+	mov	esi,RelocationList
 	mov	ecx,[esi]		;Get current number of entries.
 	inc	ecx
 	shl	ecx,2		;dword per entry.
@@ -1722,8 +1730,10 @@ AddRelocationEntry proc near
 	clc
 	jmp	@@10
 	;
-@@9:	stc
-@@10:	popad
+@@9:
+	stc
+@@10:
+	popad
 	ret
 AddRelocationEntry endp
 
@@ -1733,6 +1743,7 @@ AddRelocationEntry endp
 ;Create 3P version of LE file in memory.
 ;
 Create3PFile	proc	near
+	@dbgmsg "Create3PFile enter",13,10
 	mov	esi,offset BuildImageText
 	call	LEPrintString
 	;
@@ -1742,7 +1753,8 @@ Create3PFile	proc	near
 	mov	ObjectCount,ecx
 	mov	ObjectBase,esi
 	;
-@@0:	cmp	ObjectList,0		;Started object list yet?
+@@0:                    ;<--- loop
+	cmp	ObjectList,0	;Started object list yet?
 	jnz	@@0_0
 	mov	ecx,4
 	call	LEMalloc
@@ -1750,7 +1762,8 @@ Create3PFile	proc	near
 	jc	@@9
 	mov	ObjectList,esi
 	mov	d[esi],0
-@@0_0:	mov	esi,ObjectList
+@@0_0:
+	mov	esi,ObjectList
 	mov	eax,[esi]		;Get number of entries.
 	inc	eax
 	mov	edx,size _Seg_
@@ -1798,7 +1811,8 @@ Create3PFile	proc	near
 	test	eax,2		;Writeable?
 	jz	@@1
 ;	add	ebx,2		;Read only data.
-@@1:	shl	ebx,24
+@@1:
+	shl	ebx,24
 	test	eax,2000h		;Big bit set?
 	jz	@@2
 	or	ebx,1 shl 26		;Force 32-bit.
@@ -1809,7 +1823,8 @@ Create3PFile	proc	near
 	jc	@@4
 	shr	eax,12
 	or	eax,1 shl 20
-@@4:	or	ebx,eax		;Include length.
+@@4:
+	or	ebx,eax		;Include length.
 	or	ebx,1 shl 27		;mark target type
 	mov	[edi]._Seg_.Seg_Type,ebx	;Store the 3P type.
 	;
@@ -1822,17 +1837,20 @@ Create3PFile	proc	near
 	add	ebx,[ebx+80h]
 	sub	ebx,LEOffset
 	;
-@@5:	mov	eax,edx		;Get page number.
+@@5:
+	mov	eax,edx		;Get page number.
 	dec	eax		;make it base 0.
 	shl	eax,12		;*4096.
 	add	eax,ebx		;Make offset from data pages.
 	mov	esi,eax
 	;
 	mov	eax,4096		;Default page size.
-@@6:	cmp	ebp,eax		;Want whole page?
+@@6:
+	cmp	ebp,eax		;Want whole page?
 	jnc	@@7
 	mov	eax,ebp		;Force smaller value.
-@@7:	push	ecx
+@@7:
+	push	ecx
 	mov	ecx,eax		;Get length to copy.
 	rep	movsb		;Copy this page.
 	pop	ecx
@@ -1848,7 +1866,8 @@ Create3PFile	proc	near
 	clc
 	ret
 	;
-@@9:	stc
+@@9:
+	stc
 	ret
 Create3PFile	endp
 
@@ -1858,6 +1877,7 @@ Create3PFile	endp
 ;Fetch the specified LE file, just the LE bit not its stub.
 ;
 FetchLEFile	proc	near
+	@dbgmsg "FetchLEFile enter",13,10
 	mov	esi,offset ReadingLEText
 	call	LEPrintString
 	;
@@ -2064,9 +2084,11 @@ if @Model ne 7
 endif
 	clc
 	jmp	l1
-l0:	xor	esi,esi
+l0:
+	xor	esi,esi
 	stc
-l1:	pop	eax
+l1:
+	pop	eax
 	ret
 LEMalloc	endp
 
@@ -4522,8 +4544,9 @@ UpperChar	endp
 ;--- get linear memory
 ;--- in: size in ECX
 ;--- out: linear address in ESI
+;--- must preserve ECX
 
-GetMemLinear32 PROC uses bx di
+GetMemLinear32 PROC uses ecx bx di
 	push ecx
 	pop cx
 	pop bx
@@ -4552,15 +4575,18 @@ RelMemLinear32 ENDP
 ;--- resize linear memory block
 ;--- in: address in ESI, new size in ECX
 
-ResMemLinear32 PROC uses di bx
+ResMemLinear32 PROC uses ecx di bx
 	push esi
 	pop di
 	pop si
 	push ecx
 	pop cx
 	pop bx
-	mov ax, 503h
+	mov ax, 503h	; new size in BX:CX, handle (=address) in SI:DI
 	int 31h
+	push si
+	push di
+	pop esi
 	ret
 ResMemLinear32 ENDP
 

@@ -10,7 +10,7 @@
 
 	include equates.inc
 	include cmacros.inc
-	include ..\strucs.inc
+	include strucs.inc
 
 	.data
 

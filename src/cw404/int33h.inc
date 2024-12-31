@@ -8,20 +8,18 @@ Int33hStart     label byte
 
 MouseEventTab   db size RealRegsStruc dup (0)
         db 1024 dup (0)
-MouseEventStack df 0
+MouseEventStack label byte
 ;
 OldInt33h       df 0
 Int33hCSeg      dw ?
-Int33hDSeg      dd ?
-Int33hDDSeg     dd ?
+Int33hDSeg      dd ?	; _cwMain data selector
+Int33hDDSeg     dd ?	; _Int33h data selector
 ;
 Int33hCallBack  dd 0
 Int33hUserCode  df 0
 Int33hUserMask  dw 0
 Int33hUserOK    dw 0
 ;
-        db 4 dup (0)
-
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 Int33hOpen      proc    near
@@ -30,7 +28,7 @@ Int33hOpen      proc    near
 ;
         assume ds:_Int33h
         assume es:_cwMain
-        mov     Int33hDSeg,es   ;Store cwCode selector.
+        mov     Int33hDSeg,es   ;store _cwMain data selector.
         mov     Int33hCSeg,cs   ;store this segment.
         mov     Int33hDDSeg,ds
         test    BYTE PTR es:SystemFlags,1
@@ -88,7 +86,6 @@ int331_Use32:
 int331_9:
         clc
         ;
-        db 66h
         retf
 Int33hOpen      endp
 
@@ -125,7 +122,6 @@ int332_9:
         pop     ds
         assume ds:nothing
         ;
-        db 66h
         retf
 Int33hClose     endp
 
@@ -212,7 +208,7 @@ int333_se0:
         assume ds:_Int33h
         pop     ds
         jz      int333_se3
-        xchg    dx,w[Int33hUserCode]
+        xchg    dx,w[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+2]
         mov     w[Int33hUserCode+2],es
         mov     ebx,es
@@ -223,12 +219,12 @@ int333_se0:
         mov     Int33hUserOK,0
         push    eax
         mov     eax,offset Int33hDummy
-        mov     w[Int33hUserCode],ax
+        mov     w[Int33hUserCode+0],ax
         pop     eax
         mov     w[Int33hUserCode+2],cs
         jmp     int333_se5
 int333_se3:
-        xchg    edx,d[Int33hUserCode]
+        xchg    edx,d[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+4]
         mov     w[Int33hUserCode+4],es
         mov     ebx,es
@@ -237,7 +233,7 @@ int333_se3:
         cmp     ax,bx
         jnz     int333_se4
         mov     Int33hUserOK,0
-        mov     d[Int33hUserCode],offset Int33hDummy
+        mov     d[Int33hUserCode+0],offset Int33hDummy
         mov     w[Int33hUserCode+4],cs
 int333_se5:
         push    ecx
@@ -274,7 +270,7 @@ int333_Reset:
         mov     ds,cs:Int33hDDSeg
         assume ds:_Int33h
         mov     Int33hUserOK,0
-        mov     d[Int33hUserCode],offset Int33hDummy
+        mov     d[Int33hUserCode+0],offset Int33hDummy
         push    ds
         mov     ds,Int33hDSeg
         assume ds:_cwMain
@@ -373,11 +369,11 @@ int333_SetEvent:
         assume ds:_Int33h
         mov     Int33hUserOK,0          ;disable old handler.
         jz      int333_Use32Bit51
-        mov     w[Int33hUserCode],dx
+        mov     w[Int33hUserCode+0],dx
         mov     w[Int33hUserCode+2],es
         jmp     int333_Use16Bit51
 int333_Use32Bit51:
-        mov     d[Int33hUserCode],edx
+        mov     d[Int33hUserCode+0],edx
         mov     w[Int33hUserCode+4],es
 int333_Use16Bit51:
         mov     w[Int33hUserMask],cx
@@ -485,26 +481,21 @@ int333_Use32Bit58:
         ;
         mov     ds,cs:Int33hDDSeg
         assume ds:_Int33h
-        mov     eax,d[Int33hUserCode]
-        mov     es:[edi],eax
-        add     edi,4
+        cld
+        mov     eax,d[Int33hUserCode+0]
+        stosd   es:[edi]
         mov     ax,w[Int33hUserCode+4]
-        mov     es:[edi],ax
-        add     edi,2
-        mov     ax,w[Int33hUserOK]
-        mov     es:[edi],ax
-        add     edi,2
-        mov     ax,w[Int33hUserMask]
-        mov     es:[edi],ax
-        add     edi,2
-        assume ds:nothing
+        stosw   es:[edi]
+        mov     ax,[Int33hUserOK]
+        stosw   es:[edi]
+        mov     ax,[Int33hUserMask]
+        stosw   es:[edi]
         ;
         mov     ds,cs:Int33hDSeg
         assume ds:_cwMain
         xor     esi,esi
         mov     ds,WORD PTR fs:[EPSP_Struc.EPSP_TransProt]
         assume ds:nothing
-        cld
         rep     movsb
         pop     fs
         pop     es
@@ -569,22 +560,18 @@ int333_Use32Bit59:
         push    es
         mov     es,cs:Int33hDDSeg
         assume es:_Int33h
-        mov     eax,[esi]
-        mov     DWORD PTR es:[Int33hUserCode],eax
-        add     esi,4
-        mov     ax,[esi]
+        cld
+        lodsd   [esi]
+        mov     DWORD PTR es:[Int33hUserCode+0],eax
+        lodsw   [esi]
         mov     WORD PTR es:[Int33hUserCode+4],ax
-        add     esi,2
-        mov     ax,[esi]
-        mov     WORD PTR es:[Int33hUserOK],ax
-        add     esi,2
-        mov     ax,[esi]
-        mov     WORD PTR es:[Int33hUserMask],ax
-        add     esi,2
+        lodsw   [esi]
+        mov     es:[Int33hUserOK],ax
+        lodsw   [esi]
+        mov     es:[Int33hUserMask],ax
         assume es:nothing
         pop     es
         pop     ds
-        cld
         rep     movsb
         ;
         pop     es
@@ -634,9 +621,9 @@ int333_Done:
 int333_Use32Bit8:
         mov     bx,ss:[esp+(4+4)+(4+4)]         ;get original flags.
 int333_Use16Bit8:
-        and     bx,0000011000000000b            ;retain IF.
-        and     ax,1111100111111111b            ;lose IF.
-        or      ax,bx                   ;get old IF.
+        and     bx,0000011000000000b            ;retain IF & DF.
+        and     ah,11111001b                    ;lose IF & DF.
+        or      ax,bx                           ;get old IF.
         push    ds
         mov     ds,cs:Int33hDSeg
         assume ds:_cwMain
@@ -671,8 +658,13 @@ Int33h  endp
 
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
+;--- real-mode callback entry
+;--- es:(e)di -> real-mode call struct
+;--- ds:(e)si -> real-mode stack
+;--- no need to preserve std registers except ES:EDI
+
 MouseEvent      proc    far
-        push    ax
+
         push    ds
         mov     ds,cs:Int33hDSeg
         assume ds:_cwMain
@@ -680,63 +672,34 @@ MouseEvent      proc    far
         assume ds:nothing
         pop     ds
         jz      int334_start32
-        ;
-        mov     ax,[si]         ;get stacked offset.
-        mov     es:RealRegsStruc.Real_IP[di],ax
-        mov     ax,2[si]
-        mov     es:RealRegsStruc.Real_CS[di],ax
-        add     es:RealRegsStruc.Real_SP[di],4
-        jmp     int334_start0
-        ;
+        movzx esi, si
+        movzx edi, di
 int334_start32:
-;       mov     ax,[esi]                ;get stacked offset.
-        mov     ax,[si]         ;get stacked offset., MED 01/24/95
-
+        cld
+        lodsw   [esi]
         mov     es:RealRegsStruc.Real_IP[edi],ax
-;       mov     ax,2[esi]
-        mov     ax,2[si]        ; MED 01/24/95
-
+        lodsw   [esi]
         mov     es:RealRegsStruc.Real_CS[edi],ax
         add     es:RealRegsStruc.Real_SP[edi],4
         ;
-int334_start0:
-        pop     ax
         push    ds
         push    es
-        push    fs
-        push    gs
-        pushad
+        push    edi
         mov     ds,cs:Int33hDDSeg
         assume ds:_Int33h
         ;
-        cmp     w[MouseEventStack+4],0
-        jz      int334_ok
-        mov     al,1
-        call    Bord33
-int334_shit:
-        jmp     int334_shit
-        mov     ax,-1
-        mov     es,ax
-        jmp     int334_Exit
-        ;
-int334_ok:
         cmp     w[Int33hUserOK],0
         jz      int334_Exit
-        ;
-        mov     d[MouseEventStack],esp
-        mov     w[MouseEventStack+4],ss
-        mov     eax,ds
-        mov     ss,eax
+        mov     eax, ss
+        mov     ecx, ds
+        mov     edx, esp
+        cmp     ax, cx
+        jz      @F
+        mov     ss,ecx
         mov     esp,offset MouseEventStack
-        push    ds
-        mov     ds,Int33hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:_Int33h
-        pop     ds
-        jz      int334_its32
-        movzx   edi,di
-int334_its32:
+@@:
+        push    eax
+        push    edx
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         movsx   eax,ax
         mov     ebx,es:RealRegsStruc.Real_EBX[edi]
@@ -750,34 +713,22 @@ int334_its32:
         mov     edi,es:RealRegsStruc.Real_EDI[edi]
         movsx   edi,di
         ;
-        mov     ds,Int33hDSeg
-        assume ds:_cwMain
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        jz      int334_Use32Bit
-        db 66h
-        call    FWORD PTR cs:[Int33hUserCode]
-        jmp     int334_OldStack
-int334_Use32Bit:
-        call    FWORD PTR cs:[Int33hUserCode]
-int334_OldStack:
-        lss     esp,FWORD PTR cs:[MouseEventStack]
-        push    ds
-        mov     ds,cs:Int33hDDSeg
-        assume ds:_Int33h
-        mov     w[MouseEventStack+4],0
-        assume ds:nothing
-        pop     ds
-int334_Exit:
-        popad
         mov     ds,cs:Int33hDSeg
         assume ds:_cwMain
         test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     gs
-        pop     fs
+        jz      int334_Use32Bit
+        db 66h
+int334_Use32Bit:
+        call    FWORD PTR cs:[Int33hUserCode]
+        lss     esp,[esp]
+int334_Exit:
+        mov     ds,cs:Int33hDSeg
+        assume ds:_cwMain
+        test    BYTE PTR SystemFlags,1
+        pop     edi
         pop     es
         pop     ds
+        assume ds:nothing
         jz      int334_Use32Bit2
         iret
 int334_Use32Bit2:
@@ -794,13 +745,13 @@ Int33hDummy     proc    near
         assume ds:nothing
         pop     ds
         jz      int335_32Bit
-        db 66h
-        retf
+        retw
 int335_32Bit:
         retf
 Int33hDummy     endp
 
 
+if 0
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Bord33  proc    near
         push    ax
@@ -819,7 +770,7 @@ Bord33  proc    near
         pop     ax
         ret
 Bord33  endp
-
+endif
 
 Int33hEnd       label byte
 _Int33h ends

@@ -1198,16 +1198,29 @@ Real_EBP	dd ?	;EBP
 Real_EBX	dd ?	;EBX
 Real_EDX	dd ?	;EDX
 Real_ECX	dd ?	;ECX
+union
 Real_EAX	dd ?	;EAX
+Real_AX		dw ?
+ends
 Real_Flags	dw ?	;FLAGS
 Real_ES	dw ?	;ES
 Real_DS	dw ?	;DS
 Real_FS	dw ?	;FS
 Real_GS	dw ?	;GS
+union
+Real_CSIP dd ?	;CS:IP
+struct
 Real_IP	dw ?	;IP
 Real_CS	dw ?	;CS
+ends
+ends
+union
+Real_SSSP dd ?	;SS:SP
+struct
 Real_SP	dw ?	;SP
 Real_SS	dw ?	;SS
+ends
+ends
 RealRegsStruc ends
 
 

@@ -7,3 +7,7 @@
    - segment register moves changed to 32-bit in 32-bit code segments.
    - added ALIGNs in data segments to avoid unaligned accesses.
    - fixed: emulation of DPMI functions 090x.
+   - int 41h "protected-mode debugger API": ensure that interrupt isn't
+     reflected to real-mode.
+   - invalid opcode fault wasn't reported as exception, but as interrupt only;
+     changed to be a true exception (#06).

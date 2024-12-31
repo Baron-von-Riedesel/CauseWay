@@ -1,3 +1,5 @@
+
+;--- for RAW/VCPI mode
 ;-------------------------------------------------------------------------------
 ;
 ;Allocate block of descriptor entries.
@@ -35,7 +37,7 @@ RawGetDescriptors proc near
         ;Search for single selector.
         ;
         repne   scasb           ;find a zero.
-        jnz     ldt1_8
+        jnz     ldt1_err
         dec     edi
         inc     al
         mov     es:[edi],al
@@ -43,10 +45,11 @@ RawGetDescriptors proc near
         ;
         ;search for multiple selectors.
         ;
-ldt1_0: repne   scasb           ;find a zero.
-        jnz     ldt1_8
+ldt1_0:
+        repne   scasb           ;find a zero.
+        jnz     ldt1_err
         cmp     edx,ecx
-        jnc     ldt1_8
+        jnc     ldt1_err
         push    ecx
         push    edi
         mov     ecx,edx
@@ -61,12 +64,13 @@ ldt1_0: repne   scasb           ;find a zero.
         inc     al
         rep     stosb           ;mark all entries as used.
         pop     edi
-ldt1_1: sub     edi,MDTLinear+4
+ldt1_1:
+        sub     edi,MDTLinear+4
         shl     edi,3
         push    edi
         add     edi,MDTLinear
         xor     eax,eax
-        mov     DWORD PTR es:[edi],eax
+        mov     es:[edi+0],eax
         mov     DWORD PTR es:[edi+4],(DescPresent+DescMemory+DescRWData+DescPL3) shl 8
         or      edx,edx
         jz      ldt1_2
@@ -84,9 +88,8 @@ ldt1_2: pop     eax
         or      ax,3+4          ;RPL=3, TI=1
         clc
         jmp     ldt1_9
-        ;
-ldt1_8: stc
-        ;
+ldt1_err:
+        stc
 ldt1_9:
         pop     es
         pop     ds
@@ -161,8 +164,8 @@ ldt2_3:
         and     esi,not 7
         add     esi,MDTLinear
         xor     eax,eax
-        mov     DWORD PTR es:[esi],eax
-        mov     DWORD PTR es:[esi+4],eax
+        mov     es:[esi+0],eax
+        mov     es:[esi+4],eax
         ;
         clc
         pop     es
@@ -449,7 +452,6 @@ RawGetSelBase   endp
 RawBPutDescriptor proc near
         ;
         push    eax
-        push    ecx
         push    esi
         push    edi
         push    ds
@@ -483,7 +485,6 @@ ldt8_Use32:
         pop     ds
         pop     edi
         pop     esi
-        pop     ecx
         pop     eax
         ret
         assume ds:_cwDPMIEMU
@@ -502,7 +503,6 @@ RawBPutDescriptor endp
 RawBGetDescriptor proc near
         ;
         push    eax
-        push    ecx
         push    esi
         push    edi
         push    ds
@@ -526,7 +526,6 @@ ldt9_Use32:
         pop     ds
         pop     edi
         pop     esi
-        pop     ecx
         pop     eax
         ret
 RawBGetDescriptor endp

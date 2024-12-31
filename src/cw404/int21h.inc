@@ -9,7 +9,7 @@ Int21hStart     label byte
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 OldInt21h       df 0
 Int21hCSeg      dw ?
-Int21hDSeg      dd ?
+Int21hDSeg      dd ?    ; data selector for _cwMain
 Int21hDDSeg     dd ?
 Int21hSystemFlags dd ?
 ;
@@ -30,43 +30,6 @@ DTASize equ     44-1
 
 ;------------------------------------------------------------------------------
 ;
-; MED 02/02/2003, in STRUCS.INC
-;;Some equates to make stacked register access simpler.
-;
-;Int_EDI        equ     0
-;Int_DI equ     0
-;Int_ESI        equ     4
-;Int_SI equ     4
-;Int_EBP        equ     8
-;Int_BP equ     8
-;Int_ESP        equ     12
-;Int_SP equ     12
-;Int_EBX        equ     16
-;Int_BX equ     16
-;Int_BL equ     16
-;Int_BH equ     17
-;Int_EDX        equ     20
-;Int_DX equ     20
-;Int_DL equ     20
-;Int_DH equ     21
-;Int_ECX        equ     24
-;Int_CX equ     24
-;Int_CL equ     24
-;Int_CH equ     25
-;Int_EAX        equ     28
-;Int_AX equ     28
-;Int_AL equ     28
-;Int_AH equ     29
-;Int_GS equ     32
-;Int_FS equ     36
-;Int_ES equ     40
-;Int_DS equ     44
-;Int_Off        equ     48
-;Int_Seg16      equ     50
-;Int_Seg32      equ     52
-;Int_Flags16    equ     52
-;Int_Flags32    equ     56
-
 
 Int21h_repmovs  macro
         push    ecx
@@ -112,7 +75,7 @@ Int21h  proc    near
         pushad          ;/
         push    eax
         movzx   eax,ah          ;Need extended register version.
-        cmp     DWORD PTR cs:[Int21hTable+eax*4],offset Int21hNotOurs
+        cmp     cs:[Int21hTable+eax*4],offset Int21hNotOurs
         jz      Int21hNotOurs
         pop     eax
         mov     ebp,esp         ;Make registers addressable.
@@ -134,7 +97,7 @@ int211_NoInts:
         mov     fs,fs:PSPSegment        ;Point to PSP.
         assume fs:nothing
         movzx   eax,ah          ;Need extended register version.
-        call    DWORD PTR cs:[Int21hTable+eax*4]        ;Pass control to handler.
+        call    cs:[Int21hTable+eax*4]        ;Pass control to handler.
         popad                   ;\
         pop     gs
         pop     fs
@@ -160,7 +123,7 @@ Int21hNotOurs   proc    near
         pop     es
         pop     ds
 ;       cli
-        jmp     FWORD PTR cs:[OldInt21h]        ;pass it onto previous handler.
+        jmp     cs:[OldInt21h]  ;pass it onto previous handler.
 Int21hNotOurs   endp
 
 
@@ -842,7 +805,7 @@ int2121_OK:
         mov     ds,[ebp+Int_ES]
         cmp     cs:Int21hDOS4GFlag,0
         jz      int2121_0
-        lds     esi,f[ebx+4+2]
+        lds     esi,fword ptr [ebx+4+2] ; load cmdline into ds:esi
         jmp     int2121_Ef4
 int2121_0:
         test    BYTE PTR cs:Int21hSystemFlags,1
@@ -852,8 +815,7 @@ int2121_0:
         mov     ds,[ebx+2+2]            ;& segment.
         jmp     int2121_Ef4
 int2121_Ef3:
-        mov     esi,[ebx+2]
-        mov     ds,[ebx+2+4]
+        lds     esi,fword ptr [ebx+2]
 int2121_Ef4:
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         mov     edi,256
@@ -1897,170 +1859,92 @@ int2136_32Bit:
 Int21hAL2Carry  endp
 
 
+	align 4
 ;------------------------------------------------------------------------------
 ;
 ;The jump table used to pass control to the right routine.
 ;
 Int21hTable     label dword
-;       dd 8 dup (Int21hNotOurs)        ;00-07
-        IRP     arg,<1,2,3,4,5,6,7,8>
-        DD      Int21hNotOurs
-        ENDM
-
-        dd Int21hNotOurs                ;08
+        DD 08h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
+        dd Int21hNotOurs        ;08
         dd Int21hPrintString    ;09
-        dd Int21hGetString              ;0A
+        dd Int21hGetString      ;0A
+        DD 0Fh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-;       dd 4 dup (Int21hNotOurs)        ;0B-0E
-        IRP     arg,<1,2,3,4>
-        DD      Int21hNotOurs
-        ENDM
-
-        dd Int21hInvalid                ;0F
-
-;       dd 8 dup (Int21hInvalid)        ;10-17
-        IRP     arg,<1,2,3,4,5,6,7,8>
-        DD      Int21hInvalid
-        ENDM
-
-;       dd 2 dup (Int21hNotOurs)        ;18-19
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hInvalid        ;0F
+        DD 18h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
+        DD 1Ah - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hSetDTA         ;1A
-;       dd 5 dup (Int21hNotOurs)        ;1B-1F
-        IRP     arg,<1,2,3,4,5>
-        DD      Int21hNotOurs
-        ENDM
+        DD 20h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-        dd Int21hNotOurs                ;20
+        dd Int21hNotOurs        ;20
+        DD 25h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
 
-;       dd 4 dup (Int21hInvalid)        ;21-24
-        IRP     arg,<1,2,3,4>
-        DD      Int21hInvalid
-        ENDM
-
-        dd Int21hSetVect                ;25
-;       dd 2 dup (Int21hInvalid)        ;26-27
-        IRP     arg,<1,2>
-        DD      Int21hInvalid
-        ENDM
-
-;       dd 2 dup (Int21hInvalid)        ;28-29
-        IRP     arg,<1,2>
-        DD      Int21hInvalid
-        ENDM
-
-;       dd 5 dup (Int21hNotOurs)        ;2A-2E
-        IRP     arg,<1,2,3,4,5>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hSetVect        ;25
+        DD 2Ah - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
+        DD 2Fh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hGetDTA         ;2F
+        DD 35h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-;       dd 5 dup (Int21hNotOurs)        ;30-34
-        IRP     arg,<1,2,3,4,5>
-        DD      Int21hNotOurs
-        ENDM
-
-        dd Int21hGetVect                ;35
-;       dd 2 dup (Int21hNotOurs)        ;36-37
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hGetVect        ;35
+        DD 38h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hGetSetCountry  ;38
-        dd Int21hCreateDIR              ;39
-        dd Int21hCreateDIR              ;3A
-        dd Int21hCreateDIR              ;3B
+        dd Int21hCreateDIR      ;39
+        dd Int21hCreateDIR      ;3A
+        dd Int21hCreateDIR      ;3B
         dd Int21hCreateFile     ;3C
-        dd Int21hOpenFile               ;3D
-        dd Int21hNotOurs                ;3E
-        dd Int21hReadFile               ;3F
+        dd Int21hOpenFile       ;3D
+        dd Int21hNotOurs        ;3E
+        dd Int21hReadFile       ;3F
 
-        dd Int21hWriteFile              ;40
-        dd Int21hOpenFile               ;41
-        dd Int21hNotOurs                ;42
+        dd Int21hWriteFile      ;40
+        dd Int21hOpenFile       ;41
+        dd Int21hNotOurs        ;42
         dd Int21hCreateFile     ;43
         dd Int21hIOCTLDispatch  ;44
-;       dd 2 dup (Int21hNotOurs)        ;45-46
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        DD 47h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-        dd Int21hGetCurDir              ;47
+        dd Int21hGetCurDir      ;47
 
-        dd Int21hAllocMem               ;48
+        dd Int21hAllocMem       ;48
         dd Int21hRelMem         ;49
         dd Int21hResMem         ;4A
-        dd Int21hExecFile               ;4B
-
-;       dd 2 dup (Int21hNotOurs)        ;4C-4D
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hExecFile       ;4B
+        DD 4Eh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hFindFirstFile  ;4E
         dd Int21hFindNextFile   ;4F
-
         dd Int21hSetPSP         ;50
         dd Int21hGetPSP         ;51
-;       dd 4 dup (Int21hNotOurs)        ;52-55
-        IRP     arg,<1,2,3,4>
-        DD      Int21hNotOurs
-        ENDM
+        DD 56h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hRenameFile     ;56
-        dd Int21hNotOurs                ;57
+        dd Int21hNotOurs        ;57
 
-        dd Int21hNotOurs                ;58
+        dd Int21hNotOurs        ;58
         dd Int21hGetErrorInfo   ;59
         dd Int21hCreateTemp     ;5A
         dd Int21hCreateFile     ;5B
-;       dd 2 dup (Int21hNotOurs)        ;5C-5D
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        DD 5Eh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
         dd Int21hMSNet          ;5E
-        dd Int21hNotOurs                ;5F
+        dd Int21hNotOurs        ;5F
+        DD 62h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-;       dd 2 dup (Int21hNotOurs)        ;60-61
-        IRP     arg,<1,2>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hGetPSP         ;62
+        DD 67h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-        dd Int21hGetPSP                 ;62
-;       dd 4 dup (Int21hNotOurs)        ;63-66
-        IRP     arg,<1,2,3,4>
-        DD      Int21hNotOurs
-        ENDM
+        dd Int21hSetHandles     ;67
+        DD 6Ch - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-        dd Int21hSetHandles             ;67
+        dd Int21hExtendOpen     ;6C
+        DD 70h  - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
+        DD 0ffh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
 
-;       dd 4 dup (Int21hNotOurs)        ;68-6B
-        IRP     arg,<1,2,3,4>
-        DD      Int21hNotOurs
-        ENDM
-
-        dd Int21hExtendOpen             ;6C
-;       dd 3 dup (Int21hNotOurs)        ;6D-6F
-        IRP     arg,<1,2,3>
-        DD      Int21hNotOurs
-        ENDM
-
-;       dd (16*9)-1 dup (Int21hNotOurs) ;70-FE
-        IRP     arg,<1,2,3,4,5,6,7,8>
-        IRP     arg2,<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16>
-        DD      Int21hNotOurs
-        ENDM
-        ENDM
-        IRP     arg,<1,2,3,4,5,6,7,8,9,10,11,12,13,14,15>
-        DD      Int21hNotOurs
-        ENDM
-
-        dd Int21hDOS4GTest              ;FF
+        dd Int21hDOS4GTest      ;FF
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -2070,7 +1954,7 @@ Int21hTable     label dword
 Int21hOpen      proc    near
         assume ds:_Int21h
         assume es:_cwMain
-        mov     Int21hDSeg,es   ;Store cwCode selector.
+        mov     Int21hDSeg,es   ;store _cwMain data selector.
         mov     Int21hCSeg,cs   ;store this segment.
         mov     Int21hDDSeg,ds
         ;
@@ -2095,7 +1979,6 @@ int2137_Use0:
         assume ds:nothing
         clc
 int2137_9:
-        db 66h
         retf
 Int21hOpen      endp
 
@@ -2118,7 +2001,6 @@ Int21hClose     proc    near
 int2138_9:
         pop     ds
         ;
-        db 66h
         retf
 Int21hClose     endp
 

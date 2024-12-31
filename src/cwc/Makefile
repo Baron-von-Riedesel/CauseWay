@@ -7,9 +7,10 @@ ALL: Build\cwc.exe
 LINK = \msvc\bin\link
 
 Build\cwc.exe:	Build\cwc.obj
-#	..\..\bin\cwl /m /sy /flat Build\cwc
-	WL32 /q/m/f/cs Build\cwc,,Build\cwc.map,..\..\bin\cw.lib;
-#	cwc /l245 cwc.exe
+	@cd Build
+	@wl32 /q/m/cs/non cwc.obj,,,..\..\..\bin\cw.lib;
+	@cd ..
+	@..\..\bin\cwc /q /l245 Build\cwc.exe
 
 Build\cwc.obj:	cwc.asm copystub.inc decstub.inc
 	@ml -c -nologo -Cx /DENGLISH=1 /Zf /Zd -FlBuild\ -FoBuild\ -I.. cwc.asm
@@ -17,11 +18,17 @@ Build\cwc.obj:	cwc.asm copystub.inc decstub.inc
 copystub.inc: copystub.asm
 	@ml -c -nologo -FlBuild\ -FoBuild\ copystub.asm
 	@$(LINK) /TINY Build\copystub.obj;
-	..\..\bin\makeasm copystub.com
+	@..\..\bin\makeasm copystub.com
 	@del copystub.com
 
 decstub.inc: decstub.asm
 	@ml -c -nologo -FlBuild\ -FoBuild\ decstub.asm
 	@$(LINK) /TINY Build\decstub.obj;
-	..\..\bin\makeasm decstub.com
+	@..\..\bin\makeasm decstub.com
 	@del decstub.com
+
+clean:
+	@del Build\cwc.exe
+	@del Build\cwc.map
+	@del Build\*.obj
+	@del Build\*.lst

@@ -54,6 +54,7 @@ if ENGLISH
 	db " e     - Expand data file (EXE's are locked).",13,10
 	db " l     - Literal string length, eg, /l85.",13,10
 	db " m2/m3 - Method (default is 1).",13,10
+	db " q     - Don't display logo.",13,10
 	db 13,10
 	db " The options above that have a + before them are ON by default.",13,10
 	db " Switches are ON with + or /, OFF with -.",13,10
@@ -229,14 +230,18 @@ Copyright	db 13,10
 _Main	proc	near
 	mov	ErrorStack,esp	;Store the stack so it can be
 	;			;retrieved for error processing.
+	;
+	mov	ErrorNumber,1
+	call	ReadCommand		;Read the command line.
+
+	cmp	OptionTable+"Q",0
+	jnz	@F
 	mov	esi,offset Copyright
 	pushm	ds,cs
 	pop	ds
 	call	PrintString		;Print copyright message.
 	pop	ds
-	;
-	mov	ErrorNumber,1
-	call	ReadCommand		;Read the command line.
+@@:
 	cmp	OptionCounter,1
 	jc	System		;need a file name to work on
 	cmp	OptionPointers,0	;so make sure we have one.
@@ -248,20 +253,24 @@ _Main	proc	near
 	mov	edi,offset FileName	;get file name mask.
 	xor	al,al
 	cld
-@@e0:	movsb
+@@e0:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@e1
 	mov	al,1
-@@e1:	cmp	b[esi-1],"\"
+@@e1:
+	cmp	b[esi-1],"\"
 	jnz	@@e3
 	xor	al,al
-@@e3:	cmp	b[esi-1],0
+@@e3:
+	cmp	b[esi-1],0
 	jnz	@@e0
 	or	al,al
 	jnz	@@e2
 	mov	b[edi-1],'.'
 	mov	esi,offset EXEextension
-@@e4:	movsb
+@@e4:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@e4
 @@e2:	;

@@ -100,14 +100,15 @@ Load3P  proc    near
         mov     w[api89_Command+4],es
         mov     [api89_Environment],cx
         ;
-        mov     [api89_PSP],0
-        mov     [api89_Handle],0
-        mov     [api89_SegMem],0
-        mov     [api89_RelocMem],0
-        mov     [api89_AutoOffset],0
-        mov     [api89_ExpMem],0
-        mov     [api89_ModLink],0
-        mov     [api89_ImpMem],0
+        xor     eax, eax
+        mov     [api89_PSP],ax
+        mov     [api89_Handle],ax
+        mov     [api89_SegMem],eax
+        mov     [api89_RelocMem],eax
+        mov     [api89_AutoOffset],eax
+        mov     [api89_ExpMem],eax
+        mov     [api89_ModLink],eax
+        mov     [api89_ImpMem],eax
 ;
 ;Try and open the file.
 ;
@@ -322,7 +323,7 @@ api89_NoAutoSeg:
         mov     WORD PTR es:[EPSP_Struc.EPSP_SegSize],ax
         mov     eax,[api89_ProgBase]                        ;get memory address.
         mov     DWORD PTR es:[EPSP_Struc.EPSP_MemBase],eax
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_NearBase],eax
+        mov     es:[EPSP_Struc.EPSP_NearBase],eax
         mov     edi,offset apiNewHeader
         mov     eax,NewHeaderStruc.NewAlloc[edi]            ;get memory size.
         mov     DWORD PTR es:[EPSP_Struc.EPSP_MemSize],eax
@@ -817,7 +818,7 @@ api89_NoDecLim:
         ;
         push    fs
         mov     fs,[api89_PSP]
-        mov     DWORD PTR fs:[EPSP_Struc.EPSP_NearBase],0 ;Make sure NEAR functions work.
+        mov     fs:[EPSP_Struc.EPSP_NearBase],0 ;Make sure NEAR functions work.
         pop     fs
         ;
         add     edx,[api89_ProgBase]
@@ -1237,12 +1238,12 @@ api89_Exec:
 ;Shut down anything still hanging around.
 ;
 api89_error:
-        pushf
-        push    ax
+        pushfd
+        push    eax
 ;
 ;Make sure file is closed.
 ;
-        pushf
+        pushfd
         xor     bx,bx
         xchg    bx,[api89_Handle]
         or      bx,bx
@@ -1273,7 +1274,7 @@ api89_NoSegRel:
 ;Restore previous state.
 ;
 api89_NoImpRel:
-        popf
+        popfd
         jnc     api89_RelPSP
         cmp     [api89_PSP],0
         jz      api89_NoRelRes
@@ -1294,8 +1295,8 @@ api89_RelPSP:
 ;Return to caller.
 ;
 api89_NoRelRes:
-        pop     ax
-        popf
+        pop     eax
+        popfd
         ;
 api89_exit:
         pop     [api89_3PStart]
@@ -1378,7 +1379,7 @@ api89_SystemFlags dd ?
 api89_AutoOffset  dd ?
 api89_Command     df ?,0
 api89_Flags       dd 0
-api89_ErrorCode   dw 0            ;error number.
+;api89_ErrorCode   dw 0            ;error number.
 api89_Handle      dw 0            ;file handle.
 api89_EntryEIP    dd 0
 api89_SegCS       dw 0

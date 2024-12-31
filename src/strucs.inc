@@ -1,6 +1,8 @@
 ;------------------------------------------------------------------------------
 ;
 ;Some equates to make stacked register access simpler.
+;--- it's for a) DPMI API ( file api.inc, proc cwAPIpatch )
+;---          b) DOS API ( file int21h.inc, proc Int21h )
 ;
 Int_EDI	equ	0
 Int_DI	equ	0
@@ -106,12 +108,12 @@ VCPI_0		equ	08h			;blank entries for VCPI to fill in.
 VCPI_1		equ	10h			;/
 VCPI_2		equ	18h			;/
 ;
-KernalTS		equ	20h+3			;Kernal TSS
+KernalTS		equ	20h+3		;Kernal TSS
 KernalCS0		equ	28h			;Kernal PL0 code seg.
 KernalPL0		equ	30h			;PL0 stack.
 KernalSwitchPL0	equ	38h			;Mode switch PL0 stack.
-Kernal40h		equ	40h+3			;DOS/BIOS data area access.
-KernalPL3_2_PL0	equ	48h+3			;PL3 to PL0 call gate.
+Kernal40h		equ	40h+3		;DOS/BIOS data area access.
+KernalPL3toPL0	equ	48h+3		;PL3 to PL0 call gate.
 ;
 KernalLDT		equ	50h+3
 KernalCS		equ	58h+3			;Kernal CS
@@ -126,16 +128,16 @@ MainPSP		equ	90h+3			;PSP segment.
 MainEnv		equ	98h+3			;Enviroment segment.
 ;
 InitCS		equ	0a0h+3		;Init code seg.
-InitCS0		equ	0a8h			;Init code seg at PL0.
+InitCS0		equ	0a8h		;Init code seg at PL0.
 InitDS		equ	0b0h+3		;Init data seg.
-InitPL3_2_PL0	equ	0b8h+3
+InitPL3toPL0	equ	0b8h+3	;call gate
 ;
-DpmiEmuCS		equ	0c0h+3		;DPMI emulator code seg.
-DpmiEmuCS0		equ	0c8h			;DPMI emulator code seg at PL0.
-DpmiEmuDS		equ	0d0h+3		;DPMI emulator data seg.
-DpmiEmuPL3_2_PL0	equ	0d8h+3
+DpmiEmuCS		equ	0c0h+3	;DPMI emulator code seg.
+DpmiEmuCS0		equ	0c8h	;DPMI emulator code seg at PL0.
+DpmiEmuDS		equ	0d0h+3	;DPMI emulator data seg.
+DpmiEmuPL3toPL0	equ	0d8h+3	;call gate
 ;
-GDTData		equ	0e0h+3
+GDTData		equ	0e0h+3		; GDT selector r/w
 ;
 ifdef KRNLDBG
 GDTDbg		equ	0f0h
@@ -150,8 +152,8 @@ KernalA000		equ	0a000h+3
 
 ;
 CallBackStruc	struc
-CallBackFlags	db ?
-CallBackNum		db ?
+CallBackFlags	db ?      ; b[0]:1=in use;b[7]:1=busy
+CallBackNum		db ?      ; interrupt#
 CallBackOff		dw ?
 CallBackProt		df ?
 CallBackRegs		df ?
@@ -202,6 +204,12 @@ Desc386Call		equ	12	;386 call gate.
 Desc386Int		equ	14	;386 interupt gate.
 Desc386Trap		equ	15	;386 trap gate.
 
+GATE struc
+OfsLow	dw ?
+sel		dw ?
+attr	dw ?
+OfsHigh	dw ?
+GATE ends
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 v86CallStruc		struc
@@ -218,10 +226,20 @@ v86CallES		dw ?
 v86CallDS		dw ?
 v86CallFS		dw ?
 v86CallGS		dw ?
+union
+v86CallCSIP		dd ?
+struct
 v86CallIP		dw ?
 v86CallCS		dw ?
+ends
+ends
+union
+v86CallSSSP		dd ?
+struct
 v86CallSP		dw ?
 v86CallSS		dw ?
+ends
+ends
 v86CallStruc		ends
 ;
 

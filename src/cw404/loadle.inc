@@ -438,7 +438,7 @@ load1_objup1:
         mov     WORD PTR es:[EPSP_Struc.EPSP_SegSize],ax
         mov     eax,[load1_ProgMem+0]                   ;get memory address.
         mov     DWORD PTR es:[EPSP_Struc.EPSP_MemBase],eax
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_NearBase],eax
+        mov     es:[EPSP_Struc.EPSP_NearBase],eax
         mov     eax,[load1_ProgMem+4]                   ;get memory size.
         mov     DWORD PTR es:[EPSP_Struc.EPSP_MemSize],eax
         pop     es
@@ -683,7 +683,7 @@ load1_load1:
         ;
         mov     eax,es:LE_OBJ.LE_OBJ_PageIndex[esi] ;get first page index.
         dec     eax
-        mul     d[LEHeader.LE_PageSize]             ;* page size.
+        mul     [LEHeader.LE_PageSize]              ;* page size.
         add     eax,d[LEHeader.LE_Data]             ;data offset.
         mov     dx,ax
         shr     eax,16
@@ -696,7 +696,7 @@ load1_load1:
         ;
         mov     eax,es:LE_OBJ.LE_OBJ_PageNum[esi]   ;get number of pages.
         mov     ebx,eax
-        mul     d[LEHeader.LE_PageSize]             ;* page size.
+        mul     [LEHeader.LE_PageSize]              ;* page size.
         mov     edx,es:LE_OBJ.LE_OBJ_Base[esi]      ;get load address.
         xor     ecx,ecx
         or      eax,eax
@@ -705,9 +705,9 @@ load1_load1:
 
         add     ebx,es:LE_OBJ.LE_OBJ_PageIndex[esi] ;get base page again.
         dec     ebx
-        cmp     ebx,d[LEHeader.LE_Pages]            ;we getting the last page?
+        cmp     ebx,[LEHeader.LE_Pages]             ;we getting the last page?
         jnz     load1_load2
-        mov     ebx,d[LEHeader.LE_PageSize]
+        mov     ebx,[LEHeader.LE_PageSize]
         sub     ebx,d[LEHeader.LE_LastBytes]
         sub     eax,ebx
 
@@ -1417,14 +1417,14 @@ load1_Seg1632BitOff:
         pop     edx
         add     eax,[load1_ObjMem]      ;point to target segment details.
         test    es:LE_OBJ.LE_OBJ_Flags[eax],LE_OBJ_Flags_Big
-        pushf
+        pushfd
         mov     eax,es:LE_OBJ.LE_OBJ_Base[eax] ;Get target segments offset from start of image.
         movzx   ebx,WORD PTR es:[esi+3] ;Get target offset.
         test    dh,4
         jz      load1_Big1
         mov     ebx,es:[esi+3]          ;Get target offset.
 load1_Big1:
-        popf
+        popfd
         jz      load1_NotFlat1
         add     ebx,eax
 load1_NotFlat1:
@@ -1598,7 +1598,7 @@ load1_NoDecLim:
         ;
         push    fs
         mov     fs,[load1_PSP]
-        mov     DWORD PTR fs:[EPSP_Struc.EPSP_NearBase],0 ;Make sure NEAR functions work.
+        mov     fs:[EPSP_Struc.EPSP_NearBase],0 ;Make sure NEAR functions work.
         pop     fs
         ;
         add     edx,[load1_ProgMem+0]
@@ -1704,12 +1704,12 @@ load1_Exec:
 ;Shut down anything still hanging around.
 ;
 load1_error:
-        pushf
-        push    ax
+        pushfd
+        push    eax
 ;
 ;Make sure file is closed.
 ;
-        pushf
+        pushfd
         xor     bx,bx
         xchg    bx,[load1_Handle]
         or      bx,bx
@@ -1729,7 +1729,7 @@ load1_NoClose:
 ;Restore previous state.
 ;
 load1_NoObjRel:
-        popf
+        popfd
         jnc     load1_RelPSP
         cmp     [load1_PSP],0
         jz      load1_NoRelRes
@@ -1750,8 +1750,8 @@ load1_RelPSP:
 ;Return to caller.
 ;
 load1_NoRelRes:
-        pop     ax
-        popf
+        pop     eax
+        popfd
         ;
 load1_exit:
         pop     [load1_LEOffset]

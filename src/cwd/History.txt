@@ -7,3 +7,5 @@
    - fixed: missing POP in handler for exception 0Ch.
    - trap EXCeption 00 instead of INTerrupt 00.
    - trap invalid opcode exception 06.
+   - fixed: register ecx used in a loop was modified by int 31h, ax=ff08h,
+     causing an infinite loop in .map file was scanned.

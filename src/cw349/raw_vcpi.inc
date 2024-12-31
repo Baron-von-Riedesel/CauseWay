@@ -355,11 +355,11 @@ RawVCPIRealMode proc far
 	pushad
 	mov	DWORD PTR [@@StackAdd],esp
 	mov	WORD PTR [@@StackAdd+4],ss
-	call	RawPL32PL0
+	call	RawPL3toPL0
 	lidt	FWORD PTR [IDTVal]
 	mov	edx,DWORD PTR [@@StackAdd]
 	mov	cx,WORD PTR [@@StackAdd+4]
-	call	RAWPL02PL3
+	call	RAWPL0toPL3
 	popad
 
 	call	VCPIRelExtended	;release VCPI memory.
@@ -389,7 +389,7 @@ RawVCPIRealMode proc far
 	mov	gs,ax		;/
 	;
 	mov	edi,GDTLinear
-	add	edi,KernalPL3_2_PL0
+	add	edi,KernalPL3toPL0
 	and	edi,not 7
 	push	es
 	push	ax
@@ -400,7 +400,7 @@ RawVCPIRealMode proc far
 	pop	es
 	pop	edi
 	db 09ah		;Absolute 16-bit call, to clear
-	dw @@pl0,KernalPL3_2_PL0	;instruction pre-fetch & load CS.
+	dw @@pl0,KernalPL3toPL0	;instruction pre-fetch & load CS.
 @@pl0:	mov	ax,KernalSwitchPL0
 	mov	ss,ax
 	;
@@ -614,7 +614,7 @@ CR3Flush	proc	near
 	pushad
 	mov	d[@@StackAdd],esp
 	mov	w[@@StackAdd+4],ss
-	call	RawPL32PL0
+	call	RawPL3toPL0
 	;
 ;	mov	eax,cr3
 	mov	eax,VCPI_CR3
@@ -622,7 +622,7 @@ CR3Flush	proc	near
 	;
 	mov	edx,d[@@StackAdd]
 	mov	cx,w[@@StackAdd+4]
-	call	RAWPL02PL3
+	call	RAWPL0toPL3
 	popad
 	popf
 	ret
@@ -1076,7 +1076,7 @@ RAWReal2Prot	proc	near
 	;
 	mov	edx,d[@@ReturnStack]
 	mov	cx,w[@@ReturnStack+4]
-	call	RAWPL02PL3
+	call	RAWPL0toPL3
 	;
 	push	es
 	mov	ax,KernalZero
@@ -1113,7 +1113,7 @@ RAWProt2Real	proc	near
 	mov	fs,ax		;mode.
 	mov	gs,ax		;/
 	;
-	call	RawPL32PL0
+	call	RawPL3toPL0
 	mov	ax,KernalSwitchPL0
 	mov	ss,ax
 	;
@@ -1196,7 +1196,7 @@ VCPIReal2Prot	proc	near
 	;
 	mov	edx,d[@@ReturnStack]
 	mov	cx,w[@@ReturnStack+4]
-	call	RAWPL02PL3
+	call	RAWPL0toPL3
 	;
 	push	es
 	mov	ax,KernalZero
@@ -1235,7 +1235,7 @@ VCPIProt2Real	proc	near
 	mov	es,ax		;expand up, read/write for switch back to real
 	mov	fs,ax		;mode.
 	mov	gs,ax		;/
-	call	RawPL32PL0
+	call	RawPL3toPL0
 	mov	ax,KernalSwitchPL0
 	mov	ss,ax
 	;
@@ -1279,7 +1279,7 @@ VCPIProt2Real	endp
 
 
 ;-------------------------------------------------------------------------------
-RAWPL02PL3	proc	near
+RAWPL0toPL3	proc	near
 	pop	w[@@RetAdd]
 	movzx	ecx,cx
 	push	ecx		;SS
@@ -1303,15 +1303,15 @@ RAWPL02PL3	proc	near
 	ret
 @@RetAdd:	;
 	dw ?
-RAWPL02PL3	endp
+RAWPL0toPL3	endp
 
 
 ;-------------------------------------------------------------------------------
-RawPL32PL0	proc	near
+RawPL3toPL0	proc	near
 	pop	w[@@RetAdd]
 	push	edi
 	mov	edi,GDTLinear
-	add	edi,KernalPL3_2_PL0
+	add	edi,KernalPL3toPL0
 	and	edi,not 7
 	push	es
 	push	ax
@@ -1322,13 +1322,13 @@ RawPL32PL0	proc	near
 	pop	es
 	pop	edi
 	db 09ah		;Absolute 16-bit call, to clear
-	dw @@pl0,KernalPL3_2_PL0	;instruction pre-fetch & load CS.
+	dw @@pl0,KernalPL3toPL0	;instruction pre-fetch & load CS.
 	;
 @@pl0:	push	w[@@RetAdd]
 	ret
 @@RetAdd:	;
 	dw ?
-RawPL32PL0	endp
+RawPL3toPL0	endp
 
 
 ;-------------------------------------------------------------------------------
@@ -2568,14 +2568,14 @@ EmuCR3Flush	proc	near
 	;
 	mov	d[@@StackAdd],esp
 	mov	w[@@StackAdd+4],ss
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	;
 	mov	eax,cr3
 	mov	cr3,eax		;flush page cache.
 	;
 	mov	edx,d[@@StackAdd]
 	mov	cx,w[@@StackAdd+4]
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 	;
 	Popm	d[@@StackAdd],w[@@StackAdd+4],d[@@erp0RetAdd],d[@@erp3RetAdd]
 	pop	ds
@@ -2588,7 +2588,7 @@ EmuCR3Flush	endp
 
 
 ;-------------------------------------------------------------------------------
-EmuRAWPL02PL3	proc	near
+EmuRAWPL0toPL3	proc	near
 	pop	d[@@erp0RetAdd]
 	movzx	ecx,cx
 	push	ecx		;SS
@@ -2608,14 +2608,14 @@ EmuRAWPL02PL3	proc	near
 	iretd
 @@pl3:	push	d[@@erp0RetAdd]
 	ret
-EmuRAWPL02PL3	endp
+EmuRAWPL0toPL3	endp
 
 
 @@erp0RetAdd:	;
 	dd ?
 
 ;-------------------------------------------------------------------------------
-EmuRAWPL32PL0	proc	near
+EmuRAWPL3toPL0	proc	near
 	pop	d[@@erp3RetAdd]
 	push	edi
 	Pushm	eax,ds
@@ -2625,7 +2625,7 @@ EmuRAWPL32PL0	proc	near
 	mov	edi,GDTLinear
 	assume ds:_cwDPMIEMU
 	Popm	eax,ds
-	add	edi,DpmiEmuPL3_2_PL0
+	add	edi,DpmiEmuPL3toPL0
 	and	edi,not 7
 	push	es
 	push	ax
@@ -2637,10 +2637,12 @@ EmuRAWPL32PL0	proc	near
 	pop	es
 	pop	edi
 	db 9ah
-	dd offset @@pl0,DpmiEmuPL3_2_PL0 ;instruction pre-fetch & load CS.
-@@pl0:	push	d[@@erp3RetAdd]
+	dd offset @@pl0
+	dw DpmiEmuPL3toPL0 ;instruction pre-fetch & load CS.
+@@pl0:
+	push	d[@@erp3RetAdd]
 	ret
-EmuRAWPL32PL0	endp
+EmuRAWPL3toPL0	endp
 
 
 @@erp3RetAdd:	;
@@ -3620,7 +3622,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	mov	ds,ax
 	mov	ebp,esp
 	mov	di,ss
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	;
 	mov	ax,KernalDS
 	mov	ds,ax
@@ -3694,7 +3696,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	;
 	mov	edx,ebp
 	mov	cx,di
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 	pop	ds
 	;
 	mov	eax,ebx
@@ -3745,7 +3747,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	mov	ds,ax
 	mov	ebp,esp
 	mov	di,ss
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	;
 	mov	ecx,ebx
 	shl	ecx,1
@@ -3758,7 +3760,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	;
 	mov	edx,ebp
 	mov	cx,di
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 	pop	ds
 	;
 	clc
@@ -3801,14 +3803,14 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	mov	ds,ax
 	mov	ebp,esp
 	mov	di,ss
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	;
 	mov	eax,dr6
 	mov	esi,eax
 	;
 	mov	edx,ebp
 	mov	cx,di
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 	pop	ds
 	;
 	;Isolate bit we want.
@@ -3862,7 +3864,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	mov	ds,ax
 	mov	ebp,esp
 	mov	di,ss
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	;
 	mov	ecx,ebx
 	mov	edx,1
@@ -3874,7 +3876,7 @@ RationalCopyright	DB	"RATIONAL DOS/4G",0
 	;
 	mov	edx,ebp
 	mov	cx,di
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 	pop	ds
 	;
 	clc

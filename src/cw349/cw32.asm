@@ -1538,7 +1538,7 @@ END COMMENT !
 	mov	esi,KernalCS0
 	xor	al,al
 	mov	ah,DescPresent+DescPL3+Desc386Call
-	mov	di,KernalPL3_2_PL0
+	mov	di,KernalPL3toPL0
 	call	MakeDesc
 ;
 ;DPMI emulator code seg.
@@ -1580,7 +1580,7 @@ END COMMENT !
 	mov	esi,InitCS0
 	xor	al,al
 	mov	ah,DescPresent+DescPL3+Desc386Call
-	mov	di,InitPL3_2_PL0
+	mov	di,InitPL3toPL0
 	call	MakeDesc
 ;
 ;DPMI emulator PL3 to PL0 call gate.
@@ -1589,7 +1589,7 @@ END COMMENT !
 	mov	esi,DpmiEmuCS0
 	xor	al,al
 	mov	ah,DescPresent+DescPL3+Desc386Call
-	mov	di,DpmiEmuPL3_2_PL0
+	mov	di,DpmiEmuPL3toPL0
 	call	MakeDesc
 ;
 ;Zero to 4G segment.

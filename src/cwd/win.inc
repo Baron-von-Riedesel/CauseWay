@@ -3524,13 +3524,13 @@ MouseOff	endp
 MouseEvent	proc	near
 	pushm	ds,es,fs,gs
 	pushad
-	push	ax
+	push	eax
 	mov	ax,DGROUP
-	mov	ds,ax
-	mov	es,ax
-	mov	fs,ax
-	mov	gs,ax
-	pop	ax
+	mov	ds,eax
+	mov	es,eax
+	mov	fs,eax
+	mov	gs,eax
+	pop	eax
 	;
 	cmp	InMouse,0
 	jnz	@@9
@@ -3543,8 +3543,7 @@ MouseEvent	proc	near
 	jnz	@@16
 	retf
 @@16:	;
-	db 66h
-	retf
+	retd
 MouseEvent	endp
 
 
@@ -3563,13 +3562,11 @@ MouseEvent	endp
 ;DX	- Y co-ordinate.
 ;
 GetMouse	proc	near
-	push	ax
 	mov	cx,MousePointX1
 	mov	dx,MousePointY1
 	mov	bx,MousePointBt
 	shl	cx,3
 	shl	dx,3
-	pop	ax
 	ret
 GetMouse	endp
 

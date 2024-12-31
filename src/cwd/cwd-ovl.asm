@@ -3212,19 +3212,19 @@ Int10Handler	proc	near
 	cmp	ah,0		;mode set?
 	jnz	@@NotUs
 	push	ds
-	push	ax
+	push	eax
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	cmp	Executing,0
-	pop	ax
+	pop	eax
 	pop	ds
 	jz	@@NotUs
 	push	ds
-	push	ax
+	push	eax
 	mov	ax,DGROUP
-	mov	ds,ax
+	mov	ds,eax
 	cmp	ForcedFlip,0
-	pop	ax
+	pop	eax
 	pop	ds
 	jnz	@@NotUs
 	pushad
@@ -4894,9 +4894,11 @@ DisasGoto	proc	near
 	mov	DisplayEIP,eax
 	jmp	@@8
 	;
-@@11:	mov	esi,offset CBuffer
+@@11:
+	mov	esi,offset CBuffer
 	mov	edi,offset EvaluateBuffer
-@@1:	movsb
+@@1:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@1
 	mov	VarSizeMask,0
@@ -5188,7 +5190,8 @@ DataWatchGoto	proc	near
 	mov	WatchStruc.WatchOff[esi],al
 	jmp	@@8
 	;
-@@11:	mov	esi,offset CBuffer
+@@11:
+	mov	esi,offset CBuffer
 	mov	edi,offset EvaluateBuffer
 @@1:	movsb
 	cmp	b[esi-1],0
@@ -6239,7 +6242,8 @@ AddHardBreak	proc	near
 	sys GetSelDet32
 	mov	eax,edx
 	mov	edi,offset EvaluateBuffer
-@@4:	movsb
+@@4:
+	movsb
 	cmp	b[esi-1],0
 	jz	@@5
 	cmp	b[esi-1],","
@@ -7906,7 +7910,8 @@ DisplayEIPPUp	proc	near
 	sub	ebx,ecx
 	jns	@@0
 	xor	ebx,ebx
-@@0:	mov	SourceStartLine,ebx
+@@0:
+	mov	SourceStartLine,ebx
 ;
 ;Move the current line.
 ;
@@ -7914,7 +7919,8 @@ DisplayEIPPUp	proc	near
 	sub	ebx,ecx
 	jns	@@1
 	xor	ebx,ebx
-@@1:	mov	SourceLineNum,ebx
+@@1:
+	mov	SourceLineNum,ebx
 ;
 ;Update the display.
 ;
@@ -7924,10 +7930,12 @@ DisplayEIPPUp	proc	near
 ;
 ;Use good old fasioned disasembly to work it out.
 ;
-@@OldWay:	mov	bp,DisasHandle
+@@OldWay:
+	mov	bp,DisasHandle
 	call	PointWindow
 	movzx	ecx,[esi].WindowBase.WindowDepth2
-@@k7_0:	push	ecx
+@@k7_0:
+	push	ecx
 	call	FindLastEIP
 	mov	DisplayEIP,eax
 	pop	ecx
@@ -7936,7 +7944,8 @@ DisplayEIPPUp	proc	near
 	mov	edx,DisasStartEIP
 	mov	cx,DisplayCS
 	call	AddCSEIP
-@@Exit:	ret
+@@Exit:
+	ret
 DisplayEIPPUp	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -7950,7 +7959,8 @@ FindLastEIP	proc	near
 	mov	eax,DisplayEIP
 	mov	esi,offset DisasEIPList
 	xor	edx,edx
-@@t1:	cmp	eax,[esi]
+@@t1:
+	cmp	eax,[esi]
 	jz	@@t2
 	inc	edx
 	add	esi,4
@@ -7959,7 +7969,8 @@ FindLastEIP	proc	near
 	;
 @@t2:	;Is there one above this?
 	;
-@@t3:	or	edx,edx
+@@t3:
+	or	edx,edx
 	jz	@@FindIt
 	sub	esi,4
 	mov	eax,[esi]
@@ -7986,13 +7997,15 @@ FindLastEIP	proc	near
 	jc	@@4
 	jz	@@4
 	mov	edi,DebugEIP
-@@4:	mov	ecx,DisplayEIP
+@@4:
+	mov	ecx,DisplayEIP
 	sub	ecx,edi
 	;
 	;Search for nearest symbol above now.
 	;
 	mov	esi,SymbolList
-@@0:	cmp	d[esi],-1		;end of the list?
+@@0:
+	cmp	d[esi],-1		;end of the list?
 	jz	@@1
 	cmp	dx,SymbolStruc.SymbolSeg[esi]
 	jnz	@@2
@@ -8005,14 +8018,16 @@ FindLastEIP	proc	near
 	jnc	@@2
 	mov	ecx,ebx
 	mov	edi,SymbolStruc.SymbolDword[esi]
-@@2:	add	esi,SymbolStruc.SymbolNext[esi]
+@@2:
+	add	esi,SymbolStruc.SymbolNext[esi]
 	jmp	@@0
 @@1:	;
 	;See if CS:EIP list has a better alternative.
 	;
 	mov	esi,offset SearchCSEIPList
 	mov	ebp,MaxEIPs
-@@5:	cmp	dx,[esi+4]		;same segment?
+@@5:
+	cmp	dx,[esi+4]		;same segment?
 	jnz	@@6
 	cmp	eax,[esi]		;right direction?
 	jc	@@6
@@ -8023,7 +8038,8 @@ FindLastEIP	proc	near
 	jnc	@@6
 	mov	ecx,ebx
 	mov	edi,[esi]
-@@6:	add	esi,6
+@@6:
+	add	esi,6
 	dec	ebp
 	jnz	@@5
 	;
@@ -8040,7 +8056,8 @@ FindLastEIP	proc	near
 	;and store.
 	;
 	mov	fs,DisplayCS
-@@3:	mov	edi,offset ABuffer
+@@3:
+	mov	edi,offset ABuffer
 	mov	b[edi],0
 	push	esi
 	call	Disasemble
@@ -8062,12 +8079,14 @@ FindLastEIP	proc	near
 	cmp	esi,20		;check can move back 15 bytes.
 	jnc	@@n0
 	xor	esi,esi		;reset to start of segment.
-@@n0:	sub	esi,20		;move back to new starting point.
+@@n0:
+	sub	esi,20		;move back to new starting point.
 	mov	fs,DisplayCS
 	;
 	mov	edx,esi
 	mov	ebp,edx
-@@n2:	push	ebp
+@@n2:
+	push	ebp
 	push	edx
 	mov	edi,offset ABuffer
 	mov	b[edi],0
@@ -8083,12 +8102,14 @@ FindLastEIP	proc	near
 	cmp	esi,DisplayEIP
 	jc	@@n2
 	jz	@@GotOne
-@@n1:	inc	edx
+@@n1:
+	inc	edx
 	mov	esi,edx
 	cmp	edx,DisplayEIP	;this shouldn't happen.
 	jc	@@n2
 @@n3:	;
-@@GotOne:	ret
+@@GotOne:
+	ret
 FindLastEIP	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -8098,24 +8119,30 @@ AddCSEIP	proc	near
 	mov	ebx,-1
 	mov	edi,0
 	and	cx,0fffch
-@@0:	cmp	w[esi+4],0
+@@0:
+	cmp	w[esi+4],0
 	jnz	@@nz
 	or	edi,edi
 	jnz	@@nz
 	mov	edi,esi
-@@nz:	cmp	cx,[esi+4]		;right segment?
+@@nz:
+	cmp	cx,[esi+4]		;right segment?
 	jnz	@@n
 	cmp	edx,[esi]
 	jc	@@b
-@@p:	mov	eax,edx
+@@p:
+	mov	eax,edx
 	sub	eax,[esi]
 	jmp	@@c
-@@b:	mov	eax,[esi]
+@@b:
+	mov	eax,[esi]
 	sub	eax,edx
-@@c:	cmp	eax,ebx
+@@c:
+	cmp	eax,ebx
 	jnc	@@n
 	mov	ebx,eax
-@@n:	add	esi,6
+@@n:
+	add	esi,6
 	dec	ebp
 	jnz	@@0
 	cmp	ebx,256
@@ -8124,7 +8151,8 @@ AddCSEIP	proc	near
 	jz	@@nope
 	mov	[edi+4],cx
 	mov	[edi],edx
-@@nope:	ret
+@@nope:
+	ret
 AddCSEIP	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -8158,7 +8186,8 @@ FetchSymbols	proc	near
 ;
 ;Problem with SYM file so close it and revert to MAP scanning.
 ;
-@@close_sym:	mov	bx,SymHandle
+@@close_sym:
+	mov	bx,SymHandle
 	mov	SymHandle,0
 	mov	ah,3eh
 	int	21h
@@ -8166,7 +8195,8 @@ FetchSymbols	proc	near
 ;
 ;We appear to have a valid SYM format so try loading the file.
 ;
-@@sym_v_ok:	mov	bp,TempHandle
+@@sym_v_ok:
+	mov	bp,TempHandle
 	call	ClearWindow
 	mov	ebx,offset LoadingText
 	call	PrintWindow
@@ -8188,7 +8218,8 @@ FetchSymbols	proc	near
 	mov	ErrorNumber,5
 	ret
 	;
-@@notzero:	push	ebx
+@@notzero:
+	push	ebx
 	mov	ecx,ebx
 	mov	SymbolList+4,ecx
 	add	ecx,4		;allow for terminator.
@@ -8224,14 +8255,17 @@ FetchSymbols	proc	near
 	mov	ax,fs:w[EPSP_Struc.EPSP_SegBase]
 	pop	fs
 	mov	esi,SymbolList
-@@sym0:	cmp	SymbolStruc.SymbolType[esi],255
+@@sym0:
+	cmp	SymbolStruc.SymbolType[esi],255
 	jz	@@sym2_0
 	cmp	SymbolStruc.SymbolType[esi],0
 	jnz	@@sym2
-@@sym2_0:	shl	SymbolStruc.SymbolSeg[esi],3
+@@sym2_0:
+	shl	SymbolStruc.SymbolSeg[esi],3
 	add	SymbolStruc.SymbolSeg[esi],ax
 	;
-@@sym2:	cmp	d[esi],-1		;end of the list?
+@@sym2:
+	cmp	d[esi],-1		;end of the list?
 	jz	@@sym9
 	;
 	add	esi,SymbolStruc.SymbolNext[esi]
@@ -8248,7 +8282,8 @@ FetchSymbols	proc	near
 	;
 	mov	ErrorNumber,0
 	jmp	@@FLATUpdate
-@@LookMap:	call	InitFileBuffer
+@@LookMap:
+	call	InitFileBuffer
 	;
 	;Try and open the map file.
 	;
@@ -8267,7 +8302,8 @@ FetchSymbols	proc	near
 	;
 	;Look for segment list ID string.
 	;
-@@LookID:	mov	edi,offset LineBuffer
+@@LookID:
+	mov	edi,offset LineBuffer
 	mov	bx,MapHandle
 	call	ReadLine		;read a line from the map file.
 	jc	@@9
@@ -8283,21 +8319,26 @@ FetchSymbols	proc	near
 	mov	esi,offset SymHeaderText
 	mov	edi,offset LineBuffer
 	;
-@@0:	cmp	b[esi],' '		;need to skip white space.
+@@0:
+	cmp	b[esi],' '		;need to skip white space.
 	jz	@@1
 	cmp	b[esi],9
 	jnz	@@2
-@@1:	inc	esi
+@@1:
+	inc	esi
 	jmp	@@0
 	;
-@@2:	cmp	b[edi],' '		;skip white space.
+@@2:
+	cmp	b[edi],' '		;skip white space.
 	jz	@@3
-	cmp	b[esi],9
+	cmp	b[edi],9		;12/2024 fixed, was "b[esi],9"
 	jnz	@@4
-@@3:	inc	edi
+@@3:
+	inc	edi
 	jmp	@@2
 	;
-@@4:	cmp	b[esi],0		;end of the header string?
+@@4:
+	cmp	b[esi],0		;end of the header string?
 	jz	@@5
 	cmp	b[edi],0		;end of the line buffer?
 	jz	@@LookID
@@ -8332,7 +8373,8 @@ FetchSymbols	proc	near
 	;
 	mov	SymbolSize,0
 	;
-@@LookSym:	mov	esi,offset LineBuffer	;source data.
+@@LookSym:
+	mov	esi,offset LineBuffer	;source data.
 	mov	edi,offset SymLayout-1	;definition of data layout.
 	mov	ebx,offset CurrentSym
 	mov	SymbolStruc.SymbolDword[ebx],0	;reset linear base.
@@ -8343,14 +8385,17 @@ FetchSymbols	proc	near
 
 	mov	SymbolStruc.SymbolType[ebx],0	; MED 12/15/95
 	;
-@@6:	cmp	b[esi],' '		;skip leading white space.
+@@6:
+	cmp	b[esi],' '		;skip leading white space.
 	jz	@@7
 	cmp	b[esi],9
 	jnz	@@8
-@@7:	inc	esi
+@@7:
+	inc	esi
 	jmp	@@6
 	;
-@@8:	inc	edi		;move to next item on the list.
+@@8:
+	inc	edi		;move to next item on the list.
 	cmp	b[edi],-1		;finished scan?
 	jz	@@NextSym
 	cmp	b[edi],0		;ignoring this column?
@@ -8359,14 +8404,16 @@ FetchSymbols	proc	near
 	jz	@@Start
 	jmp	@@Name		;must be 2 (name) then.
 	;
-@@Ignore:	cmp	b[esi],' '		;scan till more white space.
+@@Ignore:
+	cmp	b[esi],' '		;scan till more white space.
 	jz	@@6		;check next item in the list.
 	cmp	b[esi],9
 	jz	@@6		;check next item in the list.
 	inc	esi
 	jmp	@@Ignore
 	;
-@@Start:	xor	edx,edx		;reset acumulated value.
+@@Start:
+	xor	edx,edx		;reset acumulated value.
 
 @@11:
 	movzx	eax,b[esi]		;fetch a digit.
@@ -8396,6 +8443,7 @@ COMMENT !
 	mov	bx,fs:w[EPSP_Struc.EPSP_SegBase]
 	pop	fs
 END COMMENT !
+
 	pushm	ecx,esi
 	push	edx
 	mov	bx,DebugSS
@@ -8423,9 +8471,10 @@ notflat:
 	jecxz	@@dump
 
 	mov	ebp,edx
-
 @@findseg:
+	push ecx		; fixed: ecx is modified by sys GetSelDet32, so must be pushed/poped!
 	sys GetSelDet32
+	pop ecx
 	cmp	ebp,edx
 	jz	@@gotseg
 	add	ebx,8
@@ -8459,8 +8508,10 @@ notflat:
 	add	edx,eax		;/
 	inc	esi
 	jmp	@@11		;keep reading till we run out.
-@@30:	inc	esi		;skip 'H'
-@@10:	push	ebx
+@@30:
+	inc	esi		;skip 'H'
+@@10:
+	push	ebx
 	mov	ebx,offset CurrentSym
 	mov	SymbolStruc.SymbolDword[ebx],edx	;store start address.
 	pop	ebx
@@ -8472,7 +8523,8 @@ notflat:
 	xor	ecx,ecx
 	mov	edi,offset CurrentSym
 	add	edi,SymbolStruc.SymbolText
-@@101:	movsb
+@@101:
+	movsb
 	inc	ecx
 	cmp	b[esi-1],0
 	jz	@@102
@@ -8480,14 +8532,16 @@ notflat:
 	jz	@@102
 	cmp	b[esi-1],9
 	jnz	@@101
-@@102:	mov	b[edi-1],0
+@@102:
+	mov	b[edi-1],0
 	dec	ecx
 	mov	edi,offset CurrentSym
 	mov	SymbolStruc.SymbolTLen[edi],cl
 	pop	edi
 	jmp	@@6
 	;
-@@NextSym:	mov	ebx,offset CurrentSym
+@@NextSym:
+	mov	ebx,offset CurrentSym
 	movzx	ecx,SymbolStruc.SymbolTLen[ebx]	;get string length.
 	add	ecx,size SymbolStruc-1
 	mov	SymbolStruc.SymbolNext[ebx],ecx
@@ -8505,7 +8559,8 @@ notflat:
 	mov	d[esi],-1
 	jmp	@@UseMem
 	;
-@@GotMem:	push	ebx
+@@GotMem:
+	push	ebx
 	add	ecx,SymbolSize
 	mov	esi,SymbolList
 	call	ReMalloc
@@ -8514,7 +8569,8 @@ notflat:
 	mov	SymbolList,esi
 	mov	SymbolBase,esi
 	;
-@@UseMem:	mov	edi,SymbolList
+@@UseMem:
+	mov	edi,SymbolList
 	add	edi,SymbolSize
 	mov	esi,offset CurrentSym
 	sub	ecx,4
@@ -8555,14 +8611,16 @@ notflat:
 	mov	RegsSelTranslate,0
 	;
 	mov	esi,SymbolList
-@@fs0:	cmp	d[esi],-1		;end of the list?
+@@fs0:
+	cmp	d[esi],-1		;end of the list?
 	jz	@@fs9
 	push	esi
 	cmp	SymbolStruc.SymbolType[esi],255
 	jz	@@fs2
 	cmp	SymbolStruc.SymbolType[esi],0
 	jnz	@@fs1
-@@fs2:	movzx	eax,SymbolStruc.SymbolSeg[esi]
+@@fs2:
+	movzx	eax,SymbolStruc.SymbolSeg[esi]
 	push	fs
 	mov	fs,DebugPSP
 	movzx	ebx,fs:w[EPSP_Struc.EPSP_SegBase]
@@ -8577,7 +8635,8 @@ notflat:
 	pop	es
 	add	eax,edx		;add in load address.
 	add	SymbolStruc.SymbolDword[esi],eax
-@@fs1:	pop	esi
+@@fs1:
+	pop	esi
 	add	esi,SymbolStruc.SymbolNext[esi]
 	jmp	@@fs0
 @@fs9:	;
@@ -8594,7 +8653,8 @@ notflat:
 	;
 	mov	esi,SymbolList
 	mov	LastSymbol,0
-@@ln0:	cmp	d[esi],-1		;end of the list?
+@@ln0:
+	cmp	d[esi],-1		;end of the list?
 	jz	@@ln9
 	push	esi
 	cmp	SymbolStruc.SymbolType[esi],255
@@ -8641,7 +8701,8 @@ notflat:
 	or	edi,edi
 	jnz	@@rems0
 	mov	edi,offset SymbolList
-@@rems0:	mov	[edi],esi
+@@rems0:
+	mov	[edi],esi
 	popad
 ;
 ;Reset source path pointer.
@@ -8653,33 +8714,39 @@ notflat:
 ;
 ;Build a file name from source path list.
 ;
-@@NewName:	pushm	ecx,esi
+@@NewName:
+	pushm	ecx,esi
 	;
 	mov	esi,SourcePathPointer
 	cmp	b[esi],0
 	stc
 	jz	@@nn4
 	mov	edi,offset FileNameSpace2
-@@nn0:	movsb
+@@nn0:
+	movsb
 	cmp	b[esi-1],";"
 	jz	@@nn1
 	cmp	b[esi-1],0
 	jnz	@@nn0
-@@nn1:	dec	edi
+@@nn1:
+	dec	edi
 	cmp	edi,offset FileNameSpace2
 	jz	@@nn2
 	cmp	b[edi-1],"\"
 	jz	@@nn2
 	mov	b[edi],"\"
 	inc	edi
-@@nn2:	mov	SourcePathPointer,esi
+@@nn2:
+	mov	SourcePathPointer,esi
 	mov	esi,offset FileNameSpace
-@@nn3:	movsb
+@@nn3:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@nn3
 	jmp	@@nn5
 	;
-@@nn4:	popm	ecx,esi
+@@nn4:
+	popm	ecx,esi
 	pop	SourceFileWindow
 	mov	eax,LINEList
 	dec	d[eax]
@@ -8688,7 +8755,8 @@ notflat:
 	;
 	;Check if we already have this file.
 	;
-@@nn5:	mov	edx,offset FileNameSpace2
+@@nn5:
+	mov	edx,offset FileNameSpace2
 	call	FindSourceFile
 	jc	@@fndit0
 	popm	ecx,esi
@@ -8700,7 +8768,8 @@ notflat:
 	jz	@@shity
 	clc
 	jmp	@@ln2
-@@shity:	mov	eax,LINEList
+@@shity:
+	mov	eax,LINEList
 	dec	d[eax]
 	clc
 	jmp	@@ln1
@@ -8710,7 +8779,8 @@ notflat:
 	jnc	@@nn6
 	popm	ecx,esi
 	jmp	@@NewName
-@@nn6:	mov	bx,ax
+@@nn6:
+	mov	bx,ax
 	call	CloseFile
 	;
 	pushad
@@ -8735,7 +8805,8 @@ notflat:
 	stc
 	jmp	@@ln1
 	;
-@@ln2_0:	popm	ecx,esi
+@@ln2_0:
+	popm	ecx,esi
 	pop	SourceFileWindow
 	;
 @@ln2:	;Add this file to the entry.
@@ -8744,9 +8815,11 @@ notflat:
 	clc
 	jmp	@@ln1
 	;
-@@ln100:	mov	LastSymbol,esi
+@@ln100:
+	mov	LastSymbol,esi
 	;
-@@ln1:	pop	esi
+@@ln1:
+	pop	esi
 	jc	@@9
 	add	esi,SymbolStruc.SymbolNext[esi]
 	jmp	@@ln0
@@ -8771,7 +8844,8 @@ notflat:
 	clc
 @@90:	;
 @@9:	;
-@@DoneSyms:	ret
+@@DoneSyms:
+	ret
 FetchSymbols	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-=-=-=-=-=-=-=-=-=
@@ -8780,12 +8854,14 @@ FindSourceFile	proc	near
 	mov	esi,SourceFileTable
 	mov	ecx,[esi]
 	add	esi,4
-@@0:	or	ecx,ecx
+@@0:
+	or	ecx,ecx
 	jz	@@9
 	mov	edi,[esi]
 	lea	edi,SFT.SFT_Name[edi]
 	mov	ebx,edx
-@@1:	mov	al,[edi]
+@@1:
+	mov	al,[edi]
 	mov	ah,[ebx]
 	call	UpperChar
 	xchg	ah,al
@@ -8797,16 +8873,20 @@ FindSourceFile	proc	near
 	or	al,al
 	jz	@@8
 	jmp	@@1
-@@2:	add	esi,4
+@@2:
+	add	esi,4
 	dec	ecx
 	jmp	@@0
 	;
-@@8:	mov	ebx,[esi]
+@@8:
+	mov	ebx,[esi]
 	clc
 	jmp	@@10
 	;
-@@9:	stc
-@@10:	popm	eax,ecx,edx,esi,edi,ebp
+@@9:
+	stc
+@@10:
+	popm	eax,ecx,edx,esi,edi,ebp
 	ret
 FindSourceFile	endp
 
@@ -10003,7 +10083,8 @@ ExecuteInst	proc	near
 	;
 	mov	fs,DebugCS
 	mov	esi,DebugEIP
-@@DisLoop:	mov	edi,offset ABuffer
+@@DisLoop:
+	mov	edi,offset ABuffer
 	mov	b[edi],0
 	call	Disasemble
 	mov	DebugRetCode,ax
@@ -10039,7 +10120,8 @@ ExecuteInst	proc	near
 ;
 ;Get line pointer and see what's what.
 ;
-@@sFind0:	mov	edi,SourceSearchIndex	;Get the source file index.
+@@sFind0:
+	mov	edi,SourceSearchIndex	;Get the source file index.
 	shl	edi,4		;4 dwords per entry.
 	add	edi,4		;skip count dword.
 	add	edi,LINEList
@@ -10064,13 +10146,15 @@ ExecuteInst	proc	near
 ;
 ;Check swap mode needed.
 ;
-@@NoSource0:	cmp	DebugMode,3
+@@NoSource0:
+	cmp	DebugMode,3
 	jz	@@Trace
 	cmp	DebugRetCode,RetCode_INT
 	jnz	@@NoLookInt0
 	cmp	DebugMode+1,0
 	jz	@@SetSwapChk
-@@NoLookInt0:	cmp	DebugRetCode,RetCode_INOUT
+@@NoLookInt0:
+	cmp	DebugRetCode,RetCode_INOUT
 	jz	@@SetSwapChk
 	cmp	DebugMode,4
 	jz	@@ChkSwap
@@ -10094,7 +10178,8 @@ ExecuteInst	proc	near
 	cmp	edx,0c0003h+1
 	jc	@@SetSwapChk
 	;
-@@Normalea:	mov	bx,TargetCS
+@@Normalea:
+	mov	bx,TargetCS
 	sys GetSelDet32
 	jc	@@SetSwapChk
 	add	edx,TargetEIP
@@ -10102,8 +10187,10 @@ ExecuteInst	proc	near
 	jc	@@SetNoSwap
 	cmp	edx,0c0003h+1
 	jc	@@SetSwapChk
-@@SetNoSwap:	jmp	@@DoneSwapChk
-@@SetSwapChk:	mov	VidSwapMode,0
+@@SetNoSwap:
+	jmp	@@DoneSwapChk
+@@SetSwapChk:
+	mov	VidSwapMode,0
 	;
 @@DoneSwapChk:	;Set things up for desired mode.
 	;
@@ -10111,7 +10198,8 @@ ExecuteInst	proc	near
 	jnz	@@NormalINT
 	cmp	DebugRetCode,RetCode_INT
 	jz	@@Next		;force next.
-@@NormalINT:	cmp	DebugMode,4
+@@NormalINT:
+	cmp	DebugMode,4
 	jz	@@Trace
 	cmp	DebugMode,0		;trace?
 	jz	@@Trace
@@ -10129,7 +10217,8 @@ ExecuteInst	proc	near
 	cmp	DebugRetCode,RetCode_JMPFea32+1
 	jc	@@Trace		;Force trace.
 	;
-@@Next_1:	cmp	DebugRetCode,RetCode_SS
+@@Next_1:
+	cmp	DebugRetCode,RetCode_SS
 	jz	@@Trace		;Force trace.
 	cmp	DebugRetCode,RetCode_RET
 	jc	@@Next_0
@@ -10141,7 +10230,8 @@ ExecuteInst	proc	near
 	cmp	DebugMode,4
 	jz	@@Next_00
 	mov	DebugMode,1
-@@Next_00:	mov	ax,NextCS
+@@Next_00:
+	mov	ax,NextCS
 	mov	TargetCS,ax
 	mov	eax,NextEIP
 	mov	TargetEIP,eax
@@ -10187,9 +10277,11 @@ ExecuteInst	proc	near
 	mov	TargetCS,ax
 	jmp	@@Trace_2
 	;
-@@Trace_j100:	cmp	DebugRetCode,RetCode_JMPea
+@@Trace_j100:
+	cmp	DebugRetCode,RetCode_JMPea
 	jnz	@@Trace_j0
-@@Trace_c0:	push	es
+@@Trace_c0:
+	push	es
 	mov	es,TargetCS
 	mov	ebx,TargetEIP
 	movzx	ebx,es:w[ebx]
@@ -10200,9 +10292,11 @@ ExecuteInst	proc	near
 	pop	es
 	jmp	@@Trace_2
 	;
-@@Trace_j0:	cmp	DebugRetCode,RetCode_JMPea32
+@@Trace_j0:
+	cmp	DebugRetCode,RetCode_JMPea32
 	jnz	@@Trace_j1
-@@Trace_c1:	push	es
+@@Trace_c1:
+	push	es
 	mov	es,TargetCS
 	mov	ebx,TargetEIP
 	mov	ebx,es:d[ebx]
@@ -10213,9 +10307,11 @@ ExecuteInst	proc	near
 	pop	es
 	jmp	@@Trace_2
 	;
-@@Trace_j1:	cmp	DebugRetCode,RetCode_JMPFea
+@@Trace_j1:
+	cmp	DebugRetCode,RetCode_JMPFea
 	jnz	@@Trace_j2
-@@Trace_c2:	push	es
+@@Trace_c2:
+	push	es
 	mov	es,TargetCS
 	mov	ebx,TargetEIP
 	mov	ax,es:w[ebx+2]
@@ -10227,9 +10323,11 @@ ExecuteInst	proc	near
 	pop	es
 	jmp	@@Trace_2
 	;
-@@Trace_j2:	cmp	DebugRetCode,RetCode_JMPFea32
+@@Trace_j2:
+	cmp	DebugRetCode,RetCode_JMPFea32
 	jnz	@@Trace_j3
-@@Trace_c3:	push	es
+@@Trace_c3:
+	push	es
 	mov	es,TargetCS
 	mov	ebx,TargetEIP
 	mov	ax,es:w[ebx+4]
@@ -10266,66 +10364,78 @@ ExecuteInst	proc	near
 	;
 	cmp	DebugRetCode,RetCode_RET
 	jnz	@@Trace_r0
-@@Trace_r2:	push	es
+@@Trace_r2:
+	push	es
 	mov	es,DebugSS
 	mov	ebx,DebugESP
 	test	SystemFlags,1
 	jz	@@TR320
 	movzx	ebx,bx
-@@TR320:	movzx	eax,es:w[ebx]
+@@TR320:
+	movzx	eax,es:w[ebx]
 	mov	TargetEIP,eax
 	pop	es
 	jmp	@@Trace_0
 	;
-@@Trace_r0:	cmp	DebugRetCode,RetCode_RET32
+@@Trace_r0:
+	cmp	DebugRetCode,RetCode_RET32
 	jnz	@@Trace_r1
-@@Trace_r3:	push	es
+@@Trace_r3:
+	push	es
 	mov	es,DebugSS
 	mov	ebx,DebugESP
 	test	SystemFlags,1
 	jz	@@TR321
 	movzx	ebx,bx
-@@TR321:	mov	eax,es:d[ebx]
+@@TR321:
+	mov	eax,es:d[ebx]
 	mov	TargetEIP,eax
 	pop	es
 	jmp	@@Trace_0
 	;
-@@Trace_r1:	cmp	DebugRetCode,RetCode_RETnn
+@@Trace_r1:
+	cmp	DebugRetCode,RetCode_RETnn
 	jz	@@Trace_r2
 	cmp	DebugRetCode,RetCode_RETnn32
 	jz	@@Trace_r3
 	;
 	cmp	DebugRetCode,RetCode_RETF
 	jnz	@@Trace_r4
-@@Trace_r6:	push	es
+@@Trace_r6:
+	push	es
 	mov	es,DebugSS
 	mov	ebx,DebugESP
 	test	SystemFlags,1
 	jz	@@TR322
 	movzx	ebx,bx
-@@TR322:	movzx	eax,es:w[ebx]
+@@TR322:
+	movzx	eax,es:w[ebx]
 	mov	TargetEIP,eax
 	mov	ax,es:[ebx+2]
 	mov	TargetCS,ax
 	pop	es
 	jmp	@@Trace_0
 	;
-@@Trace_r4:	cmp	DebugRetCode,RetCode_RETF32
+@@Trace_r4:
+	cmp	DebugRetCode,RetCode_RETF32
 	jnz	@@Trace_r5
-@@Trace_r7:	push	es
+@@Trace_r7:
+	push	es
 	mov	es,DebugSS
 	mov	ebx,DebugESP
 	test	SystemFlags,1
 	jz	@@TR323
 	movzx	ebx,bx
-@@TR323:	mov	eax,es:[ebx]
+@@TR323:
+	mov	eax,es:[ebx]
 	mov	TargetEIP,eax
 	mov	ax,es:[ebx+4]
 	mov	TargetCS,ax
 	pop	es
 	jmp	@@Trace_0
 	;
-@@Trace_r5:	cmp	DebugRetCode,RetCode_RETFnn
+@@Trace_r5:
+	cmp	DebugRetCode,RetCode_RETFnn
 	jz	@@Trace_r6
 	cmp	DebugRetCode,RetCode_RETFnn32
 	jz	@@Trace_r7
@@ -10335,7 +10445,8 @@ ExecuteInst	proc	near
 	jz	@@Trace_r7
 	jmp	@@Trace_0
 	;
-@@Trace_INT:	test	DebugMode+1,128
+@@Trace_INT:
+	test	DebugMode+1,128
 	jz	@@Next_0
 	push	es
 	mov	ebx,DebugEIP
@@ -10343,31 +10454,36 @@ ExecuteInst	proc	near
 	test	SystemFlags,1
 	jz	@@Trace_INT0
 	movzx	ebx,bx
-@@Trace_INT0:	mov	al,3
+@@Trace_INT0:
+	mov	al,3
 	cmp	es:b[ebx],0ceh	;Check for INTO
 	jz	@@Trace_INT4
 	cmp	es:b[ebx],0cch	;Check for INT 3
 	jz	@@Trace_INT4
 	inc	ebx
 	mov	al,es:[ebx]		;Get int number.
-@@Trace_INT4:	pop	es
+@@Trace_INT4:
+	pop	es
 	mov	bl,al
 	cmp	bl,3
 	jz	@@Trace_INT3
 	jmp	@@Trace_INT2
-@@Trace_INT3:	mov	VidSwapMode,0
+@@Trace_INT3:
+	mov	VidSwapMode,0
 	jmp	@@Next_0
 @@Trace_INT2:
 	sys GetVect
 	test	SystemFlags,1
 	jz	@@Trace_INT1
 	movzx	edx,dx
-@@Trace_INT1:	mov	TargetEIP,edx
+@@Trace_INT1:
+	mov	TargetEIP,edx
 	mov	TargetCS,cx
 	mov	NextEIP,edx
 	mov	NextCS,cx
 	;
-@@Trace_0:	cmp	DebugMode,3
+@@Trace_0:
+	cmp	DebugMode,3
 	jz	@@Go
 	cmp	DebugMode,4
 	jz	@@Go
@@ -10382,13 +10498,15 @@ ExecuteInst	proc	near
 	jz	@@FRegCall
 	cmp	DebugMode,0
 	jnz	@@NoRemCall
-@@FRegCall:	cmp	DebugRetCode,RetCode_CALL	;CALL's need to use target.
+@@FRegCall:
+	cmp	DebugRetCode,RetCode_CALL	;CALL's need to use target.
 	jz	@@RegCall
 	cmp	DebugRetCode,RetCode_CALLea
 	jc	@@NoRegCall
 	cmp	DebugRetCode,RetCode_CALLFea32+1
 	jnc	@@NoRegCall
-@@RegCall:	pushad
+@@RegCall:
+	pushad
 	mov	bx,NextCS
 	sys GetSelDet32
 	add	edx,NextEIP
@@ -10474,7 +10592,8 @@ ExecuteInst	proc	near
 	pushad
 	mov	esi,offset HardBreakTable
 	mov	ebp,4
-@@hbrk0:	mov	HBRK.HBRK_Flags[esi],0
+@@hbrk0:
+	mov	HBRK.HBRK_Flags[esi],0
 	cmp	HBRK.HBRK_Win[esi],0
 	jz	@@hbrk1
 	mov	ax,0b00h
@@ -10487,7 +10606,8 @@ ExecuteInst	proc	near
 	jc	@@hbrk1
 	mov	HBRK.HBRK_Handle[esi],bx
 	or	HBRK.HBRK_Flags[esi],-1
-@@hbrk1:	add	esi,size HBRK
+@@hbrk1:
+	add	esi,size HBRK
 	dec	ebp
 	jnz	@@hbrk0
 	popad
@@ -10512,20 +10632,23 @@ ExecuteInst	proc	near
 	mov	ds,DebugDS
 	iretd
 	;
-@@3:	mov	Executing,0
+@@3:
+	mov	Executing,0
 ;
 ;Remove HBRK's
 ;
 	pushad
 	mov	esi,offset HardBreakTable
 	mov	ebp,4
-@@hbrk2:	cmp	HBRK.HBRK_Flags[esi],0
+@@hbrk2:
+	cmp	HBRK.HBRK_Flags[esi],0
 	jz	@@hbrk3
 	mov	bx,HBRK.HBRK_Handle[esi]
 	mov	ax,0b01h
 	int	31h
 	mov	HBRK.HBRK_Flags[esi],0
-@@hbrk3:	add	esi,size HBRK
+@@hbrk3:
+	add	esi,size HBRK
 	dec	ebp
 	jnz	@@hbrk2
 	popad
@@ -10562,7 +10685,8 @@ ExecuteInst	proc	near
 	call	PointBreakPoint
 	dec	BreakStruc.BreakCountDown[esi]	;update counter.
 	popad
-@@bok:	cmp	BreakStruc.BreakCountDown[esi],0
+@@bok:
+	cmp	BreakStruc.BreakCountDown[esi],0
 	jz	@@BreakDone
 	dec	BreakStruc.BreakCountDown[esi]	;update counter.
 	;
@@ -10581,7 +10705,8 @@ ExecuteInst	proc	near
 	mov	d[DebuggerESP],esp
 	jmp	@@DoneBreak		;go back to normal.
 	;
-@@BreakDone:	mov	eax,BreakStruc.BreakCount[esi]
+@@BreakDone:
+	mov	eax,BreakStruc.BreakCount[esi]
 	mov	BreakStruc.BreakCountDown[esi],eax	;reset counter.
 @@NoBreakHere:	;
 	mov	ax,w[ExecBreakHandle]
@@ -10589,11 +10714,13 @@ ExecuteInst	proc	near
 	jz	@@4
 	call	RelBreakPoint	;release it then.
 	;
-@@4:	mov	ax,w[ExecBreakHandle+2]
+@@4:
+	mov	ax,w[ExecBreakHandle+2]
 	cmp	ax,-1
 	jz	@@6
 	call	RelBreakPoint	;release it then.
-@@6:	cmp	DebugMode,3
+@@6:
+	cmp	DebugMode,3
 	jz	@@GotSource
 ;
 ;Check if we're doing source stuff.
@@ -10627,10 +10754,12 @@ ExecuteInst	proc	near
 ;CS:EIP is in range of a source entry so we send it back to keep executing
 ;instructions till we get somewhere useful.
 ;
-@@ForceSource:	mov	DebugMode,4
+@@ForceSource:
+	mov	DebugMode,4
 	mov	DebugMode+1,0
 	jmp	@@ExecAgain
-@@GotSource:	pop	w[DebugMode]
+@@GotSource:
+	pop	w[DebugMode]
 ;
 ;Retrieve user context.
 ;
@@ -10665,7 +10794,8 @@ ExecuteInst	proc	near
 	call	Bin2Hex
 	mov	ebx,offset TerminateText
 	call	WindowPopup
-@@7:	mov	SourceForceCheck,1
+@@7:
+	mov	SourceForceCheck,1
 	popm	DebuggerSS,DebuggerESP
 	popm	w[ExecBreakHandle],w[ExecBreakHandle+2],w[DebugMode],w[VidSwapMode]
 	ret
@@ -10727,7 +10857,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEAX
 	jz	@@50
 	mov	b[edi-5],3fh
-@@50:	call	Bin2Hex
+@@50:
+	call	Bin2Hex
 	mov	eax,DebugEBX
 	mov	ecx,8
 	mov	edi,offset DebugEBXt
@@ -10735,7 +10866,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEBX
 	jz	@@51
 	mov	b[edi-5],3fh
-@@51:	call	Bin2Hex
+@@51:
+	call	Bin2Hex
 	mov	eax,DebugECX
 	mov	ecx,8
 	mov	edi,offset DebugECXt
@@ -10743,7 +10875,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugECX
 	jz	@@52
 	mov	b[edi-5],3fh
-@@52:	call	Bin2Hex
+@@52:
+	call	Bin2Hex
 	mov	eax,DebugEDX
 	mov	ecx,8
 	mov	edi,offset DebugEDXt
@@ -10751,7 +10884,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEDX
 	jz	@@53
 	mov	b[edi-5],3fh
-@@53:	call	Bin2Hex
+@@53:
+	call	Bin2Hex
 	mov	eax,DebugESI
 	mov	ecx,8
 	mov	edi,offset DebugESIt
@@ -10759,7 +10893,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugESI
 	jz	@@54
 	mov	b[edi-5],3fh
-@@54:	call	Bin2Hex
+@@54:
+	call	Bin2Hex
 	mov	eax,DebugEDI
 	mov	ecx,8
 	mov	edi,offset DebugEDIt
@@ -10767,7 +10902,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEDI
 	jz	@@55
 	mov	b[edi-5],3fh
-@@55:	call	Bin2Hex
+@@55:
+	call	Bin2Hex
 	mov	eax,DebugEBP
 	mov	ecx,8
 	mov	edi,offset DebugEBPt
@@ -10775,7 +10911,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEBP
 	jz	@@56
 	mov	b[edi-5],3fh
-@@56:	call	Bin2Hex
+@@56:
+	call	Bin2Hex
 	mov	eax,DebugESP
 	mov	ecx,8
 	mov	edi,offset DebugESPt
@@ -10783,7 +10920,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugESP
 	jz	@@57
 	mov	b[edi-5],3fh
-@@57:	call	Bin2Hex
+@@57:
+	call	Bin2Hex
 	mov	eax,DebugEIP
 	mov	ecx,8
 	mov	edi,offset DebugEIPt
@@ -10791,7 +10929,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEIP
 	jz	@@58
 	mov	b[edi-5],3fh
-@@58:	call	Bin2Hex
+@@58:
+	call	Bin2Hex
 	mov	eax,DebugEFL
 	mov	ecx,8
 	mov	edi,offset DebugEFLt
@@ -10799,7 +10938,8 @@ RegisterDisplay proc near
 	cmp	eax,OldDebugEFL
 	jz	@@59
 	mov	b[edi-5],3fh
-@@59:	call	Bin2Hex
+@@59:
+	call	Bin2Hex
 	;
 	mov	ax,DebugCS
 	mov	edi,offset DebugCSt
@@ -10807,17 +10947,20 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugCS
 	jz	@@60
 	mov	b[edi-5],3fh
-@@60:	call	DebugSegment
+@@60:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@0_0
 	cmp	eax,-1
 	jnz	@@0
-@@0_0:	mov	ax,DebugCS
+@@0_0:
+	mov	ax,DebugCS
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@0:	call	Bin2Hex
+@@0:
+	call	Bin2Hex
 	;
 	mov	ax,DebugDS
 	mov	edi,offset DebugDSt
@@ -10825,17 +10968,20 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugDS
 	jz	@@61
 	mov	b[edi-5],3fh
-@@61:	call	DebugSegment
+@@61:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@1_0
 	cmp	eax,-1
 	jnz	@@1
-@@1_0:	mov	ax,DebugDS
+@@1_0:
+	mov	ax,DebugDS
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@1:	call	Bin2Hex
+@@1:
+	call	Bin2Hex
 
 	mov	ax,DebugES
 	mov	edi,offset DebugESt
@@ -10843,17 +10989,20 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugES
 	jz	@@62
 	mov	b[edi-5],3fh
-@@62:	call	DebugSegment
+@@62:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@2_0
 	cmp	eax,-1
 	jnz	@@2
-@@2_0:	mov	ax,DebugES
+@@2_0:
+	mov	ax,DebugES
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@2:	call	Bin2Hex
+@@2:
+	call	Bin2Hex
 
 	mov	ax,DebugFS
 	mov	edi,offset DebugFSt
@@ -10861,17 +11010,20 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugFS
 	jz	@@63
 	mov	b[edi-5],3fh
-@@63:	call	DebugSegment
+@@63:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@3_0
 	cmp	eax,-1
 	jnz	@@3
-@@3_0:	mov	ax,DebugFS
+@@3_0:
+	mov	ax,DebugFS
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@3:	call	Bin2Hex
+@@3:
+	call	Bin2Hex
 
 	mov	ax,DebugGS
 	mov	edi,offset DebugGSt
@@ -10879,17 +11031,20 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugGS
 	jz	@@64
 	mov	b[edi-5],3fh
-@@64:	call	DebugSegment
+@@64:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@4_0
 	cmp	eax,-1
 	jnz	@@4
-@@4_0:	mov	ax,DebugGS
+@@4_0:
+	mov	ax,DebugGS
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@4:	call	Bin2Hex
+@@4:
+	call	Bin2Hex
 
 	mov	ax,DebugSS
 	mov	edi,offset DebugSSt
@@ -10897,59 +11052,72 @@ RegisterDisplay proc near
 	cmp	ax,OldDebugSS
 	jz	@@65
 	mov	b[edi-5],3fh
-@@65:	call	DebugSegment
+@@65:
+	call	DebugSegment
 	mov	ecx,8
 	cmp	RegsSelTranslate,0
 	jz	@@5_0
 	cmp	eax,-1
 	jnz	@@5
-@@5_0:	mov	ax,DebugSS
+@@5_0:
+	mov	ax,DebugSS
 	mov	d[edi],'xxxx'
 	add	edi,4
 	mov	ecx,4
-@@5:	call	Bin2Hex
+@@5:
+	call	Bin2Hex
 	;
 	mov	edi,offset DebugEFLtl
-@@6:	cmp	b[edi],0
+@@6:
+	cmp	b[edi],0
 	jz	@@7
 	mov	b[edi],' '
 	inc	edi
 	jmp	@@6
 	;
-@@7:	mov	edi,offset DebugEFLtl+1
+@@7:
+	mov	edi,offset DebugEFLtl+1
 	mov	eax,DebugEFL
 	test	eax,1
 	jz	@@8
 	mov	b[edi],'C'
-@@8:	add	edi,1
+@@8:
+	add	edi,1
 	test	eax,4
 	jz	@@9
 	mov	b[edi],'P'
-@@9:	add	edi,1
+@@9:
+	add	edi,1
 	test	eax,16
 	jz	@@10
 	mov	b[edi],'A'
-@@10:	add	edi,1
+@@10:
+	add	edi,1
 	test	eax,64
 	jz	@@11
 	mov	b[edi],'Z'
-@@11:	add	edi,1
+@@11:
+	add	edi,1
 	test	eax,128
 	jz	@@12
 	mov	b[edi],'S'
-@@12:	add	edi,1
+@@12:
+	add	edi,1
 	test	eax,1024
 	jz	@@13
 	mov	b[edi],'D'
-@@13:	add	edi,1
+@@13:
+	add	edi,1
 	test	eax,2048
 	jz	@@14
 	mov	b[edi],'O'
-@@14:	add	edi,1
+@@14:
+	add	edi,1
 	test	eax,1 shl 9
 	jz	@@15
 	mov	b[edi],"I"
-@@15:	add	edi,1
+@@15:
+	add	edi,1
 	;
 	;Do current EA stuff.
 	;
@@ -11009,19 +11177,23 @@ RegisterDisplay proc near
 	jz	@@ea10
 	jmp	@@ea9
 	;
-@@ea1:	add	edi,5
+@@ea1:
+	add	edi,5
 	mov	al,es:[edx]
 	mov	ecx,2
 	jmp	@@ea8
-@@ea2:	add	edi,4
+@@ea2:
+	add	edi,4
 	mov	ax,es:[edx]
 	mov	ecx,4
 	jmp	@@ea8
-@@ea4:	add	edi,2
+@@ea4:
+	add	edi,2
 	mov	eax,es:[edx]
 	mov	ecx,8
 	jmp	@@ea8
-@@ea5:	mov	ax,es:[edx+2]
+@@ea5:
+	mov	ax,es:[edx+2]
 	mov	cx,es:[edx]
 	pop	es
 	push	cx
@@ -11032,7 +11204,8 @@ RegisterDisplay proc near
 	pop	ax
 	mov	ecx,4
 	jmp	@@ea7
-@@ea6:	mov	ecx,es:[edx]
+@@ea6:
+	mov	ecx,es:[edx]
 	mov	ax,es:[edx+4]
 	pop	es
 	push	ecx
@@ -11043,7 +11216,8 @@ RegisterDisplay proc near
 	pop	eax
 	mov	ecx,8
 	jmp	@@ea7
-@@ea8_8:	mov	eax,es:[edx+4]
+@@ea8_8:
+	mov	eax,es:[edx+4]
 	mov	ecx,8
 	mov	bx,es
 	pop	es
@@ -11053,7 +11227,8 @@ RegisterDisplay proc near
 	mov	eax,es:[edx]
 	mov	ecx,8
 	jmp	@@ea8
-@@ea10:	mov	eax,es:[edx+6]
+@@ea10:
+	mov	eax,es:[edx+6]
 	mov	ecx,8
 	mov	bx,es
 	pop	es
@@ -11069,8 +11244,10 @@ RegisterDisplay proc near
 	mov	es,bx
 	mov	ax,es:[edx]
 	mov	ecx,4
-@@ea8:	pop	es
-@@ea7:	call	Bin2Hex
+@@ea8:
+	pop	es
+@@ea7:
+	call	Bin2Hex
 
 @@ea9:
 	push	ds
@@ -11096,7 +11273,8 @@ RegisterDisplay proc near
 	add	edi,4
 	jmp	@@p0
 	;
-@@p1:	call	RegisterON
+@@p1:
+	call	RegisterON
 	ret
 RegisterDisplay endp
 
@@ -11128,7 +11306,8 @@ DebugSegment	proc	near
 	mov	eax,ecx
 	sub	eax,fs:d[EPSP_Struc.EPSP_MemBase]	;get offset within application.
 	mov	ebx,eax
-@@9:	mov	eax,ebx
+@@9:
+	mov	eax,ebx
 	popm	edi,fs
 	ret
 DebugSegment	endp

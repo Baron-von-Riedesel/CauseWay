@@ -1,3 +1,39 @@
+
+;--- for RAW/VCPI mode.
+;--- make a stack switch ( code prepared for IOPL 0 )
+;--- eax modified
+
+        assume ds:_cwRaw
+
+RawSwitchStack proc
+        mov     ebx,ss
+        lea     ecx,[esp+4*4]
+        pushfd
+        cli
+        mov     edx,[RawStackPos]
+        sub     [RawStackPos],RawStackDif
+        pop     eax
+        test    ah,2
+        jz      @F
+        sti
+@@:
+        mov     ax,KernalSS
+        mov     ss,eax
+        mov     esp,edx
+        push    ebx
+        push    ecx
+        push    es
+        sub     ecx,4*4
+        mov     es,ebx
+        mov     eax,es:[ecx+0]
+        mov     edx,es:[ecx+4]
+        mov     ebx,es:[ecx+4+4+4]
+        mov     ecx,es:[ecx+4+4]
+        pop     es
+        jmp     eax
+        
+RawSwitchStack endp
+
 ;-------------------------------------------------------------------------------
 ;
 ;Get memory using RAW/VCPI.
@@ -27,27 +63,7 @@ RAWGetMemory    proc    near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
+        call    RawSwitchStack
 
         mov     ax,KernalZero
         mov     es,eax
@@ -64,7 +80,7 @@ mem1_start:
         shr     ecx,12          ;Get pages.
         shr     edi,12          ;Get page number.
         shl     edi,2           ;dword per entry.
-        add     edi,1024*4096*1022      ;point to page details.
+        add     edi,1024*4096*PDEMAPDET      ;point to page details.
         ;
         ;Look for a big enough block of free memory.
         ;
@@ -150,7 +166,7 @@ mem1_l3:
         ;hand this over to the marker.
         ;
 mem1_l2:
-        sub     esi,1024*4096*1022      ;point to page details.
+        sub     esi,1024*4096*PDEMAPDET      ;point to page details.
         shr     esi,2
         jmp     mem1_MarkMemRet
 
@@ -160,7 +176,7 @@ mem1_l2:
         ;
 mem1_ExtendEnd:
         mov     edi,ecx         ;remaining entries.
-        sub     esi,(1024*4096*1022)
+        sub     esi,(1024*4096*PDEMAPDET)
         shr     esi,2           ;Get start page number.
         mov     ecx,ebx         ;Total pages needed.
         sub     ecx,edi         ;Pages found so far.
@@ -194,10 +210,10 @@ mem1_MarkMemRet:
         mov     edx,esi
         mov     edi,esi         ;Get base page again.
         shl     edi,2
-        add     edi,1024*4096*1022
+        add     edi,1024*4096*PDEMAPDET
         mov     eax,MEM_END
         rep     stosd
-        mov     DWORD PTR es:[(1024*4096*1022)+edx*4],MEM_START
+        mov     DWORD PTR es:[(1024*4096*PDEMAPDET)+edx*4],MEM_START
         ;
         ;Now return details to caller.
         ;
@@ -214,10 +230,10 @@ mem1_error:
         ;
 mem1_exit:
 
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     es
         pop     ds
@@ -257,27 +273,7 @@ RAWResMemory    proc    near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
+        call    RawSwitchStack
 
         mov     ax,KernalZero
         mov     es,eax
@@ -300,7 +296,7 @@ RAWResMemory    proc    near
         cmp     esi,LinearLimit
         jnc     mem2_error
         shr     esi,12          ;Get page number.
-        mov     eax,DWORD PTR es:[1024*4096*1022+esi*4]
+        mov     eax,es:[1024*4096*PDEMAPDET+esi*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_START
         jnz     mem2_error
@@ -316,7 +312,7 @@ RAWResMemory    proc    near
         sub     ecx,edx
         jz      mem2_l1
 mem2_l0:
-        mov     eax,DWORD PTR es:[(1024*4096*1022)+edx*4]
+        mov     eax,es:[(1024*4096*PDEMAPDET)+edx*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_END
         jnz     mem2_l1
@@ -349,9 +345,9 @@ mem2_Smaller:
         sub     medAllocPages,ebp
         ;
 mem2_s0:
-        and     DWORD PTR es:[(1024*4096*1022)+edx*4],not MEM_MASK
-        or      DWORD PTR es:[(1024*4096*1022)+edx*4],MEM_FREE
-        and     DWORD PTR es:[(1024*4096*1023)+edx*4],not (1 shl 6)
+        and     DWORD PTR es:[(1024*4096*PDEMAPDET)+edx*4],not MEM_MASK
+        or      DWORD PTR es:[(1024*4096*PDEMAPDET)+edx*4],MEM_FREE
+        and     DWORD PTR es:[PTMAPADDR+edx*4],not (1 shl 6)
         inc     edx
         dec     ecx
         jnz     mem2_s0
@@ -376,7 +372,7 @@ mem2_b0:
         ;
         ;See if the next block is free.
         ;
-        mov     eax,DWORD PTR es:[(1024*4096*1022)+edx*4]
+        mov     eax,es:[(1024*4096*PDEMAPDET)+edx*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_FREE
         jnz     mem2_NewBlock           ;no hope so get a new block.
@@ -385,7 +381,7 @@ mem2_b0:
         ;
         mov     edi,ebp         ;use current size as basis.
 mem2_b1:
-        mov     eax,DWORD PTR es:[(1024*4096*1022)+edx*4]
+        mov     eax,es:[(1024*4096*PDEMAPDET)+edx*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_FREE
         jnz     mem2_NewBlock           ;No hope so get a new block.
@@ -430,8 +426,8 @@ mem2_MarkAndRet:
         add     medAllocPages,ecx
         ;
 mem2_mr0:
-        and     DWORD PTR es:[(1024*4096*1022)+edx*4],not MEM_MASK
-        or      DWORD PTR es:[(1024*4096*1022)+edx*4],MEM_END
+        and     DWORD PTR es:[(1024*4096*PDEMAPDET)+edx*4],not MEM_MASK
+        or      DWORD PTR es:[(1024*4096*PDEMAPDET)+edx*4],MEM_END
         inc     edx
         dec     ecx
         jnz     mem2_mr0
@@ -447,10 +443,10 @@ mem2_NewBlock:
         mov     ebx,ecx
         shr     ebx,16
         call    RAWGetMemory
-        pushf
+        pushfd
         shl     ebx,16
         mov     bx,cx
-        popf
+        popfd
         pop     esi
         pop     ebp
         pop     ecx
@@ -500,10 +496,10 @@ mem2_error:
         stc
 mem2_exit:
 
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     es
         pop     ds
@@ -538,27 +534,7 @@ RAWRelMemory    proc    near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
+        call    RawSwitchStack
 
         mov     ax,KernalZero
         mov     es,eax
@@ -572,7 +548,7 @@ RAWRelMemory    proc    near
         cmp     esi,LinearLimit
         jnc     mem3_error
         shr     esi,12          ;Get page number.
-        mov     eax,DWORD PTR es:[1024*4096*1022+esi*4]
+        mov     eax,es:[1024*4096*PDEMAPDET+esi*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_START
         jnz     mem3_error
@@ -582,28 +558,29 @@ RAWRelMemory    proc    near
         inc     FreePages
         dec     medAllocPages
         ;
-        and     DWORD PTR es:[1024*4096*1022+esi*4],not MEM_MASK
-        or      DWORD PTR es:[1024*4096*1022+esi*4],MEM_FREE
-        and     DWORD PTR es:[1024*4096*1023+esi*4],not (1 shl 6)
+        and     DWORD PTR es:[1024*4096*PDEMAPDET+esi*4],not MEM_MASK
+        or      DWORD PTR es:[1024*4096*PDEMAPDET+esi*4],MEM_FREE
+        and     DWORD PTR es:[PTMAPADDR+esi*4],not (1 shl 6)
         inc     esi
         mov     ecx,LinearLimit
         shr     ecx,12
         sub     ecx,esi         ;Get pages remaining.
         jz      mem3_1
-mem3_0: mov     eax,DWORD PTR es:[1024*4096*1022+esi*4]
+mem3_0: mov     eax,es:[1024*4096*PDEMAPDET+esi*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_END
         jnz     mem3_1
         inc     FreePages
         dec     medAllocPages
-        and     DWORD PTR es:[1024*4096*1022+esi*4],not MEM_MASK
-        or      DWORD PTR es:[1024*4096*1022+esi*4],MEM_FREE
-        and     DWORD PTR es:[1024*4096*1023+esi*4],not (1 shl 6)
+        and     DWORD PTR es:[1024*4096*PDEMAPDET+esi*4],not MEM_MASK
+        or      DWORD PTR es:[1024*4096*PDEMAPDET+esi*4],MEM_FREE
+        and     DWORD PTR es:[PTMAPADDR+esi*4],not (1 shl 6)
         inc     esi
         dec     ecx
         jnz     mem3_0
         ;
-mem3_1: call    EmuCR3Flush
+mem3_1:
+        call    EmuCR3Flush
         ;
         clc
         jmp     mem3_exit
@@ -612,10 +589,10 @@ mem3_error:
         stc
 mem3_exit:
 
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     es
         pop     ds
@@ -696,7 +673,8 @@ mem4_1: add     edx,4096
         dec     ecx
         jnz     mem4_0
 ;
-mem4_2: call    EmuCR3Flush             ;update page cache.
+mem4_2:
+        call    EmuCR3Flush             ;update page cache.
 ;
 mem4_8: clc
         popad
@@ -810,20 +788,22 @@ mem5_1: mov     ecx,esi
         lea     edi,[ebp+eax*4]
         push    edi
         mov     ebp,ecx
-mem5_2: call    PhysicalGetPage
+mem5_2:
+        call    PhysicalGetPage
         jnc     mem5_3
         call    UnMapPhysical
         jc      mem5_10
-mem5_3: and     ecx,1           ;put user bits in useful place.
+mem5_3:
+        and     ecx,1                   ;put user bits in useful place.
         shl     ecx,10
-        and     edx,0FFFFFFFFh-4095     ;lose user bits.
+        and     dx,0F000h               ;clear user bits.
         or      edx,111b                ;present+user+write.
-        or      edx,ecx         ;set use flags.
-        mov     DWORD PTR es:[edi],edx  ;store this tables address.
+        or      edx,ecx                 ;set use flags.
+        mov     es:[edi],edx            ;store this tables address.
         push    edi
         sub     edi,PageDirLinear
         add     edi,PageAliasLinear     ;get alias table address.
-        mov     DWORD PTR es:[edi],edx  ;setup in alias table as well.
+        mov     es:[edi],edx            ;setup in alias table as well.
         pop     edi
         ;
         ;Clear this page to 0.
@@ -832,7 +812,7 @@ mem5_3: and     ecx,1           ;put user bits in useful place.
         push    edi
         sub     edi,PageDirLinear
         shl     edi,10
-        add     edi,1024*4096*1023      ;base of page alias's.
+        add     edi,PTMAPADDR           ;base of page alias's.
         mov     ecx,4096/4
         xor     eax,eax
         cld
@@ -850,7 +830,7 @@ mem5_3: and     ecx,1           ;put user bits in useful place.
         sub     edi,PageDirLinear
         shl     edi,10          ;start of first page table
         push    edi
-        add     edi,1024*4096*1023
+        add     edi,PTMAPADDR
         or      ebx,111b
 mem5_4: mov     es:[edi],ebx
         add     edi,4
@@ -917,28 +897,7 @@ RAWLockMemory   proc    near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
-
+        call    RawSwitchStack
         ;
         shl     ebx,16
         mov     bx,cx
@@ -946,24 +905,24 @@ RAWLockMemory   proc    near
         mov     si,di
         add     esi,ebx
         and     ebx,not 4095            ;round down to nearest page.
-        mov     d[_LM_BlockBase],ebx
+        mov     [_LM_BlockBase],ebx
         add     esi,4095
         and     esi,not 4095            ;round up to next page.
         dec     esi
-        mov     d[_LM_BlockEnd],esi     ;store address of last page.
+        mov     [_LM_BlockEnd],esi      ;store address of last page.
         ;
         ;Check if start above end now!
         ;
-        mov     eax,d[_LM_BlockBase]
-        cmp     eax,d[_LM_BlockEnd]
+        mov     eax,[_LM_BlockBase]
+        cmp     eax,[_LM_BlockEnd]
         jnc     mem7_10
         ;
         ;Count number of pages we need for this range.
         ;
-        mov     d[_LM_Needed],0
+        mov     [_LM_Needed],0
         mov     eax,NoneLockedPages
-        mov     d[_LM_Got],eax
-        mov     eax,d[_LM_BlockBase]
+        mov     [_LM_Got],eax
+        mov     eax,[_LM_BlockBase]
 mem7_04:
         cmp     eax,LinearBase  ;must be in our memory pool.
         jc      mem7_05
@@ -977,26 +936,26 @@ mem7_04:
         jz      mem7_005                ;already present.
         call    RawPageLocked   ;locked page?
         jnz     mem7_05
-        dec     d[_LM_Got]              ;reduce available pages.
+        dec     [_LM_Got]               ;reduce available pages.
         jmp     mem7_05
 mem7_005:
-        inc     d[_LM_Needed]
+        inc     [_LM_Needed]
 mem7_05:
         add     eax,4096
-        cmp     eax,d[_LM_BlockEnd]     ;done them all yet?
+        cmp     eax,[_LM_BlockEnd]      ;done them all yet?
         jc      mem7_04
 ;
 ;Check if we actually need any more pages to lock this region.
 ;
-        cmp     d[_LM_Needed],0
+        cmp     [_LM_Needed],0
         jz      mem7_OK
 ;
 ;If VMM isn't active then pages can always be locked assumeing they exist.
 ;
         cmp     VMMHandle,0
         jnz     mem7_VMM
-        mov     eax,d[_LM_Needed]
-        cmp     eax,d[_LM_Got]
+        mov     eax,[_LM_Needed]
+        cmp     eax,[_LM_Got]
         jc      mem7_OK
         jz      mem7_OK
         jmp     mem7_15
@@ -1005,9 +964,9 @@ mem7_05:
 ;left for swapping.
 ;
 mem7_VMM:
-        mov     eax,d[_LM_Needed]
+        mov     eax,[_LM_Needed]
         add     eax,16          ;arbitrary safety buffer.
-        cmp     eax,d[_LM_Got]
+        cmp     eax,[_LM_Got]
         jc      mem7_OK
         jz      mem7_OK
         jmp     mem7_15
@@ -1015,7 +974,7 @@ mem7_VMM:
 ;Enough free pages so lock the region.
 ;
 mem7_OK:
-        mov     eax,d[_LM_BlockBase]
+        mov     eax,[_LM_BlockBase]
 mem7_4: cmp     eax,LinearBase  ;must be in our memory pool.
         jc      mem7_5
         cmp     eax,LinearLimit
@@ -1045,7 +1004,7 @@ mem7_6: ;Now mark this page as locked.
         call    RawLockPage
         ;
 mem7_5: add     eax,4096
-        cmp     eax,d[_LM_BlockEnd]     ;done them all yet?
+        cmp     eax,[_LM_BlockEnd]      ;done them all yet?
         jc      mem7_4
         ;
 mem7_10:
@@ -1056,10 +1015,10 @@ mem7_15:
         stc
         ;
 mem7_1:
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     gs
         pop     fs
@@ -1099,27 +1058,7 @@ RAWUnLockMemory proc near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
+        call    RawSwitchStack
 
         shl     ebx,16
         mov     bx,cx
@@ -1127,15 +1066,15 @@ RAWUnLockMemory proc near
         mov     si,di
         add     esi,ebx
         and     ebx,0FFFFFFFFh-4095     ;round down to nearest page.
-        mov     d[_LM_BlockBase],ebx
+        mov     [_LM_BlockBase],ebx
         add     esi,4095
         and     esi,0FFFFFFFFh-4095     ;round up to next page.
         dec     esi
-        mov     d[_LM_BlockEnd],esi     ;store address of last page.
+        mov     [_LM_BlockEnd],esi      ;store address of last page.
         ;
         ;Now run through all pages in this range un-locking them.
         ;
-        mov     eax,d[_LM_BlockBase]
+        mov     eax,[_LM_BlockBase]
 mem8_4: cmp     eax,LinearBase  ;must be in our memory pool.
         jc      mem8_5
         cmp     eax,LinearLimit
@@ -1148,15 +1087,15 @@ mem8_4: cmp     eax,LinearBase  ;must be in our memory pool.
         jz      mem8_5
         call    RawUnLockPage   ;unlock the page.
 mem8_5: add     eax,4096
-        cmp     eax,d[_LM_BlockEnd]     ;done them all yet?
+        cmp     eax,[_LM_BlockEnd]     ;done them all yet?
         jc      mem8_4
         clc
 mem8_1:
 
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     gs
         pop     fs
@@ -1195,27 +1134,7 @@ RAWGetMemoryMax proc near
         push    ebx
         push    ecx
         push    edx
-        xor     ebx,ebx
-        mov     ebx,ss
-        mov     ecx,esp
-        pushf
-        cli
-        mov     edx,d[RawStackPos]
-        sub     d[RawStackPos],RawStackDif
-        popf
-        mov     ax,KernalSS
-        mov     ss,eax
-        mov     esp,edx
-        add     ecx,4+4+4
-        push    ebx
-        push    ecx
-        sub     ecx,4+4+4
-        push    es
-        mov     es,ebx
-        mov     edx,es:[ecx]
-        mov     ebx,es:[ecx+4+4]
-        mov     ecx,es:[ecx+4]
-        pop     es
+        call    RawSwitchStack
 
         mov     ax,KernalZero
         mov     es,eax
@@ -1233,7 +1152,7 @@ RAWGetMemoryMax proc near
 mem9_l0:
         ;Look for a bigest block of free memory.
         ;
-        mov     eax,DWORD PTR es:[(1024*4096*1022)+edx*4] ;Get page details.
+        mov     eax,es:[(1024*4096*PDEMAPDET)+edx*4] ;Get page details.
         and     eax,MEM_MASK
         cmp     eax,MEM_FREE            ;Free block?
         jnz     mem9_l2
@@ -1277,7 +1196,7 @@ mem9_l4:
         sub     ecx,eax
 mem9_l6:
         jecxz   mem9_l5
-        mov     eax,DWORD PTR es:[(1024*4096*1022)+esi*4] ;Get page details.
+        mov     eax,es:[(1024*4096*PDEMAPDET)+esi*4] ;Get page details.
         and     eax,MEM_MASK
         cmp     eax,MEM_FREE            ;Free block?
         jnz     mem9_l5
@@ -1383,10 +1302,10 @@ mem9_l9:
         shl     ebx,12
         clc
 
-        lss     esp,f[esp]
-        pushf
-        add     d[RawStackPos],RawStackDif
-        popf
+        lss     esp,[esp]
+        pushfd
+        add     [RawStackPos],RawStackDif
+        popfd
 
         pop     es
         pop     ds
@@ -1443,8 +1362,8 @@ mem10_f0:
         mov     LinearEntry,eax
         shr     eax,10          ;/1024 for page dir entry.
         mov     edi,PageDirLinear       ;get page table address.
-        mov     eax,DWORD PTR es:[edi+eax*4]    ;this page present?
-        test    eax,1           ;do we have a page table?
+        mov     eax,es:[edi+eax*4]      ;this page present?
+        test    eax,1                   ;do we have a page table?
         jnz     mem10_f1                ;keep going till we do.
 ;
 ;No page table so make sure we can get 2 pages (page and det)
@@ -1480,7 +1399,7 @@ mem10_f1:
         ;
         mov     eax,LinearLimit
         shr     eax,12
-        mov     DWORD PTR es:[(1024*4096*1022)+eax*4],0
+        mov     DWORD PTR es:[(1024*4096*PDEMAPDET)+eax*4],0
         inc     FreePages
 ;       dec     medAllocPages
         inc     TotalPages
@@ -1611,7 +1530,7 @@ mem10_v4:
         call    RawClearPageLock        ;clear page locking for this entry.
         push    eax
         shr     eax,12
-        mov     DWORD PTR es:[1024*4096*1022+eax*4],0
+        mov     DWORD PTR es:[1024*4096*PDEMAPDET+eax*4],0
         pop     eax
         add     eax,4096
         dec     ecx
@@ -1639,8 +1558,7 @@ mem10_v4:
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
         mov     RealRegsStruc.Real_EDX[edi],edx
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         push    ds
         pop     es
@@ -1655,8 +1573,7 @@ mem10_v4:
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
         mov     RealRegsStruc.Real_EDX[edi],edx
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         push    ds
         pop     es
@@ -1677,8 +1594,7 @@ mem10_v4:
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
         mov     RealRegsStruc.Real_EDX[edi],edx
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         push    ds
         pop     es
@@ -1756,13 +1672,13 @@ MapPhysical     proc    near
 mem11_AddDET:
         ;Need a new DET page.
         ;
-        or      edx,111b                ;present+user+write.
-        or      edx,ecx         ;set use flags.
-        mov     DWORD PTR es:[esi+eax*4],edx    ;store this tables address.
+        or      edx,111b              ;present+user+write.
+        or      edx,ecx               ;set use flags.
+        mov     es:[esi+eax*4],edx    ;store this tables address.
         ;
         ;Clear this page to locked.
         ;
-        mov     edi,1024*4096*1022      ;base of page DET's.
+        mov     edi,1024*4096*PDEMAPDET      ;base of page DET's.
         mov     eax,LinearEntry ;get the entry number again.
         shl     eax,2           ;4 bytes per entry.
         add     edi,eax
@@ -1780,14 +1696,14 @@ mem11_AddTable:
         shr     eax,10          ;/1024 for page dir entry.
         mov     esi,PageDirLinear       ;get page table address.
         or      edx,111b                ;present+user+write.
-        or      edx,ecx         ;set use flags.
-        mov     DWORD PTR es:[esi+eax*4],edx    ;store this tables address.
+        or      edx,ecx                 ;set use flags.
+        mov     es:[esi+eax*4],edx      ;store this tables address.
         mov     esi,PageAliasLinear     ;get alias table address.
-        mov     DWORD PTR es:[esi+eax*4],edx    ;setup in alias table as well.
+        mov     es:[esi+eax*4],edx      ;setup in alias table as well.
         ;
         ;Clear this page to 0.
         ;
-        mov     edi,1024*4096*1023      ;base of page alias's.
+        mov     edi,PTMAPADDR   ;base of page alias's.
         mov     eax,LinearEntry ;get the entry number again.
         shl     eax,2           ;4 bytes per entry.
         add     edi,eax
@@ -1820,13 +1736,13 @@ mem11_AddPage:
         ;Add this to the relavent page table.
         ;
         mov     eax,LinearEntry ;get the entry number again.
-        mov     esi,1024*4096*1023      ;base of page alias's.
-        mov     ebx,DWORD PTR es:[esi+eax*4]    ;get current details.
+        mov     esi,PTMAPADDR   ;base of page alias's.
+        mov     ebx,es:[esi+eax*4]    ;get current details.
         and     ebx,1 shl 11
         or      edx,ebx
-        or      edx,111b                ;present+user+write.
-        or      edx,ecx         ;set use flags.
-        mov     DWORD PTR es:[esi+eax*4],edx    ;set physical address.
+        or      edx,111b              ;present+user+write.
+        or      edx,ecx               ;set use flags.
+        mov     es:[esi+eax*4],edx    ;set physical address.
         ;
         cmp     PageDETLinear,0
         jz      mem11_NoLocking
@@ -1864,8 +1780,7 @@ mem11_NoLocking:
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EDX[edi],edx
         mov     RealRegsStruc.Real_ECX[edi],ecx
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         push    es
         push    ds
@@ -1879,8 +1794,7 @@ mem11_NoLocking:
         mov     RealRegsStruc.Real_EAX[edi],3f00h
         mov     RealRegsStruc.Real_EDX[edi],0
         mov     RealRegsStruc.Real_ECX[edi],4096
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt       ;read it from disk.
         pop     es
@@ -1908,7 +1822,7 @@ mem11_ok:
         pop     ds
         ;
         mov     eax,LinearEntry ;get new entry number.
-        mov     esi,1024*4096*1023      ;base of page alias's.
+        mov     esi,PTMAPADDR   ;base of page alias's.
         and     DWORD PTR es:[esi+eax*4],0FFFFFFFFh-(3 shl 5)   ;clear accesed & dirty bits.
         call    EmuCR3Flush
         ;
@@ -1961,8 +1875,8 @@ UnMapPhysical   proc    near
         mov     CompareCount,0
         ;
         mov     esi,PageDirLinear
-        mov     edi,1024*4096*1023      ;base of page alias's.
-        mov     ebp,1024*4096*1022
+        mov     edi,PTMAPADDR           ;base of page alias's.
+        mov     ebp,1024*4096*PDEMAPDET
         mov     ecx,PageingPointer      ;get current position.
         mov     ebx,LinearLimit ;maximum size of scan we can do.
         sub     ebx,LinearBase
@@ -2088,7 +2002,7 @@ mem12_GotPage:
         mov     BYTE PTR fs:[esi],0
         push    eax
         ;
-        sub     edi,1024*4096*1023      ;get page table entry number.
+        sub     edi,PTMAPADDR   ;get page table entry number.
         shr     edi,2           ;page number.
         shl     edi,12          ;get linear address.
         push    edi
@@ -2117,8 +2031,7 @@ mem12_GotPage:
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EDX[edi],edx
         mov     RealRegsStruc.Real_ECX[edi],ecx
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         push    ds
         pop     es
@@ -2142,8 +2055,7 @@ mem12_GotPage:
         mov     RealRegsStruc.Real_EAX[edi],4000h
         mov     RealRegsStruc.Real_EDX[edi],0
         mov     RealRegsStruc.Real_ECX[edi],4096
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt       ;write it to disk.
         test    RealRegsStruc.Real_Flags[edi],1
@@ -2214,7 +2126,7 @@ RawLockPage     proc    near
         shr     eax,12          ;get page number.
         mov     bx,KernalZero
         mov     es,ebx
-        mov     esi,1024*4096*1022      ;base of page DET's.
+        mov     esi,1024*4096*PDEMAPDET      ;base of page DET's.
         mov     ebx,es:[esi+eax*4]
         shr     ebx,MEM_LOCK_SHIFT
         and     ebx,MEM_LOCK_MASK
@@ -2255,10 +2167,10 @@ RawClearPageLock proc near
         mov     bx,KernalZero
         mov     es,ebx
         shr     eax,12
-        mov     esi,1024*4096*1022      ;base of page alias's.
+        mov     esi,1024*4096*PDEMAPDET      ;base of page alias's.
         mov     ebx,MEM_LOCK_MASK shl MEM_LOCK_SHIFT
         xor     ebx,-1
-        and     DWORD PTR es:[esi+eax*4],ebx    ;un-lock it.
+        and     es:[esi+eax*4],ebx    ;un-lock it.
         pop     es
         pop     esi
         pop     ecx
@@ -2286,9 +2198,9 @@ RawUnLockPage   proc    near
         mov     bx,KernalZero
         mov     es,ebx
         shr     eax,12
-        mov     esi,1024*4096*1022      ;base of page alias's.
+        mov     esi,1024*4096*PDEMAPDET      ;base of page alias's.
         sub     DWORD PTR es:[esi+eax*4],1 shl MEM_LOCK_SHIFT   ;un-lock it.
-        mov     eax,DWORD PTR es:[esi+eax*4]
+        mov     eax,es:[esi+eax*4]
         shr     eax,MEM_LOCK_SHIFT
         and     eax,MEM_LOCK_MASK
         jnz     mem15_NotUnLocked
@@ -2333,8 +2245,8 @@ RawPageLocked   proc    near
         mov     bx,KernalZero
         mov     es,ebx
         shr     eax,12          ;get page number.
-        mov     esi,1024*4096*1022      ;base of page alias's.
-        mov     ebx,DWORD PTR es:[esi+eax*4]
+        mov     esi,1024*4096*PDEMAPDET      ;base of page alias's.
+        mov     ebx,es:[esi+eax*4]
         shr     ebx,MEM_LOCK_SHIFT
         and     ebx,MEM_LOCK_MASK
         pop     es
@@ -2365,10 +2277,10 @@ GetPageStatus   proc    near
         push    esi
         push    ds
         push    es
-        push    ax
+        push    eax
         mov     ax,KernalDS
         mov     ds,eax
-        pop     ax
+        pop     eax
         assume ds:_cwRaw
         mov     bx,KernalZero
         mov     es,ebx
@@ -2462,7 +2374,7 @@ VirtualFault    endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Allocate a block of DOS memory & provide a selector to access it with.
+;DPMI ax=0100h: Allocate a block of DOS memory & provide a selector to access it with.
 ;
 RawGetDOSMemory proc near
         push    ecx
@@ -2485,8 +2397,7 @@ mem19_0:
         pop     es
         mov     RealRegsStruc.Real_EAX[edi],4800h       ;get memory.
         mov     RealRegsStruc.Real_EBX[edi],ebx ;memory size.
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt       ;allocate it.
         pop     ecx
@@ -2572,8 +2483,7 @@ mem19_8:
         mov     es,eax
         mov     es:RealRegsStruc.Real_EAX[edi],4900h    ;release memory.
         mov     es:RealRegsStruc.Real_ES[edi],bx        ;segment.
-        mov     es:RealRegsStruc.Real_SS[edi],0
-        mov     es:RealRegsStruc.Real_SP[edi],0
+        mov     es:RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt       ;release it.
         ;
@@ -2593,7 +2503,7 @@ RawGetDOSMemory endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Re-size a block of DOS memory.
+;DPMI ax=0102h: Re-size a block of DOS memory.
 ;
 RawResDOSMemory proc near
         push    ecx
@@ -2639,8 +2549,7 @@ mem20_Shrink:
         mov     RealRegsStruc.Real_EAX[edi],4a00h
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ES[edi],ax
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt
         mov     eax,RealRegsStruc.Real_EAX[edi]
@@ -2771,7 +2680,7 @@ RawResDOSMemory endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Release a block of DOS memory.
+;DPMI ax=0101h: Release a block of DOS memory.
 ;
 RawRelDOSMemory proc near
 
@@ -2860,8 +2769,7 @@ mem21_0:
         mov     edi,offset MemIntBuffer
         mov     RealRegsStruc.Real_EAX[edi],4900h       ;release block.
         mov     RealRegsStruc.Real_ES[edi],ax   ;block to release.
-        mov     RealRegsStruc.Real_SS[edi],0
-        mov     RealRegsStruc.Real_SP[edi],0
+        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt       ;release it.
         mov     eax,RealRegsStruc.Real_EAX[edi]

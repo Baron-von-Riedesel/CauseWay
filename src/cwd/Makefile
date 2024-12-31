@@ -9,8 +9,8 @@ Build:
 Build\cwd.exe: Build\cwd.obj
 	@wl32 /q/ex/m/non/cs Build\cwd.obj,Build\cwd.exe,Build\cwd.map
 
-Build\cwd.obj: cwd.asm cmacros.inc equates.inc
-	@ml -c -nologo -FoBuild\ cwd.asm
+Build\cwd.obj: cwd.asm cmacros.inc equates.inc ..\strucs.inc
+	@ml -c -nologo -FoBuild\ -I.. cwd.asm
 
 Build\cwd.ovl: Build\cwd-ovl.obj
 #	@..\cwl\build\cwl.exe /MAP Build\cwd-ovl.obj,Build\cwd.ovl,Build\cwd-ovl.map

@@ -1446,7 +1446,7 @@ ExcepNN386	proc	far
 ;
 ;Now switch to PL0 to get CR0-3 values.
 ;
-	call	EmuRAWPL32PL0
+	call	EmuRAWPL3toPL0
 	str	ax		;get TR
 	mov	ExceptionTR,ax
 	mov	eax,cr0
@@ -1457,7 +1457,7 @@ ExcepNN386	proc	far
 	mov	ExceptionCR3,eax
 	mov	cx,MainSS
 	mov	edx,offset _cwStackEnd-256
-	call	EmuRAWPL02PL3
+	call	EmuRAWPL0toPL3
 ;
 ;Convert register values into ASCII ready for printing.
 ;

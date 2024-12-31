@@ -6,7 +6,15 @@ _Int10h segment para private 'extension code' use32
         assume cs:_Int10h, ds:nothing, es:nothing
 Int10hStart     label byte
 
-
+	align 4
+OldInt10h       df 0
+Int10hCSeg      dd ?
+Int10hDSeg      dd ?
+Int10hDDSeg     dd ?
+;
+Int10hStaticSel dw ?
+Int10hUltraFont dw ?
+;
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 Int10hOpen      proc    near
 ;
@@ -14,7 +22,7 @@ Int10hOpen      proc    near
 ;
         assume ds:_Int10h
         assume es:_cwMain
-        mov     Int10hDSeg,es   ;Store cwCode selector.
+        mov     Int10hDSeg,es   ;store _cwMain data selector.
         mov     Int10hCSeg,cs   ;store this segment.
         mov     Int10hDDSeg,ds
         ;
@@ -29,7 +37,7 @@ Int10hOpen      proc    near
         Sys     GetVect
         test    BYTE PTR es:SystemFlags,1
         jz      @F
-        movzx edx, dx
+        movzx   edx, dx
 @@:
         mov     d[OldInt10h+0],edx
         mov     w[OldInt10h+4],cx
@@ -41,7 +49,7 @@ Int10hOpen      proc    near
         assume ds:nothing
         clc
 int101_9:
-        retw
+        retf
 Int10hOpen      endp
 
 
@@ -63,7 +71,7 @@ int102_9:
         pop     ds
         assume ds:nothing
         ;
-        retw
+        retf
 Int10hClose     endp
 
 
@@ -1017,9 +1025,9 @@ int103_Done:
 int103_Use32Bit8:
         mov     bx,ss:[esp+(4+4)+(4+4)]         ;get original flags.
 int103_Use16Bit8:
-        and     bx,0000011000000000b            ;retain IF.
-        and     ax,1111100111111111b            ;lose IF.
-        or      ax,bx                   ;get old IF.
+        and     bx,0000011000000000b            ;retain IF & DF.
+        and     ah,11111001b                    ;lose IF & DF.
+        or      ax,bx                           ;get old IF.
         push    ds
         mov     ds,cs:Int10hDSeg
         assume ds:_cwMain
@@ -1054,16 +1062,6 @@ int103_NotOurs:
 Int10h  endp
 ;
 
-	align 4
-OldInt10h       df 0
-Int10hCSeg      dd ?
-Int10hDSeg      dd ?
-Int10hDDSeg     dd ?
-;
-Int10hStaticSel dw ?
-Int10hUltraFont dw ?
-;
-        db 4 dup (0)
 Int10hEnd       label byte
 _Int10h ends
         .286

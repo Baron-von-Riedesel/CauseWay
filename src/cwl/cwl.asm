@@ -11,10 +11,9 @@
 	.stack 1024
 ;	option oldstructs
 
-	include ..\cw.inc
-
+	include cw.inc
 	include cwl.inc
-	include ..\strucs.inc
+	include strucs.inc
 
 	.data
 ;
