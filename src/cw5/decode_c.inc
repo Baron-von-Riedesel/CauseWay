@@ -1,3 +1,4 @@
+
 decode_c_struc struc
 DecC_ID db "CWC"
 DecC_Bits       db 0
@@ -8,6 +9,8 @@ decode_c_struc  ends
 
 RepMinSize      equ     2
 
+
+_DATA32 segment
 ;
         align 4
 cDiskBufferMax  dd ?
@@ -21,11 +24,12 @@ OutAddr df ?
 decode_c_handle dw ?
 ;
         align 4
-decode_c_buffer db size v86CallStruc dup (?)
+decode_c_buffer RealRegsStruc <?>
 ;
         align 4
 decode_c_head   decode_c_struc <>
 ;
+_DATA32 ends
 
 ;
 ;Get next input bit.
@@ -62,9 +66,8 @@ GetCWCInfo      proc    near
         push    edi
         push    ebp
         push    ds
-        assume ds:nothing
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         ;
         ;Get current file pointer position.
         ;
@@ -157,8 +160,8 @@ DecodeCWC       proc    near
         push    fs
         push    gs
         assume ds:nothing
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         mov     CWCStack,esp            ;Set for error exit.
         mov     decode_c_handle,bx      ;Store the handle.
         mov     d[OutAddr],edi  ;Store destination.
@@ -167,14 +170,14 @@ DecodeCWC       proc    near
 ;Setup disk buffer variables.
 ;
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,PSPSegment
         assume ds:nothing
         mov     ecx,DWORD PTR ds:[EPSP_Struc.EPSP_TransSize]
-        mov     ax,WORD PTR ds:[EPSP_Struc.EPSP_TransProt]
-        mov     bx,WORD PTR ds:[EPSP_Struc.EPSP_TransReal]
-        assume ds:_apiCode
+        mov     ax,ds:[EPSP_Struc.EPSP_TransProt]
+        mov     bx,ds:[EPSP_Struc.EPSP_TransReal]
+        assume ds:GROUP32
         pop     ds
         mov     cDiskBufferMax,ecx
         mov     cDiskBufferSeg,ax
@@ -395,7 +398,8 @@ dec2_3_3:
         ;We're all done so exit.
         ;
         align 4
-dec2_4: assume ds:nothing
+dec2_4:
+        assume ds:nothing
         ;
         or      ebx,ebx
         jnz     dec2_form_error
@@ -416,9 +420,8 @@ dec2_form_error:
         jmp     dec2_exit
         ;
 dec2_cwc_error:
-        assume ds:nothing
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         mov     bx,decode_c_handle
         mov     ax,4001h
         mov     dx,-(size decode_c_struc)
@@ -447,8 +450,8 @@ dec2_FillBuffer:
         pushad
         push    ds
         push    es
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         push    ds
         pop     es
         ;
@@ -503,5 +506,5 @@ dec2_FB_2:
         popad
         xor     esi,esi
         ret
-        assume ds:_apiCode
+        assume ds:GROUP32
 DecodeCWC       endp

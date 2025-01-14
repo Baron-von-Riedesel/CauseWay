@@ -1,0 +1,30 @@
+
+   Changelog
+
+   - adjusted source so OPTION OLDSTRUCTS isn't necessary.
+   - added "wdeb386 int 68h" interface to kernel debugger.
+   - removed "double 0x66" prefixes for IRET/RETF.
+   - segment register moves changed to 32-bit in 32-bit code segments.
+   - added ALIGNs in data segments to avoid unaligned accesses.
+   - fixed: emulation of DPMI functions 090x.
+   - int 41h "protected-mode debugger API": ensure that interrupt isn't
+     reflected to real-mode.
+   - invalid opcode fault wasn't reported as exception, but as interrupt only;
+     changed to be a true exception (#06).
+   - fixed: emulation of DPMI functions 0300h-0302h did modify BX register.
+   - fixed: int 31h, ax=0000 always returned with NC, although function might
+     have failed.
+   - if PL3 stack couldn't be allocated in UMB (9k), it's now using memory
+     used by segments that were moved to extended memory. This may avoid
+     scattering of DOS memory.
+   - _cwInit segment moved from last segment to just behind _cwRaw. This allows
+     to put _cwMain, _cwRaw and _cwInit in a group, thus reducing segment register
+     moves.
+   - fixed: handling exceptions in raw/vcpi mode (interrup.asm) did finally
+     jump to InitError(), which is located in _cwInit and hence not present
+     when the application runs.
+   - fixed: address space handling in raw/vcpi mode (memory.asm) ignored an
+     overflow, resulting in a freeze or reboot.
+   - UMBs are now also preferably used in DPMI mode.
+   - fixed: unhandled DPMI functions were routed to real-mode in raw/vcpi mode.
+   - DPMI function 306h (return raw mode switch addresses) implemented.

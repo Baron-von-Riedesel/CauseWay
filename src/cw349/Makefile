@@ -18,7 +18,7 @@ Build\cw32.exe: Build\cw32.obj
 Build\cw32.obj: cw32.asm raw_vcpi.inc interrup.inc ldt.inc memory.inc api.inc \
 		int10h.inc int21h.inc int33h.inc decode_c.inc exceptn.inc general.inc \
 		..\strucs.inc ..\cw.inc ..\loadle\loadle.inc
-	ml /c /Cp /nologo /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
+	ml /c /Cp /nologo /DCW3 /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
 #	jwasm /c /Cp /nologo /DENGLISH=1 /I.. /FlBuild\ -FoBuild\ cw32.asm
 
 clean:

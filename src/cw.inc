@@ -1142,7 +1142,7 @@ cwLoad	equ	0ff2ah
 ;
 cwcInfo	equ	0ff2bh
 
-ifdef CW4
+ifndef CW3
 DbgNtfModLoad   equ     0fff7h
 DbgNtfModUnload equ     0fff8h
 endif
@@ -1267,7 +1267,7 @@ EPSP_Struc		struc
  EPSP_EntryCSEIP	df ?		;Entry CS:EIP for DLL's
 
  EPSP_PSPSel		dw ?		;This PSP's selector.
-ifdef CW4
+ifndef CW3
  EPSP_FileName      db 256 dup (?)  ;This module full file name.
 endif
 EPSP_Struc		ends

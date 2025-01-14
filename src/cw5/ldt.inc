@@ -23,7 +23,7 @@ RawGetDescriptors proc near
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT memory addresable.
         mov     es,eax
         mov     edi,MDTLinear+4 ;point to descriptor map.
@@ -69,8 +69,8 @@ ldt1_1:
         shl     edi,3
         push    edi
         add     edi,MDTLinear
-        xor     eax,eax
-        mov     es:[edi+0],eax
+        xor     ecx,ecx
+        mov     es:[edi+0],ecx
         mov     DWORD PTR es:[edi+4],(DescPresent+DescMemory+DescRWData+DescPL3) shl 8
         or      edx,edx
         jz      ldt1_2
@@ -84,7 +84,9 @@ ldt1_1:
         rep     movsd
         pop     ds
         ;
-ldt1_2: pop     eax
+ldt1_2:
+        pop     ax              ;don't modify hiword(eax)!
+        add     esp,2
         or      ax,3+4          ;RPL=3, TI=1
         clc
         jmp     ldt1_9
@@ -153,7 +155,7 @@ ldt2_3:
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT addresable.
         mov     es,eax
         movzx   esi,bx          ;Get selector to use.
@@ -192,6 +194,8 @@ RawRelDescriptor endp
 ;Note: Multiple calls with the same value will nearly always return the same
 ;selector depending on how many selectors have been allocated with this routine.
 ;
+MAXREAL2PROT equ 128
+
 RawReal2ProtSel proc    near
         ;
         push    ebx
@@ -205,7 +209,7 @@ RawReal2ProtSel proc    near
         movzx   ebx,bx          ;Get the segment value.
         shl     ebx,4           ;convert to linear.
         mov     esi,offset Real2ProtList        ;point to list of selectors.
-        mov     ecx,128
+        mov     ecx,MAXREAL2PROT
 ldt3_0: cmp     w[esi],0                ;end of the list?
         jz      ldt3_New
         push    ebx
@@ -274,7 +278,8 @@ ldt3_9:
         pop     ecx
         pop     ebx
         ret
-Real2ProtList   dw 128 dup (0)
+	align 2
+Real2ProtList   dw MAXREAL2PROT dup (0)
 RawReal2ProtSel endp
 
 
@@ -296,7 +301,7 @@ RawSetSelType   proc    near
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT addresable.
         mov     es,eax
         movzx   esi,bx          ;Get the selector.
@@ -335,7 +340,7 @@ RawSetSelLimit  proc    near
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT addresable.
         mov     es,eax
         movzx   esi,bx          ;Get the selector.
@@ -382,7 +387,7 @@ RawSetSelBase   proc    near
         push    es
         mov     ax,KernalDS             ;make our data addressable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT addressable.
         mov     es,eax
         movzx   esi,bx          ;Get the selector.
@@ -421,7 +426,7 @@ RawGetSelBase   proc    near
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make LDT addresable.
         mov     es,eax
         movzx   esi,bx          ;Get the selector.
@@ -458,7 +463,7 @@ RawBPutDescriptor proc near
         push    es
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
@@ -508,7 +513,7 @@ RawBGetDescriptor proc near
         push    ds
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         movzx   esi,bx          ;Get the selector.
         and     si,0fff8h               ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.

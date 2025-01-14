@@ -1,23 +1,42 @@
-ExeHeaderStruc  struc
-apiExeSignature     db ?    ;00 Identifier text.
-                    db ?    ;01 /
-apiExeLength        dw ?    ;02 Length of file MOD 512
-                    dw ?    ;04 Length of file in 512 byte blocks.
-apiExeRelocNum      dw ?    ;06 Number of relocation items.
-apiExeHeaderSize    dw ?    ;08 Length of header in 16 byte paragraphs.
-apiExeMinAlloc      dw ?    ;0A Minimum number of para's needed above program.
-apiExeMaxAlloc      dw ?    ;0C Maximum number of para's needed above program.
-apiExeStackSeg      dw ?    ;0E Segment displacement of stack module.
-apiExeEntrySP       dw ?    ;10 value for SP at entry.
-apiExeCheckSum      dw ?    ;12 Check sum...
-apiExeEntryIP       dw ?    ;14 Contents of IP at entry.
-apiExeEntryCS       dw ?    ;16 Segment displacement of CS at entry.
-apiExeRelocFirst    dw ?    ;18 First relocation item offset.
-apiExeOverlayNum    db ?    ;1A Overlay number.
-ExeHeaderStruc  ends
 ;
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
+_DATA32 segment
+	align 2
+;
+api89_Name        df 0,0
+api89_Environment dw 0
+api89_SystemFlags dd ?
+api89_AutoOffset  dd ?
+api89_Command     df ?,0
+api89_Flags       dd 0
+;api89_ErrorCode   dw 0            ;error number.
+api89_Handle      dw 0            ;file handle.
+api89_EntryEIP    dd 0
+api89_SegCS       dw 0
+api89_EntryESP    dd 0
+api89_SegSS       dw 0
+api89_SegMem      dd 0
+api89_RelocMem    dd 0
+api89_ProgBase    dd 0
+api89_Segs        dd 0
+api89_PSP         dw 0
+api89_EntryDS     dw 0
+api89_ExpMem      dd 0
+api89_ModLink     dd 0
+api89_ImpMem      dd 0
+api89_ImpCnt      dd 0
+api89_ImpFlags    dd 0
+api89_ImpType     dd 0
+api89_3PStart     dd 0
+api89_SL_RelocPnt dd 0
+api89_SL_RelocLeft dd 0
+api89_SL_LoadPnt  dd 0
+api89_SL_LoadLeft dd 0
+
+_DATA32 ends
+
+
 ;Load, relocate and execute the application code. 3P format loader.
 ;
 ;On Entry:
@@ -64,9 +83,8 @@ Load3P  proc    near
         push    es
         push    fs
         push    gs
-        assume ds:nothing
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         ;
         push    [api89_SegSS]
         push    [api89_SegMem]
@@ -124,21 +142,21 @@ Load3P  proc    near
 ;
 api89_Look3P:
         mov     bx,[api89_Handle]
-        mov     edx,offset apiNewHeader             ;somewhere to put the info.
-        mov     ecx,size NewHeaderStruc             ;size of it.
+        mov     edx,offset apiMZHeader              ;somewhere to put the info.
+        mov     ecx,size MZHeader
         mov     ah,3fh
         int     21h
         jc      api89_file_error
-        cmp     ax,size NewHeaderStruc              ;did we read right amount?
+        cmp     ax,cx
         jnz     api89_file_error
         ;
-        cmp     w[apiNewHeader],'ZM'
+        cmp     w[apiMZHeader.Signature],'ZM'
         jnz     api89_CheckNew
         ;
         ;Move back to EXE details.
         ;
-        mov     ax,w[apiNewHeader+ExeHeaderStruc.apiExeLength+2] ;get length in 512 byte blocks
-        cmp     WORD PTR [apiNewHeader+ExeHeaderStruc.apiExeLength],0
+        mov     ax,[apiMZHeader.NumPages]           ;get length in 512 byte blocks
+        cmp     [apiMZHeader._Length],0
         je      medexe3                             ;not rounded if no modulo
         dec     ax                                  ;lose 1 cos its rounded up
 medexe3:
@@ -147,7 +165,7 @@ medexe3:
         mov     dl,ah
         mov     ah,al
         mov     al,dh                               ;mult by 256=*512
-        add     ax,w[apiNewHeader+ExeHeaderStruc.apiExeLength] ;add length mod 512
+        add     ax,[apiMZHeader._Length]            ;add length mod 512
         adc     dx,0                                ;add any carry to dx
         mov     cx,ax
         xchg    cx,dx                               ;swap round for DOS.
@@ -275,8 +293,8 @@ api89_NoExports0:
         jc      api89_mem_error
         mov     [api89_ModLink],esi
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,RealSegment
         assume es:nothing
         mov     DWORD PTR es:[esi],0                ;clear entry count for now.
@@ -317,16 +335,16 @@ api89_NoAutoSeg:
         push    es
         mov     es,[api89_PSP]
         mov     ax,w[api89_Segs+0]                          ;get base selector.
-        mov     WORD PTR es:[EPSP_Struc.EPSP_SegBase],ax
+        mov     es:[EPSP_Struc.EPSP_SegBase],ax
         mov     ax,w[api89_Segs+2]                          ;get number of selectors.
         shl     ax,3                                        ;8 bytes per selector.
-        mov     WORD PTR es:[EPSP_Struc.EPSP_SegSize],ax
+        mov     es:[EPSP_Struc.EPSP_SegSize],ax
         mov     eax,[api89_ProgBase]                        ;get memory address.
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_MemBase],eax
+        mov     es:[EPSP_Struc.EPSP_MemBase],eax
         mov     es:[EPSP_Struc.EPSP_NearBase],eax
         mov     edi,offset apiNewHeader
         mov     eax,NewHeaderStruc.NewAlloc[edi]            ;get memory size.
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_MemSize],eax
+        mov     es:[EPSP_Struc.EPSP_MemSize],eax
         pop     es
 ;
 ;Read segment definitions.
@@ -335,8 +353,8 @@ api89_NoAutoSeg:
         jz      api89_ncp0
         mov     bx,[api89_Handle]
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     edi,[api89_SegMem]
@@ -354,12 +372,12 @@ api89_ncp0:
         mov     edx,[api89_SegMem]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error
         cmp     eax,ecx
@@ -377,8 +395,8 @@ api89_ncp1:
         add     edi,[api89_SegMem]                  ;offset to space for new entry.
         inc     NewHeaderStruc.NewSegments[esi]     ;update number of segments.
         mov     eax,[api89_AutoOffset]
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     es:[edi],eax                        ;setup base.
@@ -409,8 +427,8 @@ api89_NoAutoMake:
         jz      api89_ncp2
         mov     bx,[api89_Handle]
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     edi,[api89_RelocMem]
@@ -428,12 +446,12 @@ api89_ncp2:
         mov     edx,[api89_RelocMem]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error
         cmp     eax,ecx                             ;did we get enough?
@@ -451,8 +469,8 @@ api89_NoRelocsMem:
         jz      api89_ncp3
         mov     bx,[api89_Handle]
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     edi,[api89_ExpMem]
@@ -467,12 +485,12 @@ api89_ncp3:
         mov     edx,[api89_ExpMem]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error
         cmp     eax,ecx                             ;did we get enough?
@@ -496,8 +514,8 @@ api89_NoExpMem:
         jz      api89_ncp20
         mov     bx,[api89_Handle]
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     edi,[api89_ImpMem]
@@ -514,12 +532,12 @@ api89_ncp20:
         mov     edx,[api89_ImpMem]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error
         cmp     eax,ecx                             ;did we get enough?
@@ -533,8 +551,8 @@ api89_NoImpMem1:
         jz      api89_NotComp
         mov     bx,[api89_Handle]
         push    es
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     edi,[api89_ProgBase]
@@ -556,12 +574,12 @@ api89_LoadAll:
         mov     bx,[api89_Handle]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile                            ;read the file.
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error                    ;problems problems.
         cmp     eax,ecx                             ;did we get right amount?
@@ -588,8 +606,8 @@ api89_sl0:
         ;
         cmp     [api89_SL_LoadLeft],0
         jz      api89_ImageLoaded
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         ;
@@ -627,12 +645,12 @@ api89_sl3:
         mov     bx,[api89_Handle]
         push    ecx
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
         call    ReadFile                            ;read the file.
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         pop     ecx
         jc      api89_file_error                    ;problems problems.
         cmp     eax,ecx                             ;did we get right amount?
@@ -650,9 +668,9 @@ api89_sl3:
         mov     fs,[api89_PSP]
         ;
         mov     bx,w[api89_Segs+0]
-        mov     edi,DWORD PTR fs:[EPSP_Struc.EPSP_MemBase]
-        add     edi,DWORD PTR fs:[EPSP_Struc.EPSP_MemSize]
-        mov     dx,WORD PTR fs:[EPSP_Struc.EPSP_SegSize]
+        mov     edi,fs:[EPSP_Struc.EPSP_MemBase]
+        add     edi,fs:[EPSP_Struc.EPSP_MemSize]
+        mov     dx,fs:[EPSP_Struc.EPSP_SegSize]
         shr     dx,3
 api89_SL_RelocLoop:
         or      ecx,ecx
@@ -728,17 +746,17 @@ api89_ImageLoaded:
         or      ecx,ecx
         jz      api89_DoneReloc
         mov     esi,[api89_RelocMem]
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     fs,[api89_PSP]
         ;
         mov     [api89_EntryEIP],0
         mov     bx,w[api89_Segs+0]
-        mov     edi,DWORD PTR fs:[EPSP_Struc.EPSP_MemBase]
-        add     edi,DWORD PTR fs:[EPSP_Struc.EPSP_MemSize]
-        mov     dx,WORD PTR fs:[EPSP_Struc.EPSP_SegSize]
+        mov     edi,fs:[EPSP_Struc.EPSP_MemBase]
+        add     edi,fs:[EPSP_Struc.EPSP_MemSize]
+        mov     dx,fs:[EPSP_Struc.EPSP_SegSize]
         shr     dx,3
 api89_RelocLoop:
         mov     ebp,es:[esi]                        ;get linear offset.
@@ -787,8 +805,8 @@ api89_DoneReloc:
         mov     esi,offset apiNewHeader
         movzx   ecx,NewHeaderStruc.NewSegments[esi] ;get number of segments.
         mov     esi,[api89_SegMem]
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     bx,w[api89_Segs+0]                  ;base selector.
@@ -879,8 +897,8 @@ api89_SegDone:
         mov     edi,[api89_SegMem]
         mov     DWORD PTR es:[EPSP_Struc.EPSP_Exports],esi
         mov     dx,es:[EPSP_Struc.EPSP_SegBase]
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     ecx,es:[esi]
@@ -962,8 +980,8 @@ api89_NotAUTODS:
         cmp     [api89_ImpMem],0                    ;any imports?
         jz      api89_imp9
         mov     [api89_ImpCnt],0                    ;Clear the counter.
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
 api89_imp0:
@@ -985,8 +1003,8 @@ api89_imp0:
         ;
         push    ds
         push    ax
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         cmp     ax,1
         jnz     api89_egm1
         mov     edi,offset ErrorM10_T
@@ -1007,7 +1025,7 @@ api89_egm0:
         mov     b[edi+3],"$"
 api89_egm1:
         pop     ax
-        assume ds:_apiCode
+        assume ds:GROUP32
         pop     ds
         stc
         jmp     api89_error
@@ -1356,52 +1374,19 @@ api89_file_error:
 api89_file_error2:
         mov     eax,[api89_EntryEIP]                ;Get the relocation number.
         push    ds
-        assume ds:nothing
-        mov     ds,cs:apiDSeg
-        assume ds:_cwMain
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
         mov     b[ErrorM11_0+0]," "
         mov     b[ErrorM11_0+1]," "
         mov     b[ErrorM11_0+2]," "
         mov     ecx,8
         mov     edi,offset ErrorM11_1
         call    Bin2HexA
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         mov     ax,2
         stc
         jmp     api89_error
-
-	align 2
-;
-api89_Name        df 0,0
-api89_Environment dw 0
-api89_SystemFlags dd ?
-api89_AutoOffset  dd ?
-api89_Command     df ?,0
-api89_Flags       dd 0
-;api89_ErrorCode   dw 0            ;error number.
-api89_Handle      dw 0            ;file handle.
-api89_EntryEIP    dd 0
-api89_SegCS       dw 0
-api89_EntryESP    dd 0
-api89_SegSS       dw 0
-api89_SegMem      dd 0
-api89_RelocMem    dd 0
-api89_ProgBase    dd 0
-api89_Segs        dd 0
-api89_PSP         dw 0
-api89_EntryDS     dw 0
-api89_ExpMem      dd 0
-api89_ModLink     dd 0
-api89_ImpMem      dd 0
-api89_ImpCnt      dd 0
-api89_ImpFlags    dd 0
-api89_ImpType     dd 0
-api89_3PStart     dd 0
-api89_SL_RelocPnt dd 0
-api89_SL_RelocLeft dd 0
-api89_SL_LoadPnt  dd 0
-api89_SL_LoadLeft dd 0
 
 Load3P  endp
 

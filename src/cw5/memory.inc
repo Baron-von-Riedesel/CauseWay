@@ -1,9 +1,10 @@
 
 ;--- for RAW/VCPI mode.
 ;--- make a stack switch ( code prepared for IOPL 0 )
-;--- eax modified
+;--- expects registers ebx,ecx,edx being pushed before call.
+;--- eax modified; old ss:esp pushed onto new stack.
 
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
 RawSwitchStack proc
         mov     ebx,ss
@@ -58,7 +59,7 @@ RAWGetMemory    proc    near
         push    es
         mov     ax,KernalDS             ;make data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
         push    ebx
         push    ecx
@@ -69,7 +70,7 @@ RAWGetMemory    proc    near
         mov     es,eax
         shl     ebx,16          ;get block size as 32-bit.
         mov     bx,cx
-        add     ebx,4095                ;round up to next 4k.
+        add     ebx,4095        ;round up to next 4k.
         shr     ebx,12
         or      ebx,ebx
         jz      mem1_error
@@ -268,7 +269,7 @@ RAWResMemory    proc    near
         push    es
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
         push    ebx
         push    ecx
@@ -529,7 +530,7 @@ RAWRelMemory    proc    near
         mov     si,di
         mov     ax,KernalDS             ;make data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
         push    ebx
         push    ecx
@@ -566,7 +567,8 @@ RAWRelMemory    proc    near
         shr     ecx,12
         sub     ecx,esi         ;Get pages remaining.
         jz      mem3_1
-mem3_0: mov     eax,es:[1024*4096*PDEMAPDET+esi*4]
+mem3_0:
+        mov     eax,es:[1024*4096*PDEMAPDET+esi*4]
         and     eax,MEM_MASK
         cmp     eax,MEM_END
         jnz     mem3_1
@@ -622,7 +624,7 @@ RawDiscardPages proc    near
         pushad
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,eax
 ;
@@ -708,7 +710,7 @@ RawMapPhys2Lin  proc    near
         push    ebp
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,eax
 ;
@@ -892,7 +894,7 @@ RAWLockMemory   proc    near
         push    gs
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
         push    ebx
         push    ecx
@@ -1052,7 +1054,7 @@ RAWUnLockMemory proc near
         push    gs
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         ;
 
         push    ebx
@@ -1129,7 +1131,7 @@ RAWGetMemoryMax proc near
         push    es
         mov     ax,KernalDS             ;make data addresable.
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
 
         push    ebx
         push    ecx
@@ -1332,6 +1334,7 @@ RAWGetMemoryMax endp
 ;On Exit:
 ;
 ;Carry set on error else memory map extended.
+;modified [LinearLimit], [TotalPages]
 ;
 ExtendLinearMemory proc near
         pushad
@@ -1339,7 +1342,7 @@ ExtendLinearMemory proc near
         push    es
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,eax
         mov     ebp,ecx
@@ -1348,19 +1351,26 @@ ExtendLinearMemory proc near
         shl     eax,12
         dec     eax
         add     eax,LinearLimit
+
+;--- overflow (C set) should be an error;
+;--- it may happen if the amount to allocate and the amount already allocated
+;--- exceed 4 GB
+
+        jc      mem10_error
+
         dec     eax
         sub     eax,LinearBase
         cmp     eax,MaxMemLin
         jnc     mem10_error
 
         ;
-        ;Try extending useing physical memory first.
+        ;Try extending using physical memory first.
         ;
 mem10_f0:
-        mov     eax,LinearLimit ;get new entry number.
-        shr     eax,12          ;page number.
+        mov     eax,LinearLimit         ;get new entry number.
+        shr     eax,12                  ;page number.
         mov     LinearEntry,eax
-        shr     eax,10          ;/1024 for page dir entry.
+        shr     eax,10                  ;/1024 for page dir entry.
         mov     edi,PageDirLinear       ;get page table address.
         mov     eax,es:[edi+eax*4]      ;this page present?
         test    eax,1                   ;do we have a page table?
@@ -1376,24 +1386,24 @@ mem10_f0:
 ;
 mem10_f2:
         call    PhysicalGetPage ;get a page.
-        jc      mem10_error             ;it lied.
+        jc      mem10_error     ;it lied.
         mov     eax,LinearLimit ;get new entry number.
         shr     eax,12          ;page number.
         mov     LinearEntry,eax
         push    LinearEntry
-        call    MapPhysical             ;use this page for page table.
+        call    MapPhysical     ;use this page for page table.
         call    PhysicalGetPage ;get a page.
         pop     LinearEntry
-        jc      mem10_error             ;it lied.
-        call    MapPhysical             ;use this page for page table.
+        jc      mem10_error     ;it lied.
+        call    MapPhysical     ;use this page for page table.
         ;
 mem10_f1:
         call    PhysicalGetPage ;get a page.
-        jc      mem10_Virtual           ;use virtual memory.
+        jc      mem10_Virtual   ;use virtual memory.
         mov     eax,LinearLimit ;get new entry number.
         shr     eax,12          ;page number.
         mov     LinearEntry,eax
-        call    MapPhysical             ;use this page for page table.
+        call    MapPhysical     ;use this page for page table.
         ;
         ;Update details.
         ;
@@ -1404,7 +1414,7 @@ mem10_f1:
 ;       dec     medAllocPages
         inc     TotalPages
         add     LinearLimit,4096        ;bump up the end of the memory map.
-        dec     ebp             ;update the counter.
+        dec     ebp                     ;update the counter.
         jnz     mem10_f0                ;keep looking.
         clc
         jmp     mem10_Exit              ;All physical so exit.
@@ -1649,7 +1659,7 @@ MapPhysical     proc    near
         push    es
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero   ;make everything addresable.
         mov     es,eax
         ;
@@ -1866,7 +1876,7 @@ UnMapPhysical   proc    near
         mov     ax,KernalDS
         mov     ds,eax
         mov     es,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     fs,eax
         ;
@@ -2138,7 +2148,7 @@ RawLockPage     proc    near
         push    ds
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         dec     NoneLockedPages
         assume ds:_cwDPMIEMU
         pop     ds
@@ -2210,7 +2220,7 @@ RawUnLockPage   proc    near
         push    ds
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         inc     NoneLockedPages
         assume ds:_cwDPMIEMU
         pop     ds
@@ -2280,8 +2290,8 @@ GetPageStatus   proc    near
         push    eax
         mov     ax,KernalDS
         mov     ds,eax
+        assume ds:GROUP16
         pop     eax
-        assume ds:_cwRaw
         mov     bx,KernalZero
         mov     es,ebx
         push    eax
@@ -2327,7 +2337,7 @@ VirtualFault    proc    far
         mov     eax,ExceptionCR2
         mov     cx,KernalDS
         mov     ds,ecx
-        assume ds:_cwRaw
+        assume ds:GROUP16
         cmp     eax,LinearBase  ;address below our memory space?
         jc      mem18_OldExit
         cmp     eax,LinearLimit ;address above our memory space?
@@ -2345,30 +2355,29 @@ VirtualFault    proc    far
         jc      mem18_Disk_Error                ;This should only happen on disk errors.
         ;
         pop     ds
+        assume ds:nothing
         pop     edx
         pop     ecx
         pop     eax
-        assume ds:nothing
         test    BYTE PTR cs:DpmiEmuSystemFlags,1        ;check exit size.
-        assume ds:_cwRaw
         jz      mem18_Use32Bit3
-        db 66h
-        retf                    ;16 bit exit.
+        retw                    ;16 bit exit.
 mem18_Use32Bit3:
         retf
         ;
 mem18_Disk_Error:
         jmp     mem18_OldExit
         ;
-        assume ds:nothing
 mem18_OldExit:
         pop     ds
         pop     edx
         pop     ecx
         pop     eax
-        jmp     FWORD PTR cs:[OldExcep14]       ;32 bit chaining.
+        jmp     cs:[OldExcep14]       ;32 bit chaining.
+
+	align 4
 OldExcep14      df ?
-        assume ds:_cwDPMIEMU
+
 VirtualFault    endp
 
 
@@ -2385,7 +2394,7 @@ RawGetDOSMemory proc near
         push    es
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         ;
         cmp     bx,-1           ;maximum?
         jz      mem19_0
@@ -2517,7 +2526,7 @@ RawResDOSMemory proc near
         push    gs
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         ;
         push    bx
         push    dx
@@ -2729,7 +2738,7 @@ mem21_z3:
         push    es
         mov     ax,KernalDS
         mov     ds,eax
-        assume ds:_cwRaw
+        assume ds:GROUP16
         ;
         ;Get segment base address.
         ;

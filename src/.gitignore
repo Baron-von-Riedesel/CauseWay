@@ -2,6 +2,7 @@
 *.EXE
 *.MAP
 3plib
+cw_ow
 le23p
 Test
 watcom

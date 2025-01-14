@@ -14,6 +14,7 @@
 ;
 
 	include general.inc
+	include equates.inc
 	include strucs.inc
 	include cw.inc
 ;	include cw-undoc.inc

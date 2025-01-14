@@ -18,9 +18,36 @@ LE_OBJ          ends
 ;
 ;Somewhere to load the LE header.
 ;
+_DATA32 segment
 LEHeader        LE_Header <>
 
 LETemp  db 256 dup (0)
+
+align 2
+
+load1_Name        df 0
+load1_Flags       dd 0
+load1_Command     df 0
+load1_Environment dw 0
+load1_Handle      dw 0
+load1_PSP         dw 0
+load1_LEOffset    dd 0
+load1_ProgMem     dd 0,0
+load1_Segs        dw 0,0
+load1_ObjMem      dd 0
+load1_FixupMem    dd 0
+load1_ObjCount    dd 0
+load1_ObjBase     dd 0
+load1_PageCount   dd 0,0
+load1_EntryEIP    dd 0
+load1_EntryCS     dw 0
+load1_EntryESP    dd 0
+load1_EntrySS     dw 0
+load1_EntryES     dw 0
+load1_EntryDS     dw 0
+load1_ModLink     dd 0,0
+
+_DATA32 ends
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -70,9 +97,8 @@ LoadLE  proc    near
         push    es
         push    fs
         push    gs
-        assume ds:nothing
-        mov     ds,cs:apiDDSeg
-        assume ds:_apiCode
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         ;
         push    d[load1_Name+0]
         push    w[load1_Name+4]
@@ -222,8 +248,8 @@ IFDEF DEBUG4X
         jmp     load1_NoExports
 ENDIF
 
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         ;
@@ -277,7 +303,7 @@ load1_ge1:
         mov     DWORD PTR es:[esi],0    ;reset count.
         push    es
         mov     es,[load1_PSP]
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_Exports],esi
+        mov     es:[EPSP_Struc.EPSP_Exports],esi
         pop     es
         mov     edi,ebp                 ;get number of entries.
         shl     edi,2                   ;dword per entry.
@@ -369,21 +395,21 @@ load1_NoExports:
         pop     ecx
         mov     edx,[load1_ObjMem]
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
-        assume ds:_apiCode
         mov     ah,3fh
         int     21h                     ;read definitions.
         pop     ds
+        assume ds:GROUP32
         jc      load1_file_error
         cmp     ax,cx
         jnz     load1_file_error
 ;
 ;Work out how much memory we need for the program.
 ;
-        mov     es,apiDSeg
-        assume es:_cwMain
+        mov     es,apiDSeg16
+        assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
         mov     ecx,d[LEHeader.LE_ObjNum] ;number of objects.
@@ -432,27 +458,27 @@ load1_objup1:
         push    es
         mov     es,[load1_PSP]
         mov     ax,[load1_Segs+0]                       ;get base selector.
-        mov     WORD PTR es:[EPSP_Struc.EPSP_SegBase],ax
+        mov     es:[EPSP_Struc.EPSP_SegBase],ax
         mov     ax,[load1_Segs+2]                       ;get number of selectors.
         shl     ax,3
-        mov     WORD PTR es:[EPSP_Struc.EPSP_SegSize],ax
+        mov     es:[EPSP_Struc.EPSP_SegSize],ax
         mov     eax,[load1_ProgMem+0]                   ;get memory address.
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_MemBase],eax
+        mov     es:[EPSP_Struc.EPSP_MemBase],eax
         mov     es:[EPSP_Struc.EPSP_NearBase],eax
         mov     eax,[load1_ProgMem+4]                   ;get memory size.
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_MemSize],eax
+        mov     es:[EPSP_Struc.EPSP_MemSize],eax
         pop     es
 ;
 ;Fetch entry table and update EXPORT table values.
 ;
         push    es
         mov     es,[load1_PSP]
-        cmp     DWORD PTR es:[EPSP_Struc.EPSP_Exports],0 ;any exports?
+        cmp     es:[EPSP_Struc.EPSP_Exports],0 ;any exports?
         pop     es
         jz      load1_NoEntries
         push    es
         mov     es,[load1_PSP]
-        mov     eax,DWORD PTR es:[EPSP_Struc.EPSP_Exports]
+        mov     eax,es:[EPSP_Struc.EPSP_Exports]
         pop     es
         cmp     DWORD PTR es:[eax],0                    ;just a module name?
         jz      load1_NoEntries
@@ -494,7 +520,7 @@ load1_ge5:
         ;
         push    es
         mov     es,[load1_PSP]
-        mov     esi,DWORD PTR es:[EPSP_Struc.EPSP_Exports]
+        mov     esi,es:[EPSP_Struc.EPSP_Exports]
         pop     es
         mov     ecx,es:[esi]            ;get number of entries.
         add     DWORD PTR es:[esi+4],4+2 ;correct module name pointer.
@@ -780,12 +806,12 @@ load1_loadz:
         pop     ecx
         mov     edx,esi
         push    ds
-        mov     ds,apiDSeg
-        assume ds:_cwMain
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
         mov     ds,RealSegment
-        assume ds:_apiCode
         call    ReadFile
         pop     ds
+        assume ds:GROUP32
         jc      load1_file_error
         cmp     eax,ecx
         jnz     load1_file_error
@@ -1915,9 +1941,8 @@ ENDIF
 
         mov     eax,[load1_EntryEIP]   ;Get the relocation number.
         push    ds
-        assume ds:nothing
-        mov     ds,cs:apiDSeg
-        assume ds:_cwMain
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
 if 0
         mov     b[ErrorM11_0+0]," "
         mov     b[ErrorM11_0+1]," "
@@ -1926,8 +1951,8 @@ if 0
         mov     edi,offset ErrorM11_1
         call    Bin2HexA
 endif
-        assume ds:_apiCode
         pop     ds
+        assume ds:GROUP32
         mov     ax,2
         stc
         jmp     load1_error
@@ -1985,30 +2010,6 @@ load1_file_error2:
         stc
         jmp     load1_error
 ;
-align 2
-
-load1_Name        df 0
-load1_Flags       dd 0
-load1_Command     df 0
-load1_Environment dw 0
-load1_Handle      dw 0
-load1_PSP         dw 0
-load1_LEOffset    dd 0
-load1_ProgMem     dd 0,0
-load1_Segs        dw 0,0
-load1_ObjMem      dd 0
-load1_FixupMem    dd 0
-load1_ObjCount    dd 0
-load1_ObjBase     dd 0
-load1_PageCount   dd 0,0
-load1_EntryEIP    dd 0
-load1_EntryCS     dw 0
-load1_EntryESP    dd 0
-load1_EntrySS     dw 0
-load1_EntryES     dw 0
-load1_EntryDS     dw 0
-load1_ModLink     dd 0,0
-
 LoadLE  endp
 
 

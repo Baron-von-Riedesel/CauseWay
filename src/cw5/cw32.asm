@@ -5,43 +5,51 @@
 ;Things to note:
 ;
 ;The IDT has a page to itself even though it only needs 2k. For RAW/VCPI systems
-;the top 2k could be used for something else.
+;the top 2k could be used for something else (the TSS is using it now).
 ;
-;Things to do:
-;
-;Put in some sort of system stack overflow checking and terminate the program
-;if it happens.
+;there are some DOS memory blocks allocated:
+; 1. PSP + cw segments _cwMain, _cwStack, Raw/VCPI: _cwRaw
+; 2. environment
+; 3. stacks; Raw/VCPI: size 2400h (=RawStackTotal); DPMI: 1200h+10h
+; 4. Raw/VCPI: page tables (12k+x), later reused: 8k for transfer buffer, 4k for VMM buffer 
 ;
         option proc:private
 
+        include equates.inc
         include strucs.inc
         include cw.inc
 
-; MED 02/03/2003, make sure some language is in there
-        IFNDEF  ENGLISH
-                IFNDEF  SPANISH
-ENGLISH EQU     1
-                ENDIF
-        ENDIF
+ifndef SPANISH
+SPANISH equ 0
+endif
+ifndef ENGLISH
+ENGLISH equ not SPANISH and 1
+endif
 
-        ifndef ENGLISH
-ENGLISH equ     0
-        endif
-        ifndef SPANISH
-SPANISH equ     0
-        endif
-
-b       equ     <byte ptr>
-w       equ     <word ptr>
-d       equ     <dword ptr>
-;f       equ     <fword ptr>
+b       equ <byte ptr>
+w       equ <word ptr>
+d       equ <dword ptr>
+;f       equ <fword ptr>
 
 PT_RAWXMS equ 0
 PT_VCPI   equ 1
 PT_DPMI   equ 2
 
-PTMAPADDR equ 0FFC00000h ;=1024*4096*1023, last page directory entry
-PDEMAPDET equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF 
+PTMAPADDR   equ 0FFC00000h ;=1024*4096*1023, last page directory entry
+PDEMAPDET   equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF 
+MAINSTKSIZE equ 2048       ;stack size of PL3 kernal (segment _cwStack)
+
+SMARTRMSTKALLOC  equ 1	;1=if kernel stack couldn't be alloc'd in an UMB, it will use space behind _cwRaw
+MOVEPAGE1STTOEXT equ 1	;1=move page table for region 0-3fffff to extended memory
+MOVETSS          equ 1	;1=move TSS to extended memoy (behind IDT)
+RELXMSINRM       equ 1	;1=release xms memory handles after final switch to real-mode
+VCPIPMCALL       equ 1	;1=alloc/release vcpi pages via protected-mode VCPI call
+ifndef EARLYKDINIT
+EARLYKDINIT      equ 1	;1=init KD very early after switch to protected-mode
+endif
+
+GROUP16 group _cwMain, _cwRaw, _cwInit
+GROUP32 group _TEXT32, _DATA32
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -49,15 +57,16 @@ PDEMAPDET equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF
 ;and generaly getting everything rolling.
 ;
 _cwMain segment para public 'Main code' use16
-        assume cs:_cwMain, ds:_cwMain, ss:_cwStack
 ;
 ;Want a copyright message embedded first.
 ;
 Copyright       label byte
         db 'CauseWay DOS Extender v'
-VersionMajor    db '4.'
-VersionMinor    db '06'
+VersionMajor    db '5.'
+VersionMinor    db '00'
         db " No copyright. Public domain software.",13,10,"No rights retained. ",13,10,0
+SizeCopyright equ $ - offset Copyright - 1
+
 	align 2
 
 ;-------------------------------------------------------------------------------
@@ -68,22 +77,22 @@ RealPSPSegment  dw ?            ;Real mode PSP segment.
 RealENVSegment  dw ?            ;Real mode environment segment.
 ProtectedFlags  dw 0            ;Bit significant, 0-DPMI,1-VCPI,2-RAW.
 ProtectedType   dw 0            ;0-RAW/XMS,1-VCPI,2-DPMI.
-ProtectedForce  db 0
+ProtectedForce  db 0            ;CAUSEWAY environment setting "DPMI"
 	align 2
 DOSVersion      dw 0
 SystemFlags     dd 0
-apiCodeSeg      dw 0
-apiDataSeg      dw 0
+grp32Proc label fword
+grp32Ofs        dd 0
+Group32CS       dw 0            ;code selector GROUP32
+Group32DS       dw 0            ;data selector GROUP32
 ;
-CodeSegment     dw MainCS       ;Setup CS selector.
-CodeSegmenti    dw InitCS
-DataSegment     dw MainDS       ;Setup DS selector.
-DataSegmenti    dw InitDS
-StackSegment    dw MainSS
-RealSegment     dw KernalZero
+CodeSegment     dw MainCS       ;CS selector for GROUP16.
+DataSegment     dw MainDS       ;DS selector for GROUP16
+StackSegment    dw MainSS       ;that's _cwStack, the stack for PL3 protected-mode
+RealSegment     dw KernalZero   ;4G zero-based data selector
 PSPSegment      dw MainPSP
 ENVSegment      dw MainEnv
-BasePSP dw 0
+BasePSP         dw 0
 BasePSPAddress  dd 0
 ;
 TSRSize dw 0
@@ -167,36 +176,43 @@ MainExec        db 128 dup (0)
 ;
 DtaBuffer       db 128 dup (0)
 ;
-TransferSize    dd 8192
-TransferReal    dw ?
+;TransferSize    dd 8192
+TransferSize    equ 8192
+TransferReal    dw ?       ; 8k transfer buffer real-mode segment address
 ;
 MouseETarget    dd 0,0
 ResourceTracking dw 0
 ForcedFind      dd 0,0
 mcbAllocations  dw 0
-LinearAddressCheck db 0
+LinearAddressCheck db 0    ; for swapfile
 ;
 	align 4
 TerminationHandler label fword
 	dd offset InitError
-	dw InitCS, 0
-UserTermRoutine DF      0
-UserTermDump    DF      0       ; dump location for register info
+	dw MainCS, 0
+
+;--- segment _Excep is now 32-bit; this requires a proper definition of a 16-bit far pointer
+;--- called from within a 32-bit code segment.
+PF16 typedef far16 ptr
+
+UserTermRoutine16 label PF16
+UserTermRoutine DF 0       ; user termination address ( int 31h, ax=ff31h )
+UserTermDump    DF 0       ; dump location for register info ( int 31h, ax=ff31h )
 ;
 DPMIStateAddr   df 0
 DPMIStateSize   dd 0
-DPMIStackOff    dw ?
-DPMIStackSeg    dw ?
+DPMIStackOff    dw ?       ; current offset of Main stack in DPMI mode
+DPMIStackSeg    dw ?       ; Main stack in DPMI mode (size 1200h)
 ;
-DebugDump       db 0
-EnableDebugDump DB      1
-UserTermFlag    DB      0
-Pad1Flag        DB      0
+DebugDump       db 0       ; flag to display a state dump on exit
+EnableDebugDump DB 1       ; may be set/reset by int 31h, ax=0ff30h
+UserTermFlag    DB 0       ; modified by int 31h, ax=0ff31h (set user termination proc)
+Pad1Flag        DB 0       ; CAUSEWAY environment setting "PAD1"
 
 IFDEF PERMNOEX
-NoEXECPatchFlag DB      1
+NoEXECPatchFlag DB 1       ; CAUSEWAY environment setting "NOEX"
 ELSE
-NoEXECPatchFlag DB      0
+NoEXECPatchFlag DB 0
 ENDIF
 
 ; MED, 11/11/99
@@ -204,7 +220,7 @@ ENDIF
 ;  host when NOVCPI set, but provides no memory
 VCPIHasNoMem    DB      0
 
-NewCWErrName    DB      81 DUP (0)
+NewCWErrName    DB      81 DUP (0)    ; error file name set with cw function 0xff32
 DOS4GFlag       db 0
 	align 4
 ;
@@ -221,21 +237,16 @@ ExtensionList   label word
 ExtensionListEnd label word
 
 EXTENSION struct
-wStart  dw ?            ;+0  segment start.
-w32Bit  dw ?            ;+2  0=16bit, 1=32-bit
-dwLen   dd ?            ;+4  segment length.
-pInit   df ?            ;+8  init code.
-pExit   df ?            ;+14 remove code.
-dwCodeS dd ?            ;+20 code selector.
-dwDataS dd ?            ;+24 data selector.
-dwFlgs  dd ?            ;+28 installed flag.
+pInit   df ?            ;+4  init code.
+pExit   df ?            ;+10 remove code.
+wFlgs   dw ?            ;+20 installed flag.
 EXTENSION ends
 
 ;
-ExceptionExtension EXTENSION <_Excep,  0, ExcepEnd  - ExcepStart, offset ExcepOpen,  offset ExcepClose,  0, 0, 0>
-Int21hExtension    EXTENSION <_Int21h, 1, Int21hEnd - Int21hStart,offset Int21hOpen, offset Int21hClose, 0, 0, 0>
-Int10hExtension    EXTENSION <_Int10h, 1, Int10hEnd - Int10hStart,offset Int10hOpen, offset Int10hClose, 0, 0, 0>
-Int33hExtension    EXTENSION <_Int33h, 1, Int33hEnd - Int33hStart,offset Int33hOpen, offset Int33hClose, 0, 0, 0>
+ExceptionExtension EXTENSION < offset ExcepOpen,  offset ExcepClose,  0>
+Int21hExtension    EXTENSION < offset Int21hOpen, offset Int21hClose, 0>
+Int10hExtension    EXTENSION < offset Int10hOpen, offset Int10hClose, 0>
+Int33hExtension    EXTENSION < offset Int33hOpen, offset Int33hClose, 0>
 ;
 ;Temp0_  dd ?
 ;Temp1_  dd ?
@@ -251,9 +262,8 @@ DebugAsciiFlag  DB      ?
 ;Final init stuff.
 ;
 cwOpen  proc    near
-        assume ds:nothing               ;make our data addresable.
         mov     ds,cs:DataSegment
-        assume ds:_cwMain
+        assume ds:GROUP16
         ;
         mov     d[TerminationHandler+0],offset cwClose
         mov     w[TerminationHandler+4],cs
@@ -261,25 +271,46 @@ cwOpen  proc    near
 ;Now we know the machines details, re-size the program
 ;block again to release as much memory as possible.
 ;
-        mov     edi,offset Int21Buffer
+        mov     edi,offset Int21Buffer  ;Int21Buffer is 16-bit, but hiword(edi) must be cleared
         push    ds
         pop     es
         mov     ax,RealPSPSegment
-        mov     es:RealRegsStruc.Real_ES[edi],ax
-        mov     bx,_cwDPMIEMU
+        mov     es:RealRegsStruc.Real_ES[di],ax
+        mov     bx,_cwRaw                ;DPMI: just keep _cwMain, _cwStack
         cmp     ProtectedType,PT_DPMI
-        jnz     cw1_KeepRaw
-        mov     bx,_cwRaw
-cw1_KeepRaw:
+        jz      cw1_KeepStack
+        mov     bx,_cwInit               ;Raw/VCPI: keep _cwMain, _cwStack, _cwRaw
+if SMARTRMSTKALLOC
+        cmp     RawStackReal, _cwInit    ;could main stack be allocated in an UMB?
+        jnz     @F
+        mov     RawStackPos, RawStackTotal ;if no, stack is in _cwInit, but too small yet, so
+        add     bx,RawStackTotal/16        ;increase size to normal.
+@@:
+ if 0 ; activate for debugging ( clears the stack space with -1 )
+        mov cx, _cwInit
+        mov dx, _cwMain
+        sub cx, dx
+        shl cx, 4   ; cx=offset for _cwInit in GROUP16
+        push di
+        push eax
+        mov di, cx
+        mov cx, RawStackTotal / 4
+        or eax, -1
+        rep stosd
+        pop eax
+        pop di
+ endif
+endif
+cw1_KeepStack:
         sub     bx,ax                   ;Size program.
         inc     bx
         mov     TSRSize,bx
-        mov     es:RealRegsStruc.Real_EBX[edi],ebx
-        mov     es:RealRegsStruc.Real_EAX[edi],4a00h
+        mov     w es:[di].RealRegsStruc.Real_EBX,bx
+        mov     w es:[di].RealRegsStruc.Real_EAX,4a00h
         mov     bl,21h
         mov     ErrorNumber,1
         Sys     IntXX
-        test    WORD PTR es:[edi+RealRegsStruc.Real_Flags],1
+        test    es:[di].RealRegsStruc.Real_Flags,1
         jnz     cw1_9
         mov     ErrorNumber,0           ;clear error number.
 ;
@@ -317,54 +348,8 @@ cwOpen  endp
 ;
 cwClose proc    near
 
-IFDEF DEBUG4
-        push    eax
-        push    ebx
-        push    ecx
-        push    edx
-        push    ds
-        push    cs
-        pop     ds
-        mov     edx,OFFSET debugatext1
-debugaloop2:
-        cmp     BYTE PTR ds:[edx],0
-        je      debugab
-        mov     ecx,1
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        inc     edx
-        jmp     debugaloop2
-debugab:
-        mov     edx,OFFSET debugatext2
-        push    cs
-        pop     ds
-        mov     ecx,2
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        pop     ds
-        pop     edx
-        pop     ecx
-        pop     ebx
-        pop     eax
-        jmp     debugaout
-
-debugatext1     DB      'Entering cwClose...',0
-debugatext2     DB      13,10
-
-debugaout:
-        push    ecx
-        mov     ecx,100000h
-debugaloop:
-;       dec     ecx
-;       jne     debugaloop
-        pop     ecx
-ENDIF
-
-        assume ds:nothing
         mov     ds,cs:DataSegment
-        assume ds:_cwMain
+        assume ds:GROUP16
         ;
         mov     ResourceTracking,0
         mov     mcbAllocations,0
@@ -372,66 +357,14 @@ ENDIF
         mov     w[TerminationHandler+4],0
         ;
 
-IFDEF DEBUG4
-        push    eax
-        push    ebx
-        push    ecx
-        push    edx
-        push    ds
+;--- DebugDisplay is in segment _Excep, which is now 32-bit
 
-        mov     dx,w[ExceptionExtension.pInit+4
-;       lar     ax,dx
-        cmp     dx,127h
-        jnz     debughout
-;       and     ah,3
-;       cmp     ah,3
-;       jne     debughout
-
+        pushw   0
         push    cs
-        pop     ds
-        mov     edx,OFFSET debughtext1
-debughloop2:
-        cmp     BYTE PTR ds:[edx],0
-        je      debughb
-        mov     ecx,1
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        inc     edx
-        jmp     debughloop2
-debughb:
-        mov     edx,OFFSET debughtext2
-        push    cs
-        pop     ds
-        mov     ecx,2
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        pop     ds
-        pop     edx
-        pop     ecx
-        pop     ebx
-        pop     eax
-        jmp     debughout
-
-debughtext1     DB      'Calling DebugDisplay...',0
-debughtext2     DB      13,10
-
-debughout:
-        push    ecx
-        mov     ecx,100000h
-debughloop:
-;       dec     ecx
-;       jne     debughloop
-        pop     ecx
-
-ENDIF
-
-        push    cs
-        push    offset cw2_dd0
-        push    w[ExceptionExtension.pInit+4]
+        pushd   offset cw2_dd0
+        push    d[ExceptionExtension.pInit+4]
         push    offset DebugDisplay
-        retf
+        retd
         ;
 cw2_dd0:
         cmp     ErrorNumber,0
@@ -473,7 +406,7 @@ cw2_NoError:
 cw2_p0:
         push    di
         mov     di,[di]
-        cmp     WORD PTR [di].EXTENSION.dwFlgs,-1  ;installed?
+        cmp     [di].EXTENSION.wFlgs,-1  ;installed?
         jnz     cw2_p2
         call    [di].EXTENSION.pExit
 cw2_p2:
@@ -486,18 +419,16 @@ cw2_p2:
 ;
         cmp     apiExcepPatched,0
         jz      cw2_pe0
-        push    cs
-        push    offset cw2_pe0
-        push    apiCodeSeg
-        push    lowword offset UnPatchExc
+        mov     grp32Ofs, offset UnPatchExc
+        call    [grp32Proc]
 cw2_pe0:
 ;
 ;Remove the API patch.
 ;
-        mov     es,apiDataSeg
-        assume es:_apiCode
-        mov     edx,DWORD PTR es:[OldIntSys+0]
-        mov     cx,WORD PTR es:[OldIntSys+4]
+        mov     es,Group32DS
+        assume es:GROUP32
+        mov     edx,DWORD PTR es:[OldInt31+0]
+        mov     cx,WORD PTR es:[OldInt31+4]
         mov     bl,31h
         mov     ax,205h
         int     31h
@@ -508,35 +439,27 @@ cw2_pe0:
 cw2_noAPI:
         cmp     ProtectedType,PT_DPMI
         jz      cw2_DPMI
-
 ;
 ;Make RAW stuff addressable.
 ;
         cli                             ;Don't want interrupts interfering.
         mov     ax,KernalDS             ;Get supervisor data descriptor,
         mov     ds,ax                   ;DS,ES,FS,GS,SS must be data with 64k limit
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,ax
 ;
 ;Switch to RAW exit code.
 ;
-        push    _cwMain                 ; push a real-mode segment as return address!
-        push    offset cw2_6
+        push    GROUP16                 ; push a real-mode segment as return address!
+        push    offset cw2_InRealMode
         push    KernalCS
         push    offset RawVCPIRealMode
         retf
-cw2_6:
-        jmp     cw2_RealMode
 ;
 ;Remove DPMI stuff.
 ;
 cw2_DPMI:
-
-        assume ds:nothing
-        mov     ds,cs:DataSegment
-        assume ds:_cwMain
-
 if 0
         cmp     [OldInt21hExec],0
         jz      cw2_d0
@@ -545,17 +468,8 @@ if 0
         mov     cx,w[OldInt21hExec+2]
         mov     ax,201h
         int     31h
-cw2_d0: movzx   edx,dx
+cw2_d0:
 endif
-
-        jmp     cw2_InRealMode
-;
-;Make sure our data is addressable.
-;
-cw2_RealMode:
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
 ;
 ;Display the "CauseWay error: ??" bit.
 ;
@@ -664,13 +578,16 @@ Int21hExecPatch proc    near
 cw3_Old:
         popf
         jmp     cs:[OldInt21hExec]
+
 	align 2
 OldInt21hExec   dd 0        ; real-mode address
-        assume ds:_cwMain
 Int21hExecCount db 0
-Int21hExecPatch endp
-        .386p
 
+        assume ds:GROUP16
+
+Int21hExecPatch endp
+
+        .386p
 
 if 0
 ;-------------------------------------------------------------------------------
@@ -695,25 +612,17 @@ endif
 
 _cwMain ends
 
-
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
-;Default stack used during startup and exit.
+;Default stack (selector MainSS) used during startup and exit.
 ;
 _cwStack        segment para stack 'stack' use16
-        db 2048 dup (0)
+        db MAINSTKSIZE dup (?)
 _cwStackEnd     label byte
 _cwStack        ends
 
 
-        include raw_vcpi.inc
-
-        include api.inc
-        include exceptn.inc
-        include int10h.inc
-        include int21h.inc
-        include int33h.inc
-
+        include rawvcpi1.inc
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -721,7 +630,7 @@ _cwStack        ends
 ;processor and determining how we're going to get into protected mode.
 ;
 _cwInit segment para public 'init code' use16
-        assume cs:_cwInit, ds:_cwMain
+        assume ds:GROUP16
 
 dpmiSelBuffer   db 8 dup (0)
 
@@ -729,27 +638,26 @@ dpmiSelBuffer   db 8 dup (0)
 ;
 ;Initialisation specific data.
 ;
-apiDataSegi     dw 0
-IProtectedMode  db 0
-	align 2
-IProtectedType  dw 0
-DPMISwitch      dw ?,?
 dpmiSelBase     dd 0
-dpmiCodeSel     dw ?
-dpmiDataSel     dw ?
-;
-iCodeSegment    dw InitCS
-mCodeSegment    dw MainCS
-iDataSegment    dw InitDS
-mDataSegment    dw MainDS
-iStackSegment   dw MainSS
-iPSPSegment     dw MainPSP
-iENVSegment     dw MainEnv
-iRealSegment    dw KernalZero
+CurrPhysPage    dd ?
+GDTReal         dw ?            ;Real mode segment for GDT.
+;IDTReal         dw ?            ;Real mode segment for IDT.
+Page1stReal     dw ?            ;Real mode segment for 1st page table entry.
+PageDIRReal     dw ?            ;Real mode segment for page directory: later used as first 4k of transfer buffer.
+PageAliasReal   dw ?            ;Real mode segment for page table alias; later used as second 4k of transfer buffer.
+KernalTSSReal   dw ?            ;Real mode segment for kernal TSS.
+
+LowMemory label dword         ; Set equal to 0000:0080
+                dw 00080h
+                dw 00000h
+HighMemory label dword
+                dw 00090h     ; Set equal to FFFF:0090
+                dw 0FFFFh
 ;
 INewHeader      NewHeaderStruc <>   ;make space for a header.
-;
+;DPMIErrRegs     RealRegsStruc <>
 
+;--- there's also a MZHeader struct in api.inc, size 64!
 MZHdr struct
 Signature	dw ?	;00 Identifier text 'MZ', '3P'.
 _Length		dw ?	;02 Length of file MOD 512
@@ -842,17 +750,27 @@ VMMDrivPath2    db 128 dup (0)  ;used by TEMP=
 VMMDrivPath3    db 128 dup (0)  ;used by TMP=
 VMMDrivPath4    db 128 dup (0)  ;used by current path.
 VMMDrivPath5    db 128 dup (0)  ;used by boot drive.
-        db -1
+                db -1           ;end marker
+
+	align 2
+
+cw5_OldStrat      dw ?,?
+cw5_XMSSize       dd 0
+wUMB              dw 0          ;UMB used 1) for paging tables 2) for transfer buffer + swapfile buffer
+cw5_NumXMSHandles db ?
+IProtectedMode    db 0
+
 ;
-DPMIErrRegs     db size RealRegsStruc dup (0)
 ;
 ;-------------------------------------------------------------------------------
 Startup proc    near
 ;
 ;Make global data addresable.
 ;
-        mov     ax,_cwMain
+        .286
+        mov     ax,GROUP16
         mov     ds,ax
+        assume ds:GROUP16
 
 ; MED, 12/30/99
 ; works around weird bug in some machines due to Windows/hardware/BIOS??? error
@@ -881,11 +799,10 @@ ENDIF
 ;
 ;Re-size memory so we can allocate what we want high.
 ;
-        mov     cs:IErrorNumber,1
+        mov     IErrorNumber,1
         mov     ax,es
         mov     bx,_cwEnd               ;Get program end segment.
         sub     bx,ax                   ;Size program.
-;        inc     bx
         mov     ah,4ah
         int     21h                     ;Re-size memory block.
 
@@ -900,16 +817,17 @@ toiniterr:
 ;Check we're on at least a 386 system.
 ;
 chk386:
-        mov     cs:IErrorNumber,2
+        mov     IErrorNumber,2
         call    CheckProcessor
 
 ;       jc      InitError
         jc      toiniterr
 
+        .386
 ;
 ;Check DOS version is high enough.
 ;
-        mov     cs:IErrorNumber,4
+        mov     IErrorNumber,4
         call    CheckDOSVersion
         jc      InitError
 ;
@@ -923,8 +841,8 @@ chk386:
 ;
 ;Check if a suitable method for switching to protected mode exists.
 ;
-        call    GetProtectedType
-        mov     cs:IErrorNumber,3
+        call    GetProtectedType        ;set variable ProtectedFlags
+        mov     IErrorNumber,3
         cmp     ProtectedFlags,0        ;Any types available?
         jz      InitError
 ;
@@ -942,20 +860,28 @@ chk386:
         mov     ah,1ah
         int     21h
 ;
+;Change DOS allocation stratergy to highest so we'll get UMB's if available.
+;
+        mov     ax,5800h                ;get allocation strategy
+        int     21h
+        mov     [cw5_OldStrat+0],ax
+        mov     ax,5802h                ;get UMB link state
+        int     21h
+        mov     [cw5_OldStrat+2],ax
+        mov     bx,1
+        mov     ax,5803h                ;set UMB link state
+        int     21h
+        mov     bx,81h                  ;best fit, UMB first, then low
+        mov     ax,5801h                ;set allocation strategy
+        int     21h
+;
 ;now see about type specific initialisations.
 ;
-        cmp     ProtectedType,PT_DPMI ;initialiseation?
+        cmp     ProtectedType,PT_DPMI
         jz      cw5_InitDPMI
-;
-;Useing either RAW or VCPI so do the stuff that's common to both for now.
-;
-        mov     ax,_cwRaw
-        mov     ds,ax
-        assume ds:_cwRaw
 ;
 ;Get SDA address so VMM can change BREAK state.
 ;
-        .386
         push    ds
         mov     ax,5d06h
         int     21h
@@ -1001,12 +927,12 @@ chk386:
         mov     edx,eax
         test    eax,eax
         jz      cw5_YesXMS              ;no memory available.
-        mov     cs:[cw5_XMSSize],edx
+        mov     [cw5_XMSSize],edx
         mov     ah,89h
         call    [XMSControl]            ;claim biggest block to force XMS
         cmp     ax,1                    ;to stake a claim on int 15h.
         jnz     cw5_YesXMS
-        mov     cs:[cw5_NumXMSHandles],1
+        mov     [cw5_NumXMSHandles],1
         push    dx
         mov     ah,8eh
         call    [XMSControl]            ; get handle information
@@ -1015,28 +941,28 @@ chk386:
         cmp     cx,4
         jc      cw5_NoHandles3
         sub     cx,2
-        mov     cs:[cw5_NumXMSHandles],32
+        mov     [cw5_NumXMSHandles],32
         cmp     cx,32
         jnc     cw5_NoHandles3
-        mov     cs:[cw5_NumXMSHandles],cl  ; cx known 8-bit value
+        mov     [cw5_NumXMSHandles],cl  ; cx known 8-bit value
 
 cw5_NoHandles3:
         pop     dx
         mov     ah,0ah
         call    [XMSControl]            ;now free it.
 
-        movzx   eax, cs:[cw5_NumXMSHandles]
+        movzx   eax,[cw5_NumXMSHandles]
         mov     edx,eax
         shl     eax,16
         sub     eax,edx                 ; eax == handles (up to 32) * 65535
-        cmp     eax,cs:[cw5_XMSSize]
+        cmp     eax,[cw5_XMSSize]
         jae     cw5_ComputeSize
-        mov     cs:[cw5_XMSSize],eax    ; throttle maximum size
+        mov     [cw5_XMSSize],eax    ; throttle maximum size
 
 cw5_ComputeSize:
         push    eax
         xor     edx,edx
-        movzx   ebx,cs:[cw5_NumXMSHandles]
+        movzx   ebx,[cw5_NumXMSHandles]
         div     ebx
         pop     ebx
         cmp     ax,4                    ; eax known 16-bit value
@@ -1053,12 +979,12 @@ xms2:
         mov     dx,ax
         or      ax,ax
         jz      cw5_YesXMS              ;no memory available.
-        mov     WORD PTR cs:[cw5_XMSSize],dx
+        mov     WORD PTR [cw5_XMSSize],dx
         mov     ah,9
         call    [XMSControl]            ;claim biggest block to force XMS
         cmp     ax,1                    ;to stake a claim on int 15h.
         jnz     cw5_YesXMS
-        mov     cs:[cw5_NumXMSHandles],1
+        mov     [cw5_NumXMSHandles],1
         push    dx
         mov     ah,0eh
         call    [XMSControl]            ;now free it.
@@ -1067,19 +993,19 @@ xms2:
         cmp     bl,4
         jc      cw5_NoHandles
         sub     bl,2
-        mov     cs:[cw5_NumXMSHandles],32
+        mov     [cw5_NumXMSHandles],32
         cmp     bl,32
         jnc     cw5_NoHandles
-        mov     cs:[cw5_NumXMSHandles],bl
+        mov     [cw5_NumXMSHandles],bl
 cw5_NoHandles:
         pop     dx
         mov     ah,0ah
         call    [XMSControl]            ;now free it.
-        mov     ax,WORD PTR cs:[cw5_XMSSize]
+        mov     ax,WORD PTR [cw5_XMSSize]
         push    ax
         xor     dx,dx
         xor     bh,bh
-        mov     bl,cs:[cw5_NumXMSHandles]
+        mov     bl,[cw5_NumXMSHandles]
         div     bx
         pop     bx
         cmp     ax,4
@@ -1110,21 +1036,6 @@ cw5_YesXMS:
 cw5_A20OFF:
         mov     A20Flag,al
 ;
-;Change DOS allocation stratergy to highest so we'll get UMB's if available.
-;
-        mov     ax,5800h
-        int     21h
-        mov     WORD PTR cs:[cw5_OldStrat+0],ax
-        mov     ax,5802h
-        int     21h
-        mov     WORD PTR cs:[cw5_OldStrat+2],ax
-        mov     bx,1
-        mov     ax,5803h
-        int     21h
-        mov     bx,81h
-        mov     ax,5801h
-        int     21h
-;
 ;Grab memory for page dir, page alias & first page table entry.
 ;
         mov     bx,(4096*3)/16          ;smallest allocation possible.
@@ -1142,13 +1053,12 @@ cw5_A20OFF:
         mov     bx,ax
         mov     cx,ax
         add     bx,(4096*3)/16
-        mov     ah,4ah
         pop     es
+
         push    bx
         push    cx
-        push    es
+        mov     ah,4ah
         int     21h                     ;re-size the block.
-        pop     es
         pop     cx
         pop     bx
         jnc     cw5_NewWay
@@ -1156,7 +1066,7 @@ cw5_A20OFF:
         int     21h                     ;release this block.
         ;
 cw5_OldWay:
-        mov     cs:IErrorNumber,5
+        mov     IErrorNumber,5
         mov     bx,(4096*4)/16          ;need space for 3 page tables on
         mov     ah,48h                  ;4k boundary.
         int     21h
@@ -1179,6 +1089,8 @@ cw5_NewWay:
         add     ax,cx                   ;move to real start.
         ;
 cw5_GotSeg:
+;--- dx=segment addr of block
+        mov     wUMB,dx
         push    cx
         push    dx
         mov     es,ax
@@ -1218,8 +1130,8 @@ cw5_GotSeg:
 ;Allocate memory for Kernal TSS.
 ;
 cw5_TSSOld:
-        mov     cs:IErrorNumber,5
-        mov     bx,(((size TSSFields)+2+16)/16) ;(4096/2)+2+16)/16
+        mov     IErrorNumber,5
+        mov     bx,(((size TSSFields)+2+15)/16) ;(4096/2)+2+16)/16
         mov     ah,48h
         int     21h
         jc      InitError
@@ -1238,7 +1150,7 @@ cw5_TSSGot:
 ;Allocate some memory for the GDT.
 ;
 cw5_GDTOld:
-        mov     cs:IErrorNumber,5
+        mov     IErrorNumber,5
         mov     bx,((8*GDT_Entries)/16)+1
         mov     ah,48h
         int     21h
@@ -1248,7 +1160,7 @@ cw5_GDTGot:
         mov     es,ax
         movzx   eax,ax
         shl     eax,4
-        mov     GDTLinear,eax
+        mov     d GDTVal+2,eax
         xor     di,di
         mov     cx,(8*GDT_Entries)
         xor     al,al
@@ -1257,43 +1169,52 @@ cw5_GDTGot:
 ;
 ;Allocate some memory for the stack.
 ;
-        mov     cs:IErrorNumber,5
-        mov     ebx,RawStackPos
-        shr     ebx,4
+        mov     IErrorNumber,5
+;        mov     ebx,RawStackPos
+;        shr     ebx,4
+        mov     bx,RawStackTotal/16
         mov     ah,48h
         int     21h
         jc      InitError
-        mov     RawStackReal,ax
         mov     es,ax
-        mov     cx,w[RawStackPos]
+if SMARTRMSTKALLOC
+;--- if allocation is in low memory, skip it
+;--- and use part of _cwInit as stack.
+        cmp ax, 0A000h
+        jae @F
+        mov ah, 49h
+        int 21h
+        mov RawStackReal, _cwInit
+        mov ax, offset _cwInit:cw_safesp
+        and ax, 0fffch
+        mov w RawStackPos, ax
+        jmp nostack
+@@:
+endif        
+        mov     RawStackReal,ax
+;        mov     cx,w[RawStackPos]
+        mov     cx,RawStackTotal
         xor     di,di
         xor     al,al
         cld
         rep     stosb
+nostack:
 
 ; MED 09/19/96
 ; Set address for VMM page to disk buffer.
-        mov     cs:IErrorNumber,5
+if 0
+        mov     IErrorNumber,5
         mov     bx,4096/16
         mov     ah,48h
         int     21h
         jc      InitError
+else
+        mov     ax,wUMB                 ; use the first 4k of the UMB for swapfile access
+endif
         mov     PageBufferReal,ax
         movzx   eax,ax
         shl     eax,4
         mov     PageBufferLinear,eax
-
-;
-;Restore DOS memory allocation stratergy.
-;
-        mov     bx,WORD PTR cs:[cw5_OldStrat+2]
-        xor     bh,bh
-        mov     ax,5803h
-        int     21h
-        mov     bx,WORD PTR cs:[cw5_OldStrat+0]
-        xor     bh,bh
-        mov     ax,5801h
-        int     21h
 ;
 ;Need to initialise 1st page table to map <1meg+64k 1:1.
 ;
@@ -1313,15 +1234,10 @@ cw5_0:
 
 ; MED 09/19/96
 ;       mov     bx,Page1stReal
-        mov     bx,PageDIRReal
-
-        push    ds
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
+;        mov     bx,PageDIRReal
+        mov     bx,wUMB
+        add     bx,100h                 ;skip the swapfile buffer
         mov     TransferReal,bx
-        assume ds:_cwRaw
-        pop     ds
 ;
 ;setup the GDT entries.
 ;
@@ -1336,22 +1252,21 @@ cw5_0:
         call    MakeDesc
 ;
 ;Fill in the VCPI entries so we don't try to use them later.
+;most likely not needed, since descriptors 00,08,10h,18h are off-limits.
 ;
+if 0
         xor     esi,esi
         xor     ecx,ecx
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,VCPI_0
         call    MakeDesc
-        xor     esi,esi
-        xor     ecx,ecx
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,VCPI_1
         call    MakeDesc
-        xor     esi,esi
-        xor     ecx,ecx
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,VCPI_2
         call    MakeDesc
+endif
 ;
 ;Allocate 40h descriptor.
 ;
@@ -1366,7 +1281,7 @@ cw5_0:
 ;
         movzx   esi,KernalTSSReal
         shl     esi,4
-        mov     ecx,size TSSFields+2
+        mov     ecx,size TSSFields+2-1  ; uses an extra word for end of IOPB, but this is used only if IOPL=0
         xor     al,al
         mov     ah,DescPresent+DescPL3+Desc386Tss
         mov     di,KernalTS
@@ -1374,29 +1289,31 @@ cw5_0:
 ;
 ;TSS PL0 stack.
 ;
-        movzx   esi,KernalTSSReal
-        shl     esi,4
+;        movzx   esi,KernalTSSReal
+;        shl     esi,4
         add     esi,TSSFields.tPL1Stack
 
-        mov     ecx,65535
+;        mov     ecx,65535
+        mov     ecx,tPL0StackSize-1
         mov     al,b[RawSystemFlags]
         xor     al,1
         shl     al,6
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
-        mov     di,KernalPL0
+        mov     di,KernalSS0
         call    MakeDesc
+if 0
 ;
-;Mode switch PL0 stack.
+;Mode switch PL0 stack (must be a 64k - value of SS when switching to real-mode!)
 ;
-        movzx   esi,KernalTSSReal
-        shl     esi,4
-        add     esi,TSSFields.tPL1Stack
-
+;        movzx   esi,KernalTSSReal
+;        shl     esi,4
+;        add     esi,TSSFields.tPL1Stack
         mov     ecx,65535
         xor     al,al
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
-        mov     di,KernalSwitchPL0
+        mov     di,KernalSS0Switch
         call    MakeDesc
+endif
 ;
 ;LDT
 ;
@@ -1407,44 +1324,34 @@ cw5_0:
         mov     di,KernalLDT
         call    MakeDesc
 ;
-;Kernal (RAW) code seg.
+;KernalCS0 - Kernel (RAW) code seg at PL0 (must be 64k!)
+;KernalCS  - Kernel (RAW) code seg.
+;KernalDS  - Kernel (RAW) data seg (must be 64k!).
 ;
-        xor     esi,esi
-        mov     si,_cwRaw
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
-        mov     di,KernalCS
-        call    MakeDesc
-;
-;Kernal (RAW) code seg at PL0
-;
-        xor     esi,esi
-        mov     si,_cwRaw
+        mov     esi,GROUP16
         shl     esi,4
         mov     ecx,65535
         xor     al,al
         mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
         mov     di,KernalCS0
         call    MakeDesc
-;
-;Kernal (RAW) data seg.
-;
-        xor     esi,esi
-        mov     si,_cwRaw
-        shl     esi,4
-        mov     ecx,65535
+
+        xor     al,al
+        mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
+        mov     di,KernalCS
+        call    MakeDesc
+
         xor     al,al
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,KernalDS
         call    MakeDesc
 ;
-;Kernal (RAW) stack seg.
+;KernalSS - (RAW) stack seg PL3.
 ;
         movzx   esi,RawStackReal
         shl     esi,4
-        mov     ecx,65535
+;        mov     ecx,[]65535
+        mov     ecx,RawStackTotal-1
         mov     al,b[RawSystemFlags]
         xor     al,1
         shl     al,6
@@ -1462,48 +1369,28 @@ cw5_0:
         call    MakeDesc
 ;
 ;DPMI emulator code seg.
+;DPMI emulator code seg at PL0
+;DPMI emulator data seg.
+;DPMI emulator PL3 to PL0 call gate.
+;--- the emulator code will be moved to extended memory
 ;
-        xor     esi,esi
-        mov     si,_cwDPMIEMU
+        mov     esi,_cwDPMIEMU
         shl     esi,4
-        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
+        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart - 1
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
         mov     di,DpmiEmuCS
         call    MakeDesc
 ;
-;DPMI emulator code seg at PL0
-;
-;        xor     esi,esi
-;        mov     si,_cwDPMIEMU
-;        shl     esi,4
-;        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
         mov     di,DpmiEmuCS0
         call    MakeDesc
 ;
-;DPMI emulator data seg.
-;
-;        xor     esi,esi
-;        mov     si,_cwDPMIEMU
-;        shl     esi,4
-;        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,DpmiEmuDS
         call    MakeDesc
-;
-;Init PL3 to PL0 call gate.
-;
-        xor     ecx,ecx
-        mov     esi,InitCS0
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+Desc386Call
-        mov     di,InitPL3toPL0
-        call    MakeDesc
-;
-;DPMI emulator PL3 to PL0 call gate.
 ;
         xor     ecx,ecx
         mov     esi,DpmiEmuCS0
@@ -1523,15 +1410,9 @@ cw5_0:
 ;
 ;Main PSP segment.
 ;
-        push    ds
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
         movzx   esi,RealPSPSegment
-        assume ds:_cwRaw
-        pop     ds
         shl     esi,4
-        mov     ecx,256
+        mov     ecx,256-1
         mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,MainPSP
@@ -1539,13 +1420,7 @@ cw5_0:
 ;
 ;Main environment var.
 ;
-        push    ds
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
         movzx   esi,RealENVSegment
-        assume ds:_cwRaw
-        pop     ds
         shl     esi,4
         mov     ecx,0FFFFh
         xor     al,al
@@ -1553,77 +1428,29 @@ cw5_0:
         mov     di,MainEnv
         call    MakeDesc
 ;
-;Main code seg.
-;
-        xor     esi,esi
-        mov     si,_cwMain
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
-        mov     di,MainCS
-        call    MakeDesc
-;
-;Main data seg.
-;
-        xor     esi,esi
-        mov     si,_cwMain
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
-        mov     di,MainDS
-        call    MakeDesc
-;
 ;Main stack.
 ;
-        xor     esi,esi
-        mov     si,_cwStack
+        mov     esi,_cwStack
         shl     esi,4
-        mov     ecx,65535
+        mov     ecx,MAINSTKSIZE-1
         mov     al,b[RawSystemFlags]
         xor     al,1
         shl     al,6
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,MainSS
         call    MakeDesc
-;
-;Init code seg.
-;
-        xor     esi,esi
-        mov     si,_cwInit
-        shl     esi,4
+
+;--- use the main SS also for mode switches
+;--- it needs no space in raw mode, and just a few dwords in vcpi mode
         mov     ecx,65535
         xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
-        mov     di,InitCS
-        call    MakeDesc
-;
-;Init code seg at PL0
-;
-        xor     esi,esi
-        mov     si,_cwInit
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
-        mov     di,InitCS0
-        call    MakeDesc
-;
-;Init data seg.
-;
-        xor     esi,esi
-        mov     si,_cwInit
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
-        mov     di,InitDS
+        mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
+        mov     di,KernalSS0Switch
         call    MakeDesc
 ;
 ;Init GDT data alias.
 ;
-        mov     esi,GDTLinear
+        mov     esi,d GDTVal+2
         mov     ecx,65535
         xor     al,al
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
@@ -1640,24 +1467,46 @@ cw5_0:
         rep     stosb                   ;clear TSS & IO map.
         or      ax,-1
         stosw                           ;mark end of IO map.
-        mov     es:TSSFields.SS0,KernalPL0
-        mov     es:TSSFields.ESP0,tPL0StackSize-4
-        mov     es:TSSFields.tLDT,KernalLDT
+        mov     es:TSSFields.ESP0,tPL0StackSize
+        mov     es:TSSFields.SS0,KernalSS0
+;        mov     es:TSSFields.tLDT,KernalLDT
         mov     es:TSSFields.IOMap,size TSSFields       ;set displacement to IO table.
 ;
 ;Setup GDT load value.
 ;
-        movzx   eax,GDTReal
-        shl     eax,4
-        mov     d[GDTVal+2],eax
         mov     w[GDTVal+0],-1
+
+ifdef KRNLDBG
+ if EARLYKDINIT
+;for init phase, locate IDT to stack (first 1kb)
+        mov     eax, _cwStack
+        mov     es, ax
+        shl     eax, 4
+        mov     w[IDTVal+0], 128*8-1
+        mov     d[IDTVal+2], eax
+        mov     cx,128
+        xor     di,di
+        mov     bx, lowword offset InterruptHandler
+nextgate:
+        mov     ax, bx
+        stosw
+        mov     ax, DpmiEmuCS0
+        stosw
+        mov     ax, (DescPresent or DescPL3 or Desc386Int) shl 8
+        stosw
+        xor     ax, ax
+        stosw
+        add     bx, INTCALLSIZE
+        loop    nextgate
+ endif
+endif
 ;
 ;Setup Windows enhanced mode denial patch.
 ;
         mov     ax,352fh                ;get existing vector.
         int     21h
-        mov     w[OldInt2F+0],bx
-        mov     w[OldInt2F+2],es
+        mov     w[OldInt2Fr+0],bx
+        mov     w[OldInt2Fr+2],es
         mov     ax,252fh
         mov     dx,offset Int2FPatch
         int     21h
@@ -1669,10 +1518,6 @@ ifdef KRNLDBG
 D386_Id            equ 0F386h
 D386_Identify      equ 43h
 D386_Prepare_PMode equ 44h
-
-ifndef EARLYKDINIT
-EARLYKDINIT        equ 0	;1=if kd is to become active before the IDT has been created
-endif
 
 PMINIT_INIT_IDT    equ 0
 DS_DebLoaded       equ 4Fh  ;value for AX calling int 41h
@@ -1689,14 +1534,14 @@ DS_CondBP          equ 0F001h  ;BP if debugger is launched with /b
     jnz nokd
     push ds
     mov ax, D386_Prepare_PMode shl 8
-    mov cx, GDTDbg     ; first of 3 selectors for debugger (code/data/scratch)
+    mov cx, KDbgCS     ; first of 3 selectors for debugger (code/data/scratch)
     mov bx, KernalZero ; flat 4G selector
     mov dx, GDTData    ; GDT selector
     mov si, 0          ; DS:SI: GDT
     mov ds, GDTReal
     mov di, -1         ; ES:DI: IDT
     int 68h
-    or [si+GDTDbg+2*8].Desc.Access,DescPresent	; ensure the scratch descriptor is marked as 'used'
+    or [si+KDbgCS+2*8].Desc.Access,DescPresent	; ensure the scratch descriptor is marked as 'used'
     pop ds
     ; returns FAR32 address of init func in ES:EDI
     mov dword ptr [pminit+0], edi
@@ -1707,13 +1552,7 @@ endif
 ;
 ;Now patch RAW specific calls.
 ;
-        push    ds
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
         cmp     ProtectedType,PT_VCPI
-        assume ds:_cwRaw
-        pop     ds
         jz      cw5_VCPI
 ;
 ;Use RAW method to switch to protected mode.
@@ -1732,7 +1571,8 @@ cw5_RAW:
         mov     es,PageAliasReal
         mov     es:[di],eax
         mov     es,KernalTSSReal
-        mov     es:[di].TSSFields.tCR3,eax  ;set CR3 in TSS as well.
+;--- eax doesn't hold the value for CR3 ( it's PDE for page table 0 )!
+;        mov     es:[di].TSSFields.tCR3,eax  ;set CR3 in TSS as well.
         ;
         ;map alias into page dir as well.
         ;
@@ -1746,47 +1586,23 @@ cw5_RAW:
 ;       pushfd
 ;       pop     eax
 ;       mov     EFlagsSav,eax
-        mov     eax,cr3
-        mov     CR3Sav,eax
+
+        mov     Protected2Real,offset RawProt2Real
+        mov     Real2Protected,offset RawReal2Prot
         mov     eax,cr0
-        mov     CR0Sav,eax
-        sidt    IDTSav                  ;save old IDT value for switch back.
-        sgdt    GDTSav
-        pop     RetAdd
-        cli                             ;Don't want interupts interfering.
-        lgdt    GDTVal                  ;Setup GDT &
-        lidt    [IDTVal]                ;IDT.
-        mov     eax,vcpi._CR3
-        mov     cr3,eax                 ;set page dir address.
-        mov     eax,cr0                 ;Get machine status &
         or      eax,080000001h          ;set PM+PG bits.
-        mov     cr0,eax                 ;/
-
-; MED 10/15/96
         mov     CR0ProtSav,eax          ; save protected mode status of CR0
-
-        db 0eah                         ;Absolute 16-bit jump, to clear
-        dw cw5_RAW0,InitCS0             ;instruction pre-fetch & load CS.
-cw5_RAW0:
-        mov     ax,KernalLDT            ;Point to empty LDT descriptor.
-        lldt    ax                      ;and set LDT.
-        mov     cx,KernalTS             ;Get value for task register.
-        ltr     cx                      ;and set it.
-        ;
-        mov     Protected2Real,offset RAWProt2Real
-        mov     Real2Protected,offset RAWReal2Prot
         jmp     cw5_InProt
 ;
 ;Use VCPI method to switch to protected mode.
 ;
 cw5_VCPI:
-        mov     cs:IErrorNumber,6
-        cli
+        mov     IErrorNumber,6
+;        cli
         push    ds
         xor     di,di                   ;Page table offset.
         mov     es,Page1stReal          ;Page table segment
-        mov     si,VCPI_0               ;VCPI GDT entries offset.
-        and     si,not 3
+        mov     si,VCPI_0 and 0fff8h    ;VCPI GDT entries offset.
         mov     ds,GDTReal              ;GDT segment.
         mov     ax,0de01h               ;Let VCPI server prepare.
         int     67h
@@ -1803,251 +1619,107 @@ cw5_VCPI:
         ;Now update PHYSICAL addresses of dir & 1st page tables.
         ;
         mov     es,Page1stReal
-if 0
-        movzx   edi,Page1stReal         ;get linear address (bits 0-7 are 0).
-        shl     edi,4                   ;/
-        shr     edi,12                  ;page number (0-255).
-        shl     edi,2                   ;*4 bytes per entry.
-else
         mov     di,es
-        shr     di,8-2
-endif
+        shr     di,8-2                  ;convert to offset (0-3FCh) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0f000h               ;clear status bits 0-11.
         or      ax,111b                 ;set our bits.
         mov     es,PageDIRReal
         xor     di,di
-        mov     es:[di],eax
+        mov     es:[di+0],eax           ;set first PDE in page dir
         mov     es,PageAliasReal
-        mov     es:[di],eax
+        mov     es:[di+0],eax
         ;
         mov     es,Page1stReal
-if 0
-        movzx   edi,PageDIRReal         ;get linear address (bits 0-7 are 0).
-        shl     edi,4                   ;/
-        shr     edi,12                  ;page number (0-255)
-        shl     edi,2                   ;*4 bytes per entry.
-else
         mov     di,PageDIRReal
-        shr     di,8-2
-endif
+        shr     di,8-2                  ;convert to offset (0-3FCh) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0F000h               ;clear status bits.
-        mov     vcpi._CR3,eax           ;set VCPI CR3 value as well.
-        mov     es,KernalTSSReal
-        xor     di,di
-        mov     es:[di].TSSFields.tCR3,eax  ;set CR3 in TSS as well.
+        mov     vcpi._CR3,eax           ;set VCPI CR3 value
         ;
         mov     es,Page1stReal
-if 0
-        movzx   edi,PageAliasReal       ;get linear address.
-        shl     edi,4                   ;/
-        shr     edi,12                  ;page number.
-        shl     edi,2                   ;*4 bytes per entry.
-else
         mov     di,PageAliasReal
-        shr     di,8-2
-endif
+        shr     di,8-2                  ;convert to offset (0-3FC) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0F000h               ;clear status bits.
         or      ax,111b                 ;user+write+present.
         mov     es,PageDIRReal
         mov     di,1023*4
-        mov     es:[di],eax             ;setup in last page dir entry.
+        mov     es:[di],eax             ;setup in last page dir entry (address range FFC00000-FFFFFFFF)
         ;
         mov     vcpi._LDT,KernalLDT
-        mov     vcpi._EIP,offset cw5_InProt
-        mov     vcpi._TR,KernalTS       ;Get value for task register.
-        mov     vcpi._CS,InitCS0
-        xor     eax,eax
-        mov     ax,seg _cwRaw
-        shl     eax,4
-        add     eax,offset GDTVal
-        mov     vcpi._pGDT,eax
-        xor     eax,eax
-        mov     ax,seg _cwRaw
-        shl     eax,4
-        add     eax,offset IDTVal       ; IDT doesn't exist yet!
-        mov     vcpi._pIDT,eax
-        cli
-        mov     ax,0de0ch
-        mov     si,seg _cwRaw
-        movzx   esi,si
+        mov     vcpi._TR,KernalTS
+
+        mov     esi,GROUP16
         shl     esi,4
-        add     esi,offset vcpi
-        int     67h
-        ;
-        mov     ax,_cwStack
-        mov     ss,ax
-        mov     esp,offset _cwStackEnd-4
-        mov     ax,_cwRaw
-        mov     ds,ax
-        jmp     InitError               ;Shouldn't come through here.
-;
-;We're in protected mode at last, now we just have to move the DPMI emulation
-;stuff into extended memory and build a useful IDT.
-;
+        mov     eax,offset GDTVal
+        add     eax,esi
+        mov     vcpi._pGDT,eax
+        mov     eax,offset IDTVal
+        add     eax,esi
+        mov     vcpi._pIDT,eax
 cw5_InProt:
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
+;
+;Raw/VCPI: ready to switch to protected mode at last
+;
+        cli
+        mov     cx,MainSS
+        mov     edx,offset _cwStackEnd
+        call    [Real2Protected]
         or      IProtectedMode,-1
-        mov     ax,KernalDS             ;Get data descriptor.
-        mov     ds,ax
-        assume ds:_cwRaw
-        mov     es,ax
-        mov     fs,ax
-        mov     gs,ax
-        mov     ax,KernalPL0
-        mov     ss,ax
-        mov     esp,tPL0StackSize-4
 
-; MED 12/04
-; check if CPUID is available, if so, check if need to enable SSE instructions
-        pushfd
-        pop     eax
-        mov     ecx,eax
-        xor     eax,200000h             ; toggle cpu id bit
-        push    eax
-        popfd
-        pushfd
-        pop     eax
-        xor     eax,ecx                 ; see if cpu id bit was changed
-        je      nosse                   ; no, cpuid instruction not supported
+;--- set a few bits in CR0 and CR4
 
-        .586p
-        mov     eax,1
-        cpuid
-        and     edx,3000000h            ; only want SSE and FXSR bit status
-        cmp     edx,3000000h
-        jne     nosse                   ; both bits required
-        mov     eax,cr0
-        and     al,NOT 6                ; clear EM and MP bits
-        mov     cr0,eax
-        mov     eax,cr4
-        or      ax,200h                 ; set OSFXSR bit to allow SSE instructions
-        mov     cr4,eax
-nosse:
-        cld
-        clts
+        mov     ax,offset setcr0cr4
+        call    CallPL0Proc
 
 ifdef KRNLDBG
  if EARLYKDINIT
-
-;--- no IDT available yet -
-;--- a temp IDT will be created in main stack, 128 entries
-
+;--- a temp IDT (1 kb) has been created in _cwStack, so the KD may start
         cmp     w[pminit+4],0
         jz      @F
-        mov     edi, seg _cwStack
-        shl     edi, 4
-        mov     w[IDTVal+0], 128*8-1
-        mov     d[IDTVal+2], edi
         push    es
-        push    edi
         mov     ax,KernalZero
         mov     es,ax
-        mov     bl,0
-        mov     ecx,offset InterruptHandler ;offset32
-        mov     si,DpmiEmuCS0               ;gate to use.
-        mov     al,0
-        mov     ah,DescPresent+DescPL3+Desc386Int ; create interrupt gates
-nextgate:
-        call    MakeGate
-        add     edi,sizeof GATE         ;address next IDT gate
-        add     ecx,INTCALLSIZE         ;/
-        inc     bx
-        cmp     bl,80h
-        jnz     nextgate
-        pop     edi
-        lidt    [IDTVal]
+        mov     edi,d[IDTVal+2]
+        mov     ax,setupkd
+        call    CallPL0Proc
+        pop     es
+        jmp     @F
+setupkd:        
         mov     ax, PMINIT_INIT_IDT
         call    [pminit]
-        pop     es
         or      esi,-1
         mov     ax, DS_CondBP           ; stop in kd if loaded with /b
         int     41h
+        retd
 @@:        
  endif
 endif
 ;
-;Switch to PL3 code seg for the hell of it.
-;
-        .386
-        mov     edx,offset _cwStackEnd-4
-        mov     ecx,MainSS
-        push    ecx                     ;SS
-        push    edx                     ;ESP
-        pushfd                          ;EFlags
-        pop     eax
-        and     ah,10111111b            ;clear NT
-        push ax
-        popf                            ;NT must be cleared in flags BEFORE iretd
-        or      ah,00110000b            ;set IOPL 3
-        push    eax
-        xor     eax,eax
-        mov     ax,InitCS
-        push    eax                     ;CS
-        mov     eax,offset cw5_pl3
-        push    eax                     ;EIP
-        iretd
-        ;
-cw5_pl3:
-        push    es
-        mov     ax,KernalZero
-        mov     es,ax
-        mov     esi,GDTLinear
-        add     esi,KernalTS-3
-        mov     BYTE PTR es:[esi+5],DescPresent+DescPL3+Desc386Tss
-        pop     es
-;
 ;Setup initial segment variables.
 ;
-        push    ds
-        mov     ax,MainDS
-        mov     ds,ax
-        assume ds:_cwMain
         or      w[SystemFlags],32768    ;Flags us in protected mode.
-        mov     RealSegment,KernalZero
-        mov     PSPSegment,MainPSP
-        mov     ENVSegment,MainEnv
-        mov     CodeSegment,MainCS
-        mov     DataSegment,MainDS
-        mov     StackSegment,MainSS
-        assume ds:_cwRaw
-        pop     ds
 ;
 ;Make sure A20 is enabled.
+;--- this makes the first switch to real-mode!
 ;
-        push    ds
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
         mov     IErrorNumber,7
-        assume ds:_cwRaw
-        pop     ds
         mov     ax,1
-;--- it's a FAR16 call!
-        db 9ah
-        dw offset A20Handler, KernalCS
+        call    A20Handler
+cw_safesp:                  ;space up to this point may be used for rm stack while _cwInit code is still running
         jnz     InitError
 ;
 ;Now get extended memory sorted out, move the page tables into extended memory
 ;for a start.
 ;
-        push    ds
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
         mov     IErrorNumber,5
-        assume ds:_cwRaw
-        pop     ds
         mov     ax,KernalZero
         mov     es,ax
 ;
 ;Allocate 2nd page table so we can map extended memory.
 ;
-        call    [fPhysicalGetPage]
+        call    fPhysicalGetPage
         jc      InitError
         and     cx,1                    ;put user bits in useful place.
         shl     cx,10
@@ -2060,239 +1732,141 @@ cw5_pl3:
         mov     es:[esi+eax*4],edx      ;store this tables address.
         mov     esi,PageAliasLinear     ;get alias table address.
         mov     es:[esi+eax*4],edx      ;setup in alias table as well, same range.
-;        call    [fCR3Flush]
-        mov     edi,PTMAPADDR           ;base of page alias's (=FFC00000).
-        mov     eax,1024*4              ;get the entry number again.
-        add     edi,eax
+;        call    CR3Flush
+        mov     edi,PTMAPADDR+1000h     ;base of page alias's (=FFC00000).
         mov     ecx,4096/4
         xor     eax,eax
         cld
         rep     stosd [edi]
-        call    [fCR3Flush]
-        mov     LinearEntry,1024
+        call    CR3Flush
+        mov     LinearEntry,1024        ;start address space (400h shl 12 = 400000h)
 ;
 ;Setup DET page alias.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page 1st DET.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h               ;clear bits 0-11
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        mov     edi,LinearEntry
-        shl     edi,12
+        call    getandmappage
+        shl     eax,12
+        mov     edi,eax
+
+        mov     PageDETLinear,eax
         mov     ecx,4096/4
         xor     eax,eax
         cld
         rep     stosd [edi]             ;clear it.
-        mov     eax,LinearEntry
-        shl     eax,12                  ;get linear address.
-        mov     PageDETLinear,eax
+
         mov     eax,PDEMAPDET           ;PDE index
         mov     esi,PageDirLinear
-        mov     edx,LinearEntry+8       ;get physical address again.
+        mov     edx,CurrPhysPage        ;get physical address again.
         or      dx,111b
         mov     es:[esi+eax*4],edx      ;put new page into the map.
         mov     esi,PageAliasLinear
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        inc     LinearEntry
+        call    CR3Flush
 ;
 ;Setup DET page 1st.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page 1st.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        mov     edi,LinearEntry
-        shl     edi,12
+        call    getandmappage
+        shl     eax,12
+        mov     edi,eax
+
         mov     ecx,4096/4
         mov     eax,MEM_FILL
         cld
         rep     stosd [edi]             ;copy old to new.
+
+        mov     edx,CurrPhysPage
+        or      dx,111b
         mov     esi,PageDETLinear
         mov     eax,0
-        mov     edx,LinearEntry+8       ;get physical address again.
-        or      dx,111b
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        inc     LinearEntry
+        call    CR3Flush
 ;
 ;Allocate 2nd page DET
 ;
-        call    [fPhysicalGetPage]      ;get page for new page 1st.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        mov     edi,LinearEntry
-        shl     edi,12
+        call    getandmappage
+        shl     eax,12
+        mov     edi,eax
+
         mov     ecx,4096/4
         mov     eax,MEM_FILL
         cld
         rep     stosd [edi]             ;copy old to new.
+
+        mov     edx,CurrPhysPage        ;get physical address again.
+        or      dx,111b
         mov     esi,PageDETLinear
         mov     eax,1
-        mov     edx,LinearEntry+8       ;get physical address again.
-        or      dx,111b
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        inc     LinearEntry
+        call    CR3Flush
 ;
 ;Move page alias into extended memory.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page 1st.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        push    ds
+        call    getandmappage
+        shl     eax,12                  ;get linear address.
+        mov     edi,eax
+
         mov     esi,PageAliasLinear
-        mov     edi,LinearEntry
-        shl     edi,12
+        mov     PageAliasLinear,eax
         mov     ecx,4096/4
+        push    ds
         push    es
         pop     ds
         cld
         rep     movsd [edi],[esi]       ;copy old to new.
         pop     ds
-        mov     eax,PageAliasLinear
-        mov     PageAliasLinear+4,eax
-        mov     eax,LinearEntry
-        shl     eax,12                  ;get linear address.
-        mov     PageAliasLinear,eax
-        mov     esi,PageDirLinear
-        mov     eax,1023
-        mov     edx,LinearEntry+8       ;get physical address again.
+
+        mov     edx,CurrPhysPage
         or      dx,111b
-        mov     ecx,es:[esi+eax*4]      ;get original value.
-        mov     PageAliasLinear+8,ecx
+        mov     eax,1023
+        mov     esi,PageDirLinear
         mov     es:[esi+eax*4],edx      ;put new page into the map.
         mov     esi,PageAliasLinear
-        mov     eax,1023
-        mov     edx,LinearEntry+8       ;get physical address again.
-        or      dx,111b
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        inc     LinearEntry
+        call    CR3Flush
 
-; MED 09/19/96
-COMMENT !
+if MOVEPAGE1STTOEXT
 ;
 ;Move page 1st into extended memory.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page 1st.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        ;
-        ;Map it into general linear address space.
-        ;
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
+        call    getandmappage
+        shl     eax,12
+        mov     edi,eax
         ;
         ;Copy table to new memory.
         ;
-        push    ds
         mov     esi,Page1stLinear
-        mov     edi,LinearEntry
-        shl     edi,12
+        mov     Page1stLinear,eax       ;set new linear address.
         mov     ecx,4096/4
+        push    ds
         push    es
         pop     ds
         cld
         rep     movsd [edi],[esi]       ;copy old to new.
         pop     ds
         ;
-        ;Make variables point to new memory.
+        ;Set new address in page dir & page dir alias.
         ;
-        mov     eax,Page1stLinear
-        mov     Page1stLinear+4,eax     ;store old address.
-        mov     eax,LinearEntry
-        shl     eax,12                  ;get linear address.
-        mov     Page1stLinear,eax       ;set new linear address.
-        ;
-        ;Set new address in page dir.
-        ;
-        mov     edx,LinearEntry+8       ;get physical address again.
+        mov     edx,CurrPhysPage
         or      dx,111b
-        ;
+        mov     eax,0
         mov     esi,PageDirLinear
-        mov     eax,0
-        mov     ecx,es:[esi+eax*4]      ;get original value.
-        mov     Page1stLinear+8,ecx
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        ;
-        ;Set new address in page dir alias.
-        ;
         mov     esi,PageAliasLinear
-        mov     eax,0
         mov     es:[esi+eax*4],edx      ;put new page into the map.
-        call    [fCR3Flush]
-        inc     LinearEntry
-END COMMENT !
-
+        call    CR3Flush
+endif
 ;
 ;Move page dir into extended memory.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page DIR.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        ;
-        ;Map it into normal linear address space.
-        ;
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
+        call    getandmappage
+        shl     eax,12
+        mov     edi,eax
         ;
         ;Copy table to new memory.
         ;
-        push    ds
         mov     esi,PageDirLinear
-        mov     edi,LinearEntry
-        shl     edi,12
+        mov     PageDirLinear,eax       ;set new value.
         mov     ecx,4096/4
+        push    ds
         push    es
         pop     ds
         cld
@@ -2301,42 +1875,19 @@ END COMMENT !
         ;
         ;Make variables point to new memory.
         ;
-        mov     eax,PageDirLinear
-        mov     PageDirLinear+4,eax     ;store old value.
-        mov     eax,LinearEntry
-        shl     eax,12                  ;get linear address.
-        mov     PageDirLinear,eax       ;set new value.
-        mov     eax,vcpi._CR3
-        mov     PageDirLinear+8,eax     ;store old physical address.
-        mov     eax,LinearEntry+8
+        mov     eax,CurrPhysPage
         mov     vcpi._CR3,eax           ;set new physical address.
-        movzx   edi,KernalTSSReal
-        shl     edi,4
-        mov     es:[edi].TSSFields.tCR3,eax ;set CR3 in TSS as well.
-        call    [fCR3Flush]
-        inc     LinearEntry
+        call    CR3Flush
 ;
 ;Setup IDT.
 ;
-        call    [fPhysicalGetPage]      ;get page for new page DIR.
-        jc      InitError
-        mov     LinearEntry+8,edx       ;store physical address.
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0F000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        mov     eax,LinearEntry
+        call    getandmappage
         shl     eax,12
+        mov     edi,eax
+
         mov     d[IDTVal+2],eax
         mov     w[IDTVal+0],256*8-1
         ;
-;        mov     edi,d[IDTVal+2]
-        mov     edi,eax
         mov     bl,0                    ;vectors#
         mov     ecx,offset InterruptHandler ;offset32
         mov     esi,DpmiEmuCS0          ;gate to use.
@@ -2348,33 +1899,54 @@ cw5_3:
         add     ecx,INTCALLSIZE         ;/
         inc     bl
         jnz     cw5_3
+
+if MOVETSS
+;--- move TSS just behind the IDT
+        push    ds
+        mov     ax, GDTData
+        mov     ds, ax
+        mov     si, KernalTS and 0fff8h
+        mov     eax, edi
+        mov     [si].Desc.Base_l, ax
+        shr     eax,16
+        mov     [si].Desc.Base_m, al
+        mov     [si].Desc.Base_H, ah
+        mov     si, KernalSS0
+        mov     eax, edi
+        add     eax,TSSFields.tPL1Stack
+        mov     [si].Desc.Base_l, ax
+        shr     eax,16
+        mov     [si].Desc.Base_m, al
+        mov     [si].Desc.Base_H, ah
+
+        movzx   esi,cs:KernalTSSReal
+        shl     esi, 4
+        mov     ecx,sizeof TSSFields
+        push    es
+        pop     ds
+        rep     movsb [edi],[esi]
+        pop     ds
+endif
+
 ifdef KRNLDBG
  if EARLYKDINIT
 ;--- if there was an early kd init, copy the temp IDT to the current one 
         cmp     w[pminit+4],0
         jz      @F
         mov     edi,d[IDTVal+2]
-        mov     esi, seg _cwStack
+        mov     esi, _cwStack
         shl     esi, 4
         mov     ecx, 128*8/4
         rep     movsd [edi],es:[esi]
 @@:
  endif
 endif
-
-        inc     LinearEntry
         ;
         ;Re-load IDT value.
         ;
-        push    es
-        mov ax, GDTData
-        mov es, ax
-        mov ax, offset loadidt
-        mov es:[InitPL3toPL0 and 0f8h + GATE.OfsLow], ax
-        db 09ah
-        dw 0
-        dw InitPL3toPL0
-        pop     es
+        mov     ax, offset loadidt
+        call    CallPL0Proc
+
 
 ifdef KRNLDBG
  ife EARLYKDINIT
@@ -2387,7 +1959,7 @@ ifdef KRNLDBG
 		push es
 		mov ax, GDTData
 		mov es, ax
-		mov bx, InitPL3toPL0 and 0F8h
+		mov bx, MainPL3toPL0 and 0F8h
 		mov eax, d[pminit+0]
 		mov es:[bx].GATE.OfsLow, ax
 		shr eax, 16
@@ -2403,53 +1975,34 @@ ifdef KRNLDBG
 		mov ax, PMINIT_INIT_IDT
 		db 09ah
 		dw 0
-		dw InitPL3toPL0
+		dw MainPL3toPL0
 		pop bx
 		pop es
 		pop es:[bx].GATE.sel
+		mov es:[bx].GATE.OfsHigh, 0
 		pop es
 nokdinit:
  endif
 endif
-
 ;
 ;Get extended memory for DPMI emulator.
 ;
-        push    ds
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
         mov     IErrorNumber,5
-        assume ds:_cwRaw
-        pop     ds
         ;
         mov     ebp,cwDPMIEMUEnd - cwDPMIEMUStart
         add     ebp,4096-1
         shr     ebp,12                  ;Get number of pages needed.
-        mov     eax,LinearEntry
-        shl     eax,12
-        mov     LinearEntry+4,eax       ;Store start address.
+        mov     edi,LinearEntry
 cw5_2:
-        call    [fPhysicalGetPage]      ;try to allocate a page.
-        jc      InitError
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0f000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        inc     LinearEntry             ;update pointer.
+        call    getandmappage
         dec     ebp
         jnz     cw5_2
 ;
 ;Copy DPMI emulator code into extended memory we just allocated.
 ;
-        mov     edi,LinearEntry+4       ;Get the destination.
-        mov     si,_cwDPMIEMU
-        movzx   esi,si
+        shl     edi,12
+        mov     eax,edi
+        mov     esi,_cwDPMIEMU
         shl     esi,4                   ;Point to the source.
         mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
         shr     ecx,2
@@ -2463,22 +2016,18 @@ cw5_2:
 ;Setup DPMI emulator selectors.
 ;
         push    es
+        mov     esi,eax
         mov     ax,GDTData
         mov     es,ax
-        mov     esi,LinearEntry+4
-        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
+        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart - 1
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
         mov     di,DpmiEmuCS
         call    MakeDesc
-        mov     esi,LinearEntry+4
-        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
         mov     di,DpmiEmuCS0
         call    MakeDesc
-        mov     esi,LinearEntry+4
-        mov     ecx,cwDPMIEMUEnd - cwDPMIEMUStart
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,DpmiEmuDS
@@ -2498,98 +2047,74 @@ cw5_2:
 ;Allocate memory for new GDT/LDT
 ;it's 64kB + 8 kB byte string behind GDT/LDT
 ;
-        push    ds
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
         mov     IErrorNumber,5
-        assume ds:_cwRaw
-        pop     ds
         ;
-        mov     ebp,(8192*8)+8192
-        shr     ebp,12                  ;Get number of pages needed.
-        mov     eax,LinearEntry
-        shl     eax,12
-        mov     LinearEntry+4,eax       ;Store start address.
+        mov     ebp,(8192*8+8192)/4096  ;# of pages needed (=18)
+        mov     edi,LinearEntry
 cw5_6:
-        call    [fPhysicalGetPage]      ;try to allocate a page.
-        jc      InitError
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0f000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        inc     LinearEntry             ;update pointer.
+        call    getandmappage
         dec     ebp
         jnz     cw5_6
         ;
-        mov     esi,LinearEntry+4
-        mov     MDTLinear,esi           ;store for allocation code.
-        add     esi,8192*8
-        mov     MDTLinear+4,esi         ;setup bit (actually: byte) string address.
-        ;
-        ;Clear the memory to zero's.
-        ;
-        mov     edi,MDTLinear
-        mov     ecx,(8192*8)+8192
+        shl     edi,12
+        mov     MDTLinear,edi           ;store for allocation code.
+        mov     ecx,(8192*8)/2
         cld
-        xor     al,al
-        rep     stosb [edi]
-        mov     edi,MDTLinear+4
-        or      DWORD PTR es:[edi],-1   ;Force VCPI values to not used.
+        xor     ax,ax
+        rep     stosw [edi]
+        mov     MDTLinear+4,edi         ;setup bit (actually: byte) string address.
+        or      eax,-1
+        stosd   [edi]                   ;Force VCPI values to not used.
+        mov     cx,(8192-4)/2
+        xor     ax,ax
+        rep     stosw [edi]
         ;
         ;See which table we want to use.
         ;
         test    BYTE PTR RawSystemFlags,128 ;GDT or LDT?
         jnz     cw5_LDT
-        ;
-        ;reinit the GDT descriptor.
-        ;
-        mov     esi,MDTLinear
-        mov     GDTLinear+4,esi
-        mov     ecx,65535               ; limit
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
-        mov     di,GDTData
-        push    es
-        mov     es,di
-        call    MakeDesc
-        pop     es
+
         ;
         ;Copy current GDT to new GDT.
+        ;init the GDTData descriptor in the new GDT after the copy;
+        ;this ensures a stable switch to the new GDT!
         ;
+        mov     esi,MDTLinear
+
         push    ds
-        mov     esi,GDTLinear
-        mov     edi,GDTLinear+4
-        mov     ax,KernalZero
-        mov     ds,ax
-        mov     ecx,GDT_Entries*8
-        cld
-        rep     movsb [edi],[esi]
+        mov     edi,esi
+        push    edi
+        mov     esi,d GDTVal+2
+        push    es
         pop     ds
+        mov     ecx,GDT_Entries*2
+        cld
+        rep     movsd [edi],[esi]
+        pop     edi
+        mov     eax,edi
+        add     edi,GDTData and 0fff8h
+        mov     [edi].Desc.Base_l,ax
+        shr     eax,16
+        mov     [edi].Desc.Base_m,al
+        mov     [edi].Desc.Base_H,ah
+        pop     ds
+        
         ;
         ;Set new GDT values.
         ;
         pushf
         cli
-        mov     eax,GDTLinear
-        mov     GDTLinear+8,eax
-        mov     eax,GDTLinear+4
-        mov     GDTLinear,eax
+        mov     eax,MDTLinear
         mov     d[GDTVal+2],eax
-;        mov     d[VCPI_GDT+2],eax
         popf
+        mov     ah,1
+        int     16h                     ;force GDT reload with mode switch.
         ;
         ;Now mark all used descriptors in allocation control string.
         ;
-        mov     edi,GDTLinear
+        mov     edi,d GDTVal+2
         mov     esi,MDTLinear+4
         mov     cx,GDT_Entries
-
 cw5_4:
         test    BYTE PTR es:[edi].Desc.Access,DescPresent ;this descriptor in use?
         jz      cw5_5
@@ -2597,8 +2122,7 @@ cw5_4:
 cw5_5:
         add     edi,8                   ;next descriptor.
         inc     esi                     ;update descriptor number.
-        dec     cx
-        jnz     cw5_4
+        loop    cw5_4
         ;
         ;Now setup extra GDT descriptors.
         ;
@@ -2630,18 +2154,13 @@ cw5_5:
         ;
 cw5_LDT:
         ;Setup new LDT.
-        ;
-        mov     esi,MDTLinear
-        mov     LDTLinear,esi
-        ;
         ;Map LDT into GDT.
         ;
         push    es
         mov     ax,GDTData
         mov     es,ax
+        mov     esi,MDTLinear
         mov     di,KernalLDT
-        mov     esi,LDTLinear
-;        mov     ecx,8192*8
         mov     ecx,8192*8-1
         xor     al,al
         mov     ah,DescPresent+DescPL3+DescLDT
@@ -2649,7 +2168,63 @@ cw5_LDT:
         pop     es
         ;
         mov     ah,1
-        int     16h                     ;force GDT/LDT reload with mode switch.
+        int     16h                     ;force LDT reload with mode switch.
+
+;--- The system tables just generated will remain in extended memory.
+;--- At the final exit, VCPI pages are released while still in protected-mode.
+;--- Some pages must be hold, and released only when in real-mode; those pages
+;--- are stored in table PhysPageSave and the VCPI bit of the PTE are cleared here.
+
+;--- reset VCPI flag for
+;--- 1 first page of GDT
+;--- 2 page directory
+;--- 3 PDE for region 400000-7FFFFF (where the GDT is located)
+;--- 4 optionally page for IDT (if KRNLDBG is defined)
+;--- 5 optionally PDE for region 000000-3FFFFF (MOVEPAGE1STTOEXT=1)
+;--- ES=zero-based flat
+
+        mov     bx, offset PhysPageSave
+        mov     esi,PTMAPADDR
+        mov     eax, d GDTVal+2
+        shr     eax, 12
+        btr     w es:[esi+eax*4],10
+        jnc     @F
+        mov     eax,es:[esi+eax*4]
+        mov     [bx], eax
+        add     bx, 4
+@@:
+        mov     eax, PageDirLinear
+        shr     eax, 12
+        btr     w es:[esi+eax*4],10
+        jnc     @F
+        mov     eax,es:[esi+eax*4]
+        mov     [bx], eax
+        add     bx, 4
+@@:
+ifdef KRNLDBG ; release page for IDT in real-mode only, so KD can run till final switch to real-mode
+        mov     eax, d[IDTVal+2]
+        shr     eax, 12
+        btr     w es:[esi+eax*4],10
+        jnc     @F
+        mov     eax,es:[esi+eax*4]
+        mov     [bx], eax
+        add     bx, 4
+@@:
+endif
+        mov     esi, PageDirLinear
+        btr     w es:[esi+4],10
+        jnc     @F
+        mov     eax,es:[esi+4]
+        mov     [bx], eax
+        add     bx, 4
+@@:
+if MOVEPAGE1STTOEXT
+        btr     w es:[esi+0],10
+        jnc     @F
+        mov     eax,es:[esi+0]
+        mov     [bx], eax
+@@:
+endif
 ;
 ;Initialise application memory pool.
 ;
@@ -2659,44 +2234,29 @@ cw5_LDT:
         add     eax,4096
         mov     LinearLimit,eax
         ;
-        call    [fPhysicalGetPage]      ;try to allocate a page.
-        jc      InitError
-
-        and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
-        and     dx,0f000h
-        or      dx,111b                 ;present+user+write.
-        or      dx,cx                   ;set use flags.
-        mov     eax,LinearEntry         ;get the entry number again.
-        mov     esi,PTMAPADDR           ;base of page alias's.
-        mov     es:[esi+eax*4],edx      ;set physical address.
-        call    [fCR3Flush]
-        mov     eax,LinearEntry         ;get the entry number again.
+        call    getandmappage
+        dec     LinearEntry             ;undo INC done inside getandmappage()
         mov     esi,1024*4096*PDEMAPDET ;=FF800000h
         mov     DWORD PTR es:[esi+eax*4],0      ;clear this page's details.
 ;
 ;Initialise virtual memory manager stuff.
 ;
-        call    [fPhysicalGetPages]     ;find free pages.
+        call    fPhysicalGetPages       ;find free pages.
         mov     eax,edx
         shl     eax,12
         add     eax,LinearLimit
         sub     eax,LinearBase
         mov     ebp,eax                 ;save this for comparisons.
-        mov     di,InitDS
-        mov     fs,di
         mov     di,offset VMMDrivPath1  ;point to start of paths.
-        assume fs:_cwInit
-        cmp     fs:NoVMSwitch,0
-        assume fs:nothing
+        cmp     NoVMSwitch,0
         jnz     cw5_v9
         ;
-        ;Work through list of posibles till we find a useful entry.
+        ;Work through list of possibles till we find a useful entry.
         ;
-cw5_v0:
-        cmp     BYTE PTR fs:[di],0
+cw5_v0:                                 ;<<<<---- next entry
+        cmp     BYTE PTR [di],0
         jz      cw5_v7
-        cmp     BYTE PTR fs:[di],-1
+        cmp     BYTE PTR [di],-1
         jz      cw5_v9
         ;
         ;Check drive is valid and has enough free space.
@@ -2705,46 +2265,47 @@ cw5_v0:
 COMMENT !
 ; MED 10/11/96
 ; if no drivespec, then use default drive
-        cmp     BYTE PTR fs:[di+1],':'
+        cmp     BYTE PTR [di+1],':'
         je      isdrive
 
         movzx   edx,di                  ; scan to end of current pathspec
 defloop:
         inc     dx                      ; edx known 16-bit value so 16-bit increment is valid
-        cmp     BYTE PTR fs:[edx],0
+        cmp     BYTE PTR [edx],0
         jne     defloop
 
 ; at end of current pathspec, now shift forward two bytes to allow for drive
 shiftloop:
-        mov     al,fs:[edx]
-        mov     fs:[edx+2],al
+        mov     al,[edx]
+        mov     [edx+2],al
         dec     dx
         cmp     di,dx                   ; edx known 16-bit value so 16-bit compare is valid
         jae     shiftloop
 
-        push    edi
-        mov     edi,offset PageInt
+        push    di
+        mov     edi,offset PageInt      ; Pageint is in 16-bit segment, but RawSimulateInt expects addr in es:edi
         push    ds
         pop     es
-        mov     [edi].RealRegsStruc.Real_EAX,1900h
-        mov     RealRegsStruc.Real_SSSP[edi],0
+        mov     w [di].RealRegsStruc.Real_EAX,1900h
+        mov     RealRegsStruc.Real_SSSP[di],0
         mov     bl,21h
-        call    [fRawSimulateINT]
-        mov     al,BYTE PTR [edi].RealRegsStruc.Real_EAX
-        pop     edi
+        call    RawSimulateInt
+        mov     al,BYTE PTR [di].RealRegsStruc.Real_EAX
+        pop     di
         add     al,'A'                  ; convert to drive
-        mov     fs:[di],al
-        mov     BYTE PTR fs:[di+1],':'  ; add colon to drivespec
+        mov     [di],al
+        mov     BYTE PTR [di+1],':'     ; add colon to drivespec
 END COMMENT !
 
 isdrive:
-        mov     dl,fs:[di]              ;get swap file drive.
-        cmp     dl,61h                  ; 'a'
+        mov     dl,[di]                 ;get swap file drive.
+        cmp     dl,'a'
         jb      cw5_v1
-        cmp     dl,7Ah                  ; 'z'
+        cmp     dl,'z'
         ja      cw5_v1
         and     dl,5Fh                  ;convert to upper case.
-cw5_v1: sub     dl,'A'                  ;make it real.
+cw5_v1:
+        sub     dl,'A'                  ;make it real.
         inc     dl                      ;adjust for current type selection.
 
 drivefree:
@@ -2773,7 +2334,7 @@ drivefree:
 
 ; find end of pathspec
 mednameloop:
-        cmp     BYTE PTR fs:[si],0
+        cmp     BYTE PTR [si],0
         je      medndone
         inc     si
         jmp     mednameloop
@@ -2783,18 +2344,16 @@ medndone:
 
 ; 05/15/98
 ; check for backslash already existing
-        cmp     BYTE PTR fs:[si-1],'\'
+        cmp     BYTE PTR [si-1],'\'
         je      medbs
-
-        mov     BYTE PTR fs:[si],'\'
+        mov     BYTE PTR [si],'\'
         inc     si
-
 medbs:
         mov     di,offset DesiredVMMName
 
 medtransloop:
         mov     al,[di]
-        mov     fs:[si],al
+        mov     [si],al
         inc     di
         inc     si
         test    al,al
@@ -2804,15 +2363,15 @@ medtransloop:
         mov     edi,offset PageInt
         push    ds
         pop     es
-        mov     [edi].RealRegsStruc.Real_DS,_cwInit
-        mov     [edi].RealRegsStruc.Real_EDX,esi
-        mov     [edi].RealRegsStruc.Real_EAX,3c00h
-        mov     [edi].RealRegsStruc.Real_ECX,0
-        mov     RealRegsStruc.Real_SSSP[edi],0
+        mov     [di].RealRegsStruc.Real_DS,GROUP16
+        mov     w [di].RealRegsStruc.Real_EDX,si
+        mov     w [di].RealRegsStruc.Real_EAX,3c00h
+        mov     w [di].RealRegsStruc.Real_ECX,0
+        mov     [di].RealRegsStruc.Real_SSSP,0
         mov     bl,21h
-        call    [fRawSimulateINT]
-        test    BYTE PTR RealRegsStruc.Real_Flags[edi],1
-        mov     eax,RealRegsStruc.Real_EAX[edi]
+        call    RawSimulateInt
+        test    BYTE PTR RealRegsStruc.Real_Flags[di],1
+        mov     eax,RealRegsStruc.Real_EAX[di]
         pop     di
         jz      cw5_v8
         jmp     cw5_v7
@@ -2824,38 +2383,36 @@ med5a:
         mov     edi,offset PageInt
         push    ds
         pop     es
-        mov     [edi].RealRegsStruc.Real_DS,_cwInit
-        mov     [edi].RealRegsStruc.Real_EDX,esi
-        mov     [edi].RealRegsStruc.Real_EAX,5a00h
-        mov     [edi].RealRegsStruc.Real_ECX,0
-        mov     RealRegsStruc.Real_SSSP[edi],0
+        mov     [di].RealRegsStruc.Real_DS,GROUP16
+        mov     w [di].RealRegsStruc.Real_EDX,si
+        mov     w [di].RealRegsStruc.Real_EAX,5a00h
+        mov     w [di].RealRegsStruc.Real_ECX,0
+        mov     [di].RealRegsStruc.Real_SSSP,0
         mov     bl,21h
-        call    [fRawSimulateINT]
-        test    BYTE PTR RealRegsStruc.Real_Flags[edi],1
-        mov     eax,RealRegsStruc.Real_EAX[edi]
+        call    RawSimulateInt
+        test    BYTE PTR RealRegsStruc.Real_Flags[di],1
+        mov     eax,RealRegsStruc.Real_EAX[di]
         pop     di
         jz      cw5_v8
         ;
-cw5_v7: add     di,128
+cw5_v7:
+        add     di,128
         jmp     cw5_v0
         ;
 cw5_v8: ;Store the handle and copy the name accross.
         ;
         mov     VMMHandle,ax            ;store the handle.
-        push    ds
-        push    fs
-        pop     ds
         mov     di,offset VMMName
         mov     cx,128
         rep     movsb
-        pop     ds
         mov     al,VMMName
-        cmp     al,61h                  ; 'a'
+        cmp     al,'a'
         jb      cw5_v2
-        cmp     al,7Ah                  ; 'z'
+        cmp     al,'z'
         ja      cw5_v2
         and     al,5Fh                  ;convert to upper case.
-cw5_v2: mov     VMMName,al
+cw5_v2:
+        mov     VMMName,al
 
 ; MED 02/25/96, if pre-allocate, then force write to allocated size
         cmp     PreAllocSize,0
@@ -2875,7 +2432,7 @@ cw5_v2: mov     VMMName,al
         mov     cx,dx
         mov     ax,4202h
         int     21h
-        mov     WORD PTR SwapFileLength,ax  ; update internal swapfile length variable
+        mov     WORD PTR SwapFileLength+0,ax  ; update internal swapfile length variable
         mov     WORD PTR SwapFileLength+2,dx
 
 medpre2:
@@ -2887,27 +2444,30 @@ medpre2:
         mov     ds,ax
         assume ds:_cwDPMIEMU
         mov     ebx,offset ExceptionTable+14*6 ;Page fault vector.
-        mov     edx,[ebx+0]             ;get offset.
-        mov     cx,[ebx+4]              ;get segment selector.
+        mov     edx,offset VirtualFault ;new EIP
+        mov     cx,DpmiEmuCS            ;new CS
+        xchg    edx,[ebx+0]             ;get old EIP
+        xchg    cx,[ebx+4]              ;get old cs
         mov     d[OldExcep14+0],edx     ;store offset.
         mov     w[OldExcep14+4],cx
-        mov     d[ebx+0],offset VirtualFault  ;set offset.
-        mov     w[ebx+4],DpmiEmuCS            ;set segment selector.
         or      DpmiEmuSystemFlags,1 shl 1 ;flag VMM's presence.
-        mov     ax,MainDS
-        mov     ds,ax
-        assume ds:_cwMain
-        or      SystemFlags,1 shl 1     ;flag VMM's presence.
-        assume ds:_cwRaw
         pop     ds
+        assume ds:GROUP16
+        or      SystemFlags,1 shl 1     ;flag VMM's presence.
         or      RawSystemFlags,1 shl 1  ;flag VMM's presence.
 cw5_v9:
+if 1 ;resize memory to 8k/12k
+        mov     edi,offset PageInt
+        mov     ax,wUMB
+        mov     [di].RealRegsStruc.Real_ES,ax
+        mov     w [di].RealRegsStruc.Real_EBX,(2000h+1000h)/16
+        mov     w [di].RealRegsStruc.Real_EAX,4A00h
+        mov     [di].RealRegsStruc.Real_SSSP,0
         push    ds
-        pop     fs
-
-        mov     ax,InitDS
-        mov     ds,ax
-        assume ds:_cwInit
+        pop     es
+        mov     bl,21h
+        call    RawSimulateInt
+endif
         jmp     cw5_InProtected
 
 ;--- end of RAW/VCPI specific init ---
@@ -2915,13 +2475,13 @@ cw5_v9:
 ;Do initialisations needed for DPMI
 ;
 cw5_InitDPMI:
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
 ;
-;Get some memory for the transfer buffer.
+;Get 8k for the transfer buffer.
+;currently the transfer buffer is used 
+; a) to copy text about exceptions in interrup.inc
+; b) its alias in EPSP_TransReal by int21h, int10h, int33h, ...
 ;
-        mov     cs:IErrorNumber,5
+        mov     IErrorNumber,5
         mov     bx,8192/16
         mov     ah,48h
         int     21h                     ;get memory for transfer buffer.
@@ -2930,7 +2490,7 @@ cw5_InitDPMI:
 ;
 ;Get some memory for the INT buffer.
 ;
-        mov     bx,((RawStackTotal/2)/16)+1
+        mov     bx,((RawStackTotal/2)/16)	;only half the size as in Raw/VCPI
         mov     ah,48h
         int     21h
         jc      InitError
@@ -2939,7 +2499,7 @@ cw5_InitDPMI:
 ;
 ;Do instalation check and get mode switch address.
 ;
-        mov     cs:IErrorNumber,9
+        mov     IErrorNumber,9
         mov     ax,1687h                ;DPMI instalation check.
         int     2fh
         or      ax,ax                   ;None-zero means its not there.
@@ -2954,7 +2514,7 @@ cw5_InitDPMI:
         jz      cw5_Use32Bit23
         jmp     cw5_Use16Bit23
 cw5_Use32Bit23:
-        mov     cs:IErrorNumber,9
+        mov     IErrorNumber,9
         test    bx,1                    ;Must offer 32 bit support.
         jz      InitError
 cw5_Use16Bit23:
@@ -2965,7 +2525,7 @@ cw5_Use16Bit23:
 ;
 ;Allocate memory for DPMI state save buffer.
 ;
-        mov     cs:IErrorNumber,5
+        mov     IErrorNumber,5
         push    di
         push    es
         mov     ah,48h
@@ -2975,111 +2535,39 @@ cw5_Use16Bit23:
         mov     bx,ax
         jc      InitError
 cw5_d0:
-        push    ax
-        push    ds
-        mov     ax,_cwInit
-        mov     ds,ax
-        assume ds:_cwInit
-        mov     DPMISwitch+0,di         ;Store the switch call address.
-        mov     DPMISwitch+2,es
+        push    es                      ;Store the switch call address.
+        push    di
+        mov     bp,sp
         mov     es,bx
-        pop     ds
-        pop     ax
-        assume ds:_cwMain
 ;
 ;Attempt to switch mode.
 ;
+        mov     ax,1                    ;start as 32-bit client
         test    BYTE PTR SystemFlags,1
         jz      cw5_Use32Bit24
-        xor     ax,ax                   ;16 bit segments for this code.
-        jmp     cw5_Use16Bit24
+        xor     ax,ax                   ;start as 16-bit client
 cw5_Use32Bit24:
-        mov     ax,1                    ;32 bit segments for this code.
-cw5_Use16Bit24:
-        push    ax
-        mov     ax,_cwInit
-        mov     ds,ax
-        pop     ax
-        assume ds:_cwInit
         pusha
-        call    d[DPMISwitch]           ;Make the switch.
+        call    d[bp]                   ;Make the switch.
         popa
         jnc     cw5_DpmiInProtected
         mov     IErrorNumber,9
-        push    ax
-        mov     ax,_cwMain
-        mov     ds,ax
-        pop     ax
-        assume ds:_cwMain
         test    w[SystemFlags+2],1      ;Dual mode?
         jz      InitError
         xor     SystemFlags,1
         xor     ax,1                    ;toggle the mode.
-        push    ax
-        mov     ax,_cwInit
-        mov     ds,ax
-        pop     ax
-        assume ds:_cwInit
-        call    d[DPMISwitch]           ;Make the switch.
+        call    d[bp]                   ;Make the switch.
         jc      InitError               ;really isn't feeling well.
 cw5_DpmiInProtected:
-        mov     iDataSegment,ds
-        mov     iCodeSegment,cs
-        mov     iStackSegment,ss
-        mov     iPSPSegment,es
-        movzx   esp,sp
+        mov     CodeSegment,cs
+        mov     DataSegment,ds
+        mov     StackSegment,ss
+        mov     PSPSegment,es
         mov     ax,es:[2ch]
-        mov     iENVSegment,ax
-;
-;Create _cwMain code segment.
-;
-        mov     IErrorNumber,8
-        mov     ax,0000h
-        mov     cx,1
-        int     31h                     ;allocate a selector.
-        jc      InitError
-        mov     mCodeSegment,ax
-        mov     bx,ax
-        push    ds
-        pop     es
-        mov     di,offset dpmiSelBuffer
-        mov     si,_cwMain
-        movzx   esi,si
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
-        call    MakeDesc
-        mov     ax,000ch
-        push    ds
-        pop     es
-        mov     edi,offset dpmiSelBuffer
-        int     31h
-;
-;Create _cwMain data segment.
-;
-        mov     IErrorNumber,8
-        mov     ax,0000h
-        mov     cx,1
-        int     31h                     ;allocate a selector.
-        jc      InitError
-        mov     mDataSegment,ax
-        mov     bx,ax
-        push    ds
-        pop     es
-        mov     di,offset dpmiSelBuffer
-        mov     si,_cwMain
-        movzx   esi,si
-        shl     esi,4
-        mov     ecx,65535
-        xor     al,al
-        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
-        call    MakeDesc
-        mov     ax,000ch
-        push    ds
-        pop     es
-        mov     edi,offset dpmiSelBuffer
-        int     31h
+        mov     ENVSegment,ax
+        mov     w[TerminationHandler+4],cs
+        movzx   esp,sp
+        add     sp,2+2
 ;
 ;Create a 0-4G selector.
 ;
@@ -3088,7 +2576,7 @@ cw5_DpmiInProtected:
         mov     cx,1
         int     31h                     ;allocate a selector.
         jc      InitError
-        mov     iRealSegment,ax
+        mov     RealSegment,ax
         mov     bx,ax
         push    ds
         pop     es
@@ -3104,35 +2592,6 @@ cw5_DpmiInProtected:
         mov     edi,offset dpmiSelBuffer
         int     31h
 ;
-;Make main seg addressable now.
-;
-        mov     ax,mDataSegment
-        mov     es,ax
-        assume es:_cwMain
-        mov     ax,mCodeSegment
-        mov     es:CodeSegment,ax
-        mov     WORD PTR es:[TerminationHandler+4],ax
-        mov     ax,mDataSegment
-        mov     es:DataSegment,ax
-        mov     ax,iStackSegment
-        mov     es:StackSegment,ax
-        mov     ax,iPSPSegment
-        mov     es:PSPSegment,ax
-        mov     ax,iENVSegment
-        mov     es:ENVSegment,ax
-        mov     ax,iRealSegment
-        mov     es:RealSegment,ax
-        mov     ax,iCodeSegment
-        mov     es:CodeSegmenti,ax
-        mov     ax,iDataSegment
-        mov     es:DataSegmenti,ax
-        push    es
-        pop     ds
-        assume es:nothing
-        assume ds:_cwMain
-
-
-;
 ;Patch INT 21h exec function to preserve the stack.
 ;
 if 0
@@ -3142,16 +2601,11 @@ if 0
         mov     w[OldInt21hExec+0],dx
         mov     w[OldInt21hExec+2],cx
         mov     dx,offset Int21hExecPatch
-        mov     cx,_cwMain
+        mov     cx,GROUP16
         mov     bl,21h
         mov     ax,201h
         int     31h
 endif
-;
-;Make right stuff addresable again.
-;
-        mov     ds,DataSegmenti
-        assume ds:_cwInit
         or      IProtectedMode,-1
 
 ;--- END of DPMI specific init ---
@@ -3160,9 +2614,9 @@ endif
 ;code for RAW/VCPI/DPMI
 ;
 cw5_InProtected:
-        mov     ax,mDataSegment
-        mov     ds,ax
-        assume ds:_cwMain
+;        mov     ax,DataSegment
+;        mov     ds,ax
+;        assume ds:GROUP16
         ;
         mov     ax,ProtectedType        ;Copy protected mode environment type into common
         shl     ax,1+1                  ;variable for application access. Might become useful
@@ -3172,20 +2626,20 @@ cw5_InProtected:
         or      w[SystemFlags],ax
         or      w[SystemFlags],32768    ;Flags us in protected mode.
         ;
-        mov     ax,DataSegmenti
-        mov     ds,ax
-        assume ds:_cwInit
+;        mov     ax,DataSegmenti
+;        mov     ds,ax
+;        assume ds:GROUP16
 ;
 ;Add CW API patch to int 31h and 2Fh.
 ;
         mov     IErrorNumber,5
         xor     bx,bx
-        mov     cx, _apiCodeEnd - _apiCodeStart
+        mov     cx, lowword offset endGroup32
         mov     ax,0501h
         int     31h                     ;Get memory.
         jc      InitError
         xor     si,si
-        mov     di, _apiCodeEnd - _apiCodeStart
+        mov     di, lowword offset endGroup32
         mov     ax,0600h
         int     31h                     ;Lock memory.
         jc      InitError
@@ -3193,79 +2647,56 @@ cw5_InProtected:
         mov     bx,cx
         mov     dpmiSelBase,ebx
 ;
-;Allocate code selector.
+;Allocate code & data selector.
 ;
         mov     IErrorNumber,8
+        mov     cx,2
         mov     ax,0000h
-        mov     cx,1
-        int     31h                     ;allocate a selector.
+        int     31h                     ;allocate 2 selectors.
         jc      InitError
-        mov     dpmiCodeSel,ax
+        mov     Group32CS,ax
         mov     bx,ax
         push    ds
         pop     es
-        mov     di,offset dpmiSelBuffer
+        mov     edi,offset dpmiSelBuffer
         mov     esi,dpmiSelBase
-        mov     ecx, _apiCodeEnd - _apiCodeStart
+        mov     ecx, offset endGroup32 - 1
         mov     al,1 shl 6
         mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
         call    MakeDesc
         mov     ax,000ch
-        push    ds
-        pop     es
-        mov     edi,offset dpmiSelBuffer
         int     31h
 ;
-;Allocate data selector.
+;setup data selector.
 ;
-        mov     IErrorNumber,8
-        mov     ax,0000h
-        mov     cx,1
-        int     31h                     ;allocate a selector.
-        jc      InitError
-        mov     dpmiDataSel,ax
-        mov     bx,ax
-        push    ds
-        pop     es
-        mov     di,offset dpmiSelBuffer
-        mov     esi,dpmiSelBase
-        mov     ecx, _apiCodeEnd - _apiCodeStart
+        add     bx, 8
+        mov     Group32DS,bx
         xor     al,al
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         mov     ax,000ch
-        push    ds
-        pop     es
-        mov     edi,offset dpmiSelBuffer
         int     31h
 ;
 ;Copy API code into the new memory.
 ;
-        push    ds
         push    es
-        mov     es,dpmiDataSel
-        mov     ds,iRealSegment
+        push    ds
+        mov     es,Group32DS
+        assume es:GROUP32
+        mov     ds,RealSegment
         xor     edi,edi
-        mov     esi,edi
-        mov     si,seg _apiCode
+        mov     esi,GROUP32
         shl     esi,4
-        mov     ecx, _apiCodeEnd - _apiCodeStart
+        mov     ecx, offset endGroup32
         rep     movsb [edi],[esi]
-        pop     es
         pop     ds
 ;
 ;Setup descriptors in new memory.
 ;
-        push    ds
-        push    es
-        mov     es,dpmiDataSel
-        mov     ds,mDataSegment
-        assume ds:_cwMain
-        assume es:_apiCode
-        mov     es:apiDSeg,ds
-        mov     es:apiDDSeg,es
+        mov     apiDSeg16,ds
+        mov     apiDSeg32,es
         mov     eax,d[SystemFlags]
-        mov     DWORD PTR es:[apiSystemFlags],eax
+        mov     DWORD PTR [apiSystemFlags],eax
 ;
 ;Set INT vector to bring API code into play.
 ;
@@ -3282,15 +2713,9 @@ cw5_Use32:
         mov     [int31call], offset int31call32
         mov     [int31callcc], offset int31call32cc
 cw5_Use0:
-        mov     DWORD PTR [OldIntSys+0],edx
-        mov     WORD PTR [OldIntSys+4],cx
-        push    ds
-        mov     ax,DataSegmenti
-        mov     ds,ax
-        assume ds:_cwInit
-        mov     cx,dpmiCodeSel
-        pop     ds
-        assume ds:_cwMain
+        mov     DWORD PTR [OldInt31+0],edx
+        mov     WORD PTR [OldInt31+4],cx
+        mov     cx,Group32CS
         mov     edx,offset cwAPIpatch
         mov     bl,31h
         mov     ax,205h
@@ -3300,7 +2725,7 @@ cw5_Use0:
 ;
         mov     al,b[VersionMajor]
         sub     al,'0'
-        mov     es:cwMajorVersion,al
+        mov     cwMajorVersion,al
         mov     al,b[VersionMinor]
         sub     al,'0'
         shl     al,1    ;*2
@@ -3310,32 +2735,17 @@ cw5_Use0:
         mov     al,b[VersionMinor+1]
         sub     al,'0'
         add     al,ah
-        mov     es:cwMinorVersion,al
-        assume es:nothing
-        assume ds:_cwInit
+        mov     cwMinorVersion,al
         pop     es
-        pop     ds
+        assume es:nothing
 ;
 ;Set flag so we know the API is in place.
 ;
-        mov     ax,dpmiDataSel
-        mov     apiDataSegi,ax
-        mov     bx,dpmiCodeSel
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
-        mov     apiDataSeg,ax
-        mov     apiCodeSeg,bx
         mov     d[TerminationHandler+0],offset InitError
         mov     w[TerminationHandler+4],cs
-        assume ds:_cwInit
-        pop     ds
 ;
 ;Sort out state save address & size.
 ;
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         mov     ax,0305h
         int     31h
         jc      cw5_NoState
@@ -3351,19 +2761,11 @@ cw5_DS_Use32:
         mov     w[DPMIStateAddr+4],si
         ;
 cw5_NoState:
-        pop     ds
-        assume ds:_cwInit
 ;
 ;Patch exception vectors to put API handlers in place.
 ;
-        push    cs
-        push    offset cw5_pe0
-        push    dpmiCodeSel
-        mov     eax,offset PatchExc
-        push    ax
-        retf
-        ;
-cw5_pe0:
+        mov     grp32Ofs, offset PatchExc
+        call    [grp32Proc]
 ;
 ;Get memory for new PSP.
 ;
@@ -3371,9 +2773,6 @@ cw5_pe0:
         mov     ecx,size EPSP_Struc
         Sys     GetMem32
         jc      InitError
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         xchg    bx,PSPSegment
         push    ds
         push    es
@@ -3385,16 +2784,12 @@ cw5_pe0:
         rep     movsd
         pop     es
         pop     ds
-        assume ds:_cwInit
-        pop     ds
 ;
 ;Initialise PSP fields.
 ;
         mov     IErrorNumber,8
         push    ds
         push    es
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         xor     edx,edx
         mov     es,PSPSegment
         mov     ax,ENVSegment
@@ -3442,7 +2837,6 @@ cw5_normal:
         mov     WORD PTR es:[PSP_Struc.PSP_HandlePtr+2],dx
         mov     WORD PTR es:[PSP_Struc.PSP_HandlePtr],0
         pop     es
-        assume ds:_cwInit
         pop     ds
 ;
 ;Setup transfer buffer and selector.
@@ -3450,37 +2844,29 @@ cw5_normal:
         mov     IErrorNumber,8
         Sys     GetSel
         jc      InitError
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         movzx   edx,TransferReal
         shl     edx,4
-        mov     ecx,TransferSize
+        mov     ecx,TransferSize-1	;default 8k
         Sys     SetSelDet32
         jc      InitError
         push    es
         mov     es,PSPSegment
-        mov     WORD PTR es:[EPSP_Struc.EPSP_TransProt],bx
+        mov     es:[EPSP_Struc.EPSP_TransProt],bx
         mov     ax,TransferReal
-        mov     WORD PTR es:[EPSP_Struc.EPSP_TransReal],ax
+        mov     es:[EPSP_Struc.EPSP_TransReal],ax
         mov     eax,TransferSize
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_TransSize],eax
+        mov     es:[EPSP_Struc.EPSP_TransSize],eax
         pop     es
-        assume ds:_cwInit
-        pop     ds
 ;
 ;Setup internaly EXPORT'ed symbols.
 ;
-        mov     bx,dpmiDataSel
+        mov     bx,Group32DS
         Sys     GetSelDet32
         mov     edi,edx
         add     edi,offset apiExports
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         push    es
         mov     es,PSPSegment
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_Exports],edi
+        mov     es:[EPSP_Struc.EPSP_Exports],edi
         mov     es,RealSegment
         mov     ebp,es:[edi]
         add     edi,4
@@ -3495,10 +2881,10 @@ cw5_exp0:
         mov     bx,DataSegment
         cmp     WORD PTR es:[esi+4],1
         jz      cw5_exp1
-        mov     bx,apiCodeSeg
+        mov     bx,Group32CS
         cmp     WORD PTR es:[esi+4],2
         jz      cw5_exp1
-        mov     bx,apiDataSeg
+        mov     bx,Group32DS
         cmp     WORD PTR es:[esi+4],3
         jz      cw5_exp1
         or      bx,-1
@@ -3508,15 +2894,9 @@ cw5_exp1:
         dec     ebp
         jnz     cw5_exp0
         pop     es
-        assume ds:_cwInit
-        pop     ds
 ;
-;Initialise extensions. Written in a bit of a hurry but allows
-;additional interupt service code to live in other segments.
+;Initialise extensions.
 ;
-        push    ds
-        mov     ds,mDataSegment
-        assume ds:_cwMain
         or      mcbAllocations,-1       ;Enable MCB code.
         ;
         mov     di,offset ExtensionList
@@ -3525,57 +2905,14 @@ cw5_e0:
         jz      cw5_e9
         push    di
         mov     di,[di]
-        mov     ecx,[di].EXTENSION.dwLen;get patch size.
-        Sys     GetMemLinear32          ;get some memory.
-        push    ds
-        mov     ds,DataSegmenti
-        assume ds:_cwInit
-        mov     IErrorNumber,5
-        pop     ds
-        assume ds:_cwMain
-        jc      InitError
-        Sys     LockMem32               ;lock the memory.
-        jc      InitError
-        Sys     GetSel                  ;get a selector to use for
-        push    ds
-        mov     ds,DataSegmenti
-        assume ds:_cwInit
-        mov     IErrorNumber,8          ;the code segment.
-        pop     ds
-        assume ds:_cwMain
-        jc      InitError
-        mov     edx,esi
-        Sys     SetSelDet32             ;set it's base and limit.
-        jc      InitError
-        push    ecx
-        mov     cx,[di].EXTENSION.w32Bit;Get code seg bitness
-        Sys     CodeSel                 ;convert to executable.
-        pop     ecx
-        mov     word ptr [di].EXTENSION.pInit+4,bx ;store it for now.
-        mov     word ptr [di].EXTENSION.pExit+4,bx
-        mov     word ptr [di].EXTENSION.dwCodeS,bx
-        Sys     GetSel                  ;get a selector to use for data.
-        jc      InitError
-        Sys     SetSelDet32             ;set it's base and limit.
-        jc      InitError
-        mov     word ptr [di].EXTENSION.dwDataS,bx ;store it for now.
-        push    di
-        push    ds
-        push    es
-        movzx   esi,WORD PTR [di].EXTENSION.wStart  ;get real mode segment base.
-        shl     esi,4
-        mov     ds,RealSegment
-        mov     es,bx
-        xor     edi,edi
-        rep     movsb [edi],[esi]
-        pop     es
-        pop     ds
-        pop     di
-        mov     WORD PTR [di].EXTENSION.dwFlgs,-1  ;flag installed.
+        mov     ax,Group32CS
+        mov     word ptr [di].EXTENSION.pInit+4,ax ;store it for now.
+        mov     word ptr [di].EXTENSION.pExit+4,ax
+        mov     [di].EXTENSION.wFlgs,-1  ;flag installed.
         push    di
         push    ds
         mov     es,DataSegment
-        mov     ds,word ptr [di].EXTENSION.dwDataS
+        mov     ds,Group32DS
         call    es:[di].EXTENSION.pInit
         pop     ds
         pop     di
@@ -3584,21 +2921,43 @@ cw5_e0:
         add     di,2
         jmp     cw5_e0
 cw5_e9:
-        pop     ds
-        assume ds:_cwInit
-
+;
+;Restore DOS memory allocation strategy.
+;
+        mov     bx,[cw5_OldStrat+2]
+        xor     bh,bh
+        mov     ax,5803h
+        int     21h
+        mov     bx,[cw5_OldStrat+0]
+        xor     bh,bh
+        mov     ax,5801h
+        int     21h
 ;
 ;We're all done here so switch to main code segment for final re-size and run.
 ;
-        push    mCodeSegment
-        push    offset cwOpen
-        retf
+        jmp cwOpen
 
-	align 2
+;--- out: eax=LinearEntry
+;---      edx=PTE
+;---      LinearEntry incremented
+;---      CurrPhysPage updated
+;---      edi preserved
 
-cw5_OldStrat      dw ?,?
-cw5_XMSSize       dd 0
-cw5_NumXMSHandles db ?
+getandmappage:        
+        call    fPhysicalGetPage        ;try to allocate a page.
+        jc      InitError
+        mov     CurrPhysPage,edx        ;store physical address.
+        and     cx,1                    ;put user bits in useful place.
+        shl     cx,10
+        and     dx,0f000h
+        or      dx,111b                 ;present+user+write.
+        or      dx,cx                   ;set use flags.
+        mov     eax,LinearEntry
+        mov     esi,PTMAPADDR           ;base of page alias's.
+        mov     es:[esi+eax*4],edx      ;set physical address.
+        call    CR3Flush
+        inc     LinearEntry             ;update pointer.
+        retn
 
 Startup endp
 
@@ -3612,21 +2971,18 @@ InitError       proc    near
 ;
 ;Find out if we're in protected mode or not.
 ;
-        .386p
-        assume ds:nothing
+; allow 286 non-crash at this point
+
+        .286
         cmp     cs:IProtectedMode,0     ; are we in protected mode?
+        jz      cw6_RealMode
 
-; MED 07/10/97, allow 286 non-crash at this point
-;       jz      @@RealMode
-        jnz     chkapi
-        jmp     cw6_RealMode
-chkapi:
-
-        cmp     cs:apiDataSegi,0        ;API installed?
+        .386
+        cmp     cs:Group32DS,0          ;API installed?
         jz      cw6_noAPI
         ;
-        mov     ds,cs:mDataSegment
-        assume ds:_cwMain
+        mov     ds,cs:DataSegment
+        assume ds:GROUP16
 ;
 ;Remove extension patches.
 ;
@@ -3634,7 +2990,7 @@ chkapi:
 cw6_p0:
         push    di
         mov     di,[di]
-        cmp     WORD PTR [di].EXTENSION.dwFlgs,-1  ;installed?
+        cmp     [di].EXTENSION.wFlgs,-1  ;installed?
         jnz     cw6_p2
         call    [di].EXTENSION.pExit
 cw6_p2:
@@ -3647,22 +3003,18 @@ cw6_p2:
 ;
         cmp     apiExcepPatched,0
         jz      cw6_pe0
-        push    cs
-        push    offset cw6_pe0
-        push    dpmiCodeSel
-        push    lowword offset UnPatchExc
-        retf
-        ;
+        mov     grp32Ofs, offset UnPatchExc
+        call    [grp32Proc]
 cw6_pe0:
 ;
 ;Remove the API patch.
 ;
-        mov     ds,cs:mDataSegment
-        assume ds:_cwMain
-        mov     es,apiDataSeg
-        assume es:_apiCode
-        mov     edx,DWORD PTR es:[OldIntSys+0]
-        mov     cx,WORD PTR es:[OldIntSys+4]
+        mov     ds,cs:DataSegment
+        assume ds:GROUP16
+        mov     es,Group32DS
+        assume es:GROUP32
+        mov     edx,DWORD PTR es:[OldInt31+0]
+        mov     cx,WORD PTR es:[OldInt31+4]
         mov     bl,31h
         mov     ax,205h
         int     31h
@@ -3671,7 +3023,7 @@ cw6_pe0:
         assume es:nothing
         ;
 cw6_noAPI:
-        cmp     cs:IProtectedType,PT_DPMI
+        cmp     cs:ProtectedType,PT_DPMI
         jz      cw6_DPMI
 ;
 ;Make RAW stuff addressable.
@@ -3679,19 +3031,17 @@ cw6_noAPI:
         cli                             ;Don't want interrupts interfering.
         mov     ax,KernalDS             ;Get supervisor data descriptor,
         mov     ds,ax                   ;DS,ES,FS,GS,SS must be data with 64k limit
-        assume ds:_cwRaw
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,ax
 ;
 ;Switch to RAW exit code. This returns with CPU in real-mode
 ;
-        push    _cwInit        ; push a real-mode segment as return address!
-        push    offset cw6_6
+        push    GROUP16          ; push a real-mode segment as return address!
+        push    offset cw6_RealMode
         push    KernalCS
         push    offset RawVCPIRealMode
         retf
-cw6_6:
-        jmp     cw6_RealMode
 ;
 ;Remove DPMI stuff.
 ;
@@ -3699,11 +3049,9 @@ cw6_6:
 cw6_DPMI:
 
 if 0
-        assume ds:nothing
         mov     ds,cs:iDataSegment
-        assume ds:_cwInit
-        mov     ds,mDataSegment
-        assume ds:_cwMain
+        assume ds:GROUP16
+        mov     ds,DataSegment
         cmp     d[OldInt21hExec],0
         jz      cw6_d0
         mov     bl,21h
@@ -3714,74 +3062,66 @@ if 0
 cw6_d0:
 endif
 
-        assume ds:nothing
-        mov     ds,cs:iDataSegment
-        assume ds:_cwInit
+;        mov     ds,cs:iDataSegment
+        mov     ds,cs:DataSegment
+        assume ds:GROUP16
 
         cmp     IErrorNumber,0
         jz      cw6_NoError
-        mov     ax,IErrorNumber         ;Get the error number.
+        mov     ax,IErrorNumber
         xor     dx,dx
         mov     cx,10
         div     cx
         add     al,'0'
-        mov     b[IErrorM00n],al
+        mov     b[IErrorM00n+0],al
         add     dl,'0'
         mov     b[IErrorM00n+1],dl
-        mov     dx,w[InitErrorList]
 
-        mov     edi,offset DPMIErrRegs
+        mov     ax,w[InitErrorList]     ;get the "CauseWay error nn : " string
+        mov     di,offset Int21Buffer
         push    ds
         pop     es
-        mov     RealRegsStruc.Real_EDX[edi],edx
-        mov     RealRegsStruc.Real_EAX[edi],900h
-        mov     RealRegsStruc.Real_DS[edi],_cwInit
+        mov     w RealRegsStruc.Real_EDX[di],ax
+        mov     w RealRegsStruc.Real_EAX[di],900h
+        mov     RealRegsStruc.Real_DS[di],GROUP16
         xor     cx,cx                   ;No stack parameters.
-        mov     bh,ch                   ;no flags.
-        mov     ax,0300h
+        mov     bx,21h                  ;no flags.
+        mov     ax,300h
         int     31h                     ;Use real dpmi service.
 ;
 ;Get a pointer to the appropriate error message and print it.
 ;
         mov     bx,IErrorNumber
         add     bx,bx
-        mov     dx,[InitErrorList+bx]
-
-        mov     edi,offset DPMIErrRegs
-        push    ds
-        pop     es
-        mov     RealRegsStruc.Real_EDX[edi],edx
-        mov     RealRegsStruc.Real_EAX[edi],900h
-        mov     RealRegsStruc.Real_DS[edi],_cwInit
+        mov     ax,[InitErrorList+bx]
+        mov     w RealRegsStruc.Real_EDX[di],ax
+        mov     w RealRegsStruc.Real_EAX[di],900h
+        mov     RealRegsStruc.Real_DS[di],GROUP16
         xor     cx,cx                   ;No stack parameters.
-        mov     bh,ch                   ;no flags.
-        mov     ax,0300h
+        mov     bx,21h                  ;no flags.
+        mov     ax,300h
         int     31h                     ;Use real dpmi service.
-
         jmp     cw6_NoError
+
         .286
 ;
 ;Make sure our data is addressable.
 ;
 cw6_RealMode:
-        mov     ax,_cwInit
+        mov     ax,GROUP16
         mov     ds,ax
-        assume ds:_cwInit
-;
-;Display the "CauseWay error: ??" bit.
-;
-cw6_InRealMode:
+        assume ds:GROUP16
         cmp     IErrorNumber,0
         jz      cw6_NoError
-        mov     ax,IErrorNumber         ;Get the error number.
+        mov     ax,IErrorNumber
         xor     dx,dx
         mov     cx,10
         div     cx
         add     al,'0'
-        mov     b[IErrorM00n],al
+        mov     b[IErrorM00n+0],al
         add     dl,'0'
         mov     b[IErrorM00n+1],dl
-        mov     dx,w[InitErrorList]
+        mov     dx,w[InitErrorList]     ;display "CauseWay error nn : " string
         mov     ah,9
         int     21h
 ;
@@ -3799,7 +3139,7 @@ cw6_NoError:
         mov     ax,IErrorNumber
         mov     ah,4ch
         int     21h
-        assume ds:_cwMain
+        assume ds:GROUP16
 InitError       endp
 
 
@@ -3815,9 +3155,9 @@ InitHardwareInts proc near
         push    es
         mov     ax,KernalDS
         mov     ds,ax
+        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,ax
-        assume ds:_cwRaw
 ;       mov     ch,16
 ;       mov     cl,1ch
 ;       call    @@0
@@ -3852,13 +3192,13 @@ cw7_0:
         mov     dx,es:[bx+0]
         mov     cx,es:[bx+2]
         mov     es:[bx+0],si
-        mov     WORD PTR es:[bx+2],seg _cwRaw
+        mov     WORD PTR es:[bx+2],GROUP16
         pop     bx
         mov     w[bx].CallBackStruc.CallBackReal+0,dx
         mov     w[bx].CallBackStruc.CallBackReal+2,cx   ;store original real mode vector.
         popf
         ret
-        assume ds:_cwMain
+        assume ds:GROUP16
         .286
 InitHardwareInts endp
 
@@ -3903,38 +3243,78 @@ cw9_9:  stc
         ret
 CheckDOSVersion endp
 
+;--- get decimal number from es:[si]
+;--- out: EDX=number
+
+        .386
+
+getnum proc
+        xor     edx,edx
+nextchar:
+        mov     al,es:[si]
+        or      al,al
+        jz      done
+        cmp     al," "
+        jz      done
+        cmp     al,"0"
+        jc      done
+        cmp     al,"9"+1
+        jnc     done
+        sub     al,"0"
+        movzx   eax,al
+        add     edx,edx
+        mov     ebx,edx
+        add     edx,edx
+        add     edx,edx
+        add     edx,ebx
+        add     edx,eax
+        inc     si
+        jmp     nextchar
+done:
+        ret
+getnum endp        
+
 
 ;-------------------------------------------------------------------------------
 ;
-;Check for "CAUSEWAY" environment variable and fetch any relevent settings.
+;Check for "CAUSEWAY","TEMP" and "TMP" environment variables and fetch any relevant settings.
 ;
 GetENVStuff     proc    near
-        .386
         mov     es,RealENVSegment
         xor     si,si
-cw10_0: mov     eax,es:[si]
+cw10_0:                                 ;<--- scan next line in environment
+        mov     eax,es:[si]
         cmp     eax,"SUAC"
-        jnz     cw10_1
-        mov     eax,es:[si+4]
-        cmp     eax,"YAWE"
-        jz      cw10_2
-cw10_1: inc     si
+        jz      cw10_causeway
+        cmp     eax,"PMET"
+        jz      cw10_temp
+        cmp     eax,"=PMT"
+        jz      cw10_tmp
+cw10_1:
+        inc     si
+cw10_skipline:
         cmp     BYTE PTR es:[si-1],0
         jnz     cw10_1
         cmp     BYTE PTR es:[si],0      ;end of all strings?
         jnz     cw10_0
-        jmp     cw10_9
+        ret
         ;
-cw10_2:
+cw10_causeway:
+        mov     eax,es:[si+4]
+        cmp     eax,"YAWE"
+        jnz     cw10_skipline
+        cmp     byte ptr es:[si+8],'='
+        jnz     cw10_skipline
+
         ;Found "CAUSEWAY" so have a look at the settings.
         ;
-        add     si,8                    ;skip to "="
+        add     si,9                    ;skip past "="
         push    si
 cw10_2_0:
         mov     al,es:[si]
-        cmp     al,61h                  ; 'a'
+        cmp     al,'a'
         jb      cw10_2_1
-        cmp     al,7Ah                  ; 'z'
+        cmp     al,'z'
         ja      cw10_2_1
         and     al,5Fh                  ;convert to upper case.
 cw10_2_1:
@@ -3944,12 +3324,13 @@ cw10_2_1:
         jnz     cw10_2_0
         pop     si
         ;
-cw10_3: cmp     BYTE PTR es:[si]," "
+cw10_3:                                 ;<---- continue scan "CAUSEWAY"
+        cmp     BYTE PTR es:[si]," "
         jnz     cw10_4
         inc     si
         jmp     cw10_3
         ;
-cw10_4: cmp     BYTE PTR es:[si],0      ;end?
+cw10_4: cmp     BYTE PTR es:[si],0      ;end of line?
         jz      cw10_9
         ;
         mov     eax,es:[si]
@@ -3979,6 +3360,7 @@ cw10_4: cmp     BYTE PTR es:[si],0      ;end?
         jz      cw10_noex
         cmp     eax,"1GIB"              ; BIG1?
         jz      cw10_big1
+;--- just continue with next char?
         inc     si
         jmp     cw10_3
         ;
@@ -3989,29 +3371,17 @@ cw10_nopass:
         cmp     ax,"SS"
         jnz     cw10_3
         add     si,2
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         or      NoPassFlag,-1
-        assume ds:_cwMain
-        pop     ds
         jmp     cw10_3
 
 cw10_big1:
         ; specify alternate extended memory size computation
         add     si,4
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         or      Big1Flag,-1
-        assume ds:_cwMain
-        pop     ds
         jmp     cw10_3
 
 cw10_himem:
-        ;Set amount of physical memory to use.
+        ;HIMEM:xxx - Set amount of physical memory to use.
         ;
         add     si,4
         mov     al,es:[si]
@@ -4021,40 +3391,12 @@ cw10_himem:
         cmp     BYTE PTR es:[si],":"
         jnz     cw10_3
         inc     si
-        xor     edx,edx
-cw10_hm0:
-        mov     al,es:[si]
-        or      al,al
-        jz      cw10_hm1
-        cmp     al," "
-        jz      cw10_hm1
-        cmp     al,"0"
-        jc      cw10_hm1
-        cmp     al,"9"+1
-        jnc     cw10_hm1
-        sub     al,"0"
-        movzx   eax,al
-        add     edx,edx
-        mov     ebx,edx
-        add     edx,edx
-        add     edx,edx
-        add     edx,ebx
-        add     edx,eax
-        inc     si
-        jmp     cw10_hm0
-cw10_hm1:
+        call    getnum
         cmp     edx,4096*1024
         jnc     cw10_3
-
         shl     edx,10                  ;turn K into byte's
         shr     edx,12                  ;get number of pages.
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
-        mov     d[MaxMemPhys],edx
-        assume ds:_cwMain
-        pop     ds
+        mov     [MaxMemPhys],edx
         jmp     cw10_3
         ;
 cw10_extall:
@@ -4065,30 +3407,18 @@ cw10_extall:
         cmp     ax,"LL"
         jnz     cw10_3
         add     si,2
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         or      ExtALLSwitch,-1
-        assume ds:_cwMain
-        pop     ds
         jmp     cw10_3
         ;
 cw10_novm:
         ;They want to disable VM.
         ;
         add     si,4
-        push    ds
-        mov     bx,_cwInit
-        mov     ds,bx
-        assume ds:_cwInit
         or      NoVMSwitch,-1
-        assume ds:_cwMain
-        pop     ds
         jmp     cw10_3
         ;
 cw10_maxmem:
-        ;Want to set maximum linear address space size.
+        ;MAXMEM:xxx - Set maximum linear address space size.
         ;
         add     si,4
         mov     ax,es:[si]
@@ -4098,94 +3428,39 @@ cw10_maxmem:
         cmp     BYTE PTR es:[si],":"
         jnz     cw10_3
         inc     si
-        xor     edx,edx
-cw10_mm0:
-        mov     al,es:[si]
-        or      al,al
-        jz      cw10_mm1
-        cmp     al," "
-        jz      cw10_mm1
-        cmp     al,"0"
-        jc      cw10_mm1
-        cmp     al,"9"+1
-        jnc     cw10_mm1
-        sub     al,"0"
-        movzx   eax,al
-        add     edx,edx
-        mov     ebx,edx
-        add     edx,edx
-        add     edx,edx
-        add     edx,ebx
-        add     edx,eax
-        inc     si
-        jmp     cw10_mm0
-cw10_mm1:
-        cmp     edx,4096
+        call    getnum
+        cmp     edx,4096                ;4096MB or more?
         jnc     cw10_3
-
         shl     edx,20                  ;turn Meg into byte's
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
-        mov     d[MaxMemLin],edx
-        assume ds:_cwMain
-        pop     ds
+        mov     [MaxMemLin],edx
         jmp     cw10_3
 
 cw10_pre:
-        ;Want to set preallocate amount
+        ;PRE:xxx - Want to set preallocate amount
         ;
         add     si,4
-        xor     edx,edx
-cw10_pr0:
-        mov     al,es:[si]
-        or      al,al
-        jz      cw10_pr1
-        cmp     al," "
-        jz      cw10_pr1
-        cmp     al,"0"
-        jc      cw10_pr1
-        cmp     al,"9"+1
-        jnc     cw10_pr1
-        sub     al,"0"
-        movzx   eax,al
-        add     edx,edx
-        mov     ebx,edx
-        add     edx,edx
-        add     edx,edx
-        add     edx,ebx
-        add     edx,eax
-        inc     si
-        jmp     cw10_pr0
-cw10_pr1:
+        call    getnum
         cmp     edx,4096
         jnc     cw10_3
 
         shl     edx,20                  ;turn Meg into byte's
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         mov     d[PreAllocSize],edx
-        assume ds:_cwMain
-        pop     ds
         jmp     cw10_3
 
 cw10_pad1:
-        mov     Pad1Flag,1
+        mov     Pad1Flag,1 ; accessible thru FS
         add     si,4
         jmp     cw10_3
 
 cw10_noex:
-        mov     NoEXECPatchFlag,1
+        mov     NoEXECPatchFlag,1 ; accessible thru FS
         add     si,4
         jmp     cw10_3
 
 cw10_dpmi:
         ;They want to force DPMI use if possible.
         ;
-        mov     ProtectedForce,1
+        mov     ProtectedForce,1 ; accessible thru FS
         add     si,4
         jmp     cw10_3
         ;
@@ -4197,10 +3472,6 @@ cw10_swap:
         jnz     cw10_3
         inc     si
         mov     di,offset VMMDrivPath1
-        push    ds
-        mov     bx,_cwInit
-        mov     ds,bx
-        assume ds:_cwInit
 cw10_s0:
         mov     al,es:[si]
         mov     [di],al
@@ -4216,8 +3487,6 @@ cw10_s0:
         jnz     cw10_s0
 cw10_s1:
         mov     b[di-1],0
-        assume ds:_cwMain
-        pop     ds
         dec     si
         jmp     cw10_3
         ;
@@ -4229,10 +3498,6 @@ cw10_name:
         jnz     cw10_3
         inc     si
         mov     di,offset DesiredVMMName
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         xor     dx,dx
 cw10_n0:
         mov     al,es:[si]
@@ -4252,8 +3517,6 @@ cw10_n0:
         jnz     cw10_n0
 cw10_n1:
         mov     b[di-1],0
-        assume ds:_cwMain
-        pop     ds
         dec     si
         jmp     cw10_3
         ;
@@ -4268,34 +3531,8 @@ cw10_lowmem:
         cmp     BYTE PTR es:[si],":"
         jnz     cw10_3
         inc     si
-        xor     edx,edx
-cw10_lm0:
-        mov     al,es:[si]
-        or      al,al
-        jz      cw10_lm1
-        cmp     al," "
-        jz      cw10_lm1
-        cmp     al,"0"
-        jc      cw10_lm1
-        cmp     al,"9"+1
-        jnc     cw10_lm1
-        sub     al,"0"
-        movzx   eax,al
-        add     edx,edx
-        mov     ebx,edx
-        add     edx,edx
-        add     edx,edx
-        add     edx,ebx
-        add     edx,eax
-        inc     si
-        jmp     cw10_lm0
-        ;
-cw10_lm1:
+        call    getnum
         shl     edx,10-4                ;turn K into para's
-        push    ds
-        mov     bx,_cwRaw
-        mov     ds,bx
-        assume ds:_cwRaw
         movzx   ebx,w[CONVSaveSize]
         add     edx,ebx
         cmp     edx,65535
@@ -4303,35 +3540,16 @@ cw10_lm1:
         mov     edx,65535
 cw10_lm2:
         mov     w[CONVSaveSize],dx      ;set new size.
-        assume ds:_cwMain
-        pop     ds
-        ;
         jmp     cw10_3
         ;
-cw10_9:
-        ;Now look for TEMP.
+cw10_9:                                 ;done scanning CAUSEWAY var
+        jmp     cw10_skipline
         ;
-        xor     si,si                   ;start at the beginning.
-cw10_temp2:
-        mov     eax,es:[si]
-        cmp     eax,"PMET"
-        jz      cw10_temp0
-cw10_temp1:
-        inc     si
-        cmp     BYTE PTR es:[si-1],0
-        jnz     cw10_temp1
-        cmp     BYTE PTR es:[si],0
-        jz      cw10_temp9
-        jmp     cw10_temp2
-        ;
-cw10_temp0:
+cw10_temp:
         add     si,4
         cmp     BYTE PTR es:[si],"="
-        jnz     cw10_temp9
+        jnz     cw10_skipline
         inc     si
-        push    ds
-        mov     bx,_cwInit
-        mov     ds,bx
         mov     di,offset VMMDrivPath2
 cw10_temp3:
         mov     al,es:[si]
@@ -4344,29 +3562,10 @@ cw10_temp3:
         jnz     cw10_temp3
 cw10_temp4:
         mov     b[di-1],0
-        pop     ds
-cw10_temp9:
+        jmp     cw10_skipline
         ;
-        ;Look for TMP
-        ;
-        xor     si,si                   ;start at the beginning.
-cw10_tmp2:
-        mov     eax,es:[si]
-        cmp     eax,"=PMT"
-        jz      cw10_tmp0
-cw10_tmp1:
-        inc     si
-        cmp     BYTE PTR es:[si-1],0
-        jnz     cw10_tmp1
-        cmp     BYTE PTR es:[si],0
-        jz      cw10_tmp9
-        jmp     cw10_tmp2
-        ;
-cw10_tmp0:
+cw10_tmp:
         add     si,4
-        push    ds
-        mov     bx,_cwInit
-        mov     ds,bx
         mov     di,offset VMMDrivPath3
 cw10_tmp3:
         mov     al,es:[si]
@@ -4379,19 +3578,18 @@ cw10_tmp3:
         jnz     cw10_tmp3
 cw10_tmp4:
         mov     b[di-1],0
-        pop     ds
-cw10_tmp9:
-        ret
-        .286
+        jmp     cw10_skipline
 GetENVStuff     endp
 
-
 ;-------------------------------------------------------------------------------
+;--- get name of binary from environment
+
 GetEXECName     proc    near
-        .386
-cw11_0: mov     es,RealENVSegment
+
+        mov     es,RealENVSegment
         xor     si,si
-cw11_1: mov     al,es:[si]              ;Get a byte.
+cw11_1:
+        mov     al,es:[si]              ;Get a byte.
         inc     si                      ;/
         or      al,al                   ;End of a string?
         jnz     cw11_1                  ;keep looking.
@@ -4400,62 +3598,52 @@ cw11_1: mov     al,es:[si]              ;Get a byte.
         jnz     cw11_1                  ;keep looking.
         add     si,3                    ;Skip last 0 and word count.
         mov     di,offset MainExec
-        mov     bx,_cwInit
-        mov     fs,bx
         mov     bx,offset VMMDrivPath4
         mov     cx,sizeof VMMDrivPath4
         mov     dx,bx
-        push    ds
-        push    ds
-        push    es
-        pop     ds
-        pop     es
-cw11_2: movsb
-        mov     al,[si-1]
-        mov     fs:[bx],al
+cw11_2:
+        lodsb   es:[si]
+        mov     [di],al
+        mov     [bx],al
+        inc     di
         inc     bx
-        cmp     b[si-1],"\"
+        cmp     al,"\"
         jnz     cw11_2_0
         mov     dx,bx
         dec     dx
 cw11_2_0:
-        cmp     b[si-1],0               ;got to the end yet?
-        jz      cw11_3
-        dec     cx
-        jnz     cw11_2
-cw11_3: mov     bx,dx
-        mov     BYTE PTR fs:[bx],0      ;terminate VMM path.
+        cmp     al,0                    ;got to the end yet?
+        loopnz  cw11_2
+        mov     bx,dx
+        mov     BYTE PTR [bx],0         ;terminate VMM path.
 
 COMMENT !
 ; MED 10/10/96
         cmp     bx,offset VMMDrivPath4
         jne     genexit                 ; non-null path
-        mov     BYTE PTR fs:[bx],'.'    ; null path, give a valid one of '.\'
-        mov     BYTE PTR fs:[bx+1],'\'
-        mov     BYTE PTR fs:[bx+2],0
+        mov     BYTE PTR [bx+0],'.'     ; null path, give a valid one of '.\'
+        mov     BYTE PTR [bx+1],'\'
+        mov     BYTE PTR [bx+2],0
+genexit:
 END COMMENT !
 
-genexit:
-        pop     ds
-        push    ds
-        push    ds
-        pop     fs
-        pop     es
         ret
-        .286
+
 GetEXECName     endp
 
 
 ;-------------------------------------------------------------------------------
+;--- real-mode proc
+;--- DS:GROUP16
+
+        assume ds:GROUP16
+
 GetSystemFlags  proc    near
         push    ds
         mov     dx,offset MainExec
         mov     ax,3d40h                ;open, read only, deny none
         int     21h
         jc      cw12_5
-        push    cs
-        pop     ds
-        assume ds:_cwInit
         mov     bx,ax
         mov     dx,offset IExeHdr       ;somewhere to put the info.
         mov     cx,sizeof MZHdr         ;size of it.
@@ -4464,12 +3652,12 @@ GetSystemFlags  proc    near
         jc      cw12_4
         cmp     ax,sizeof MZHdr         ;did we read right amount?
         jnz     cw12_4
-        cmp     [IExeHdr.Signature],'ZM';Normal EXE?
+        cmp     IExeHdr.Signature,'ZM'  ;Normal EXE?
         jnz     cw12_4
-        mov     ax,[IExeHdr._Length+2]  ;get length in 512 byte blocks
+        mov     ax,IExeHdr._Length+2    ;get length in 512 byte blocks
 
 ; MED 01/17/96
-        cmp     [IExeHdr._Length],0
+        cmp     IExeHdr._Length,0
         je      medexe2                 ; not rounded if no modulo
 
         dec     ax                      ;lose 1 cos its rounded up
@@ -4480,7 +3668,7 @@ medexe2:
         mov     dl,ah
         mov     ah,al
         mov     al,dh                   ;mult by 256=*512
-        add     ax,[IExeHdr._Length]    ;add length mod 512
+        add     ax,IExeHdr._Length      ;add length mod 512
         adc     dx,0                    ;add any carry to dx
         mov     cx,ax
         xchg    cx,dx                   ;swap round for DOS.
@@ -4500,14 +3688,8 @@ medexe2:
         mov     si,offset INewHeader
         mov     ax,w[si].NewHeaderStruc.NewFlags+0  ;Copy main flags.
         mov     cx,w[si].NewHeaderStruc.NewFlags+2
-        pop     ds
-        push    ds
-        assume ds:_cwMain
         mov     w[SystemFlags+0],ax
         mov     w[SystemFlags+2],cx
-        mov     dx,_cwRaw
-        mov     ds,dx
-        assume ds:_cwRaw
         mov     w[RawSystemFlags+0],ax
         mov     w[RawSystemFlags+2],cx
         .386
@@ -4516,35 +3698,32 @@ medexe2:
         assume ds:_cwDPMIEMU
         mov     w[DpmiEmuSystemFlags+0],ax
         mov     w[DpmiEmuSystemFlags+2],cx
-        mov     dx,_apiCode
+        mov     dx,GROUP32
         mov     ds,dx
-        assume ds:_apiCode
+        assume ds:GROUP32
         mov     w[apiSystemFlags+0],ax
         mov     w[apiSystemFlags+2],cx
         .286
-        assume ds:_cwMain
-cw12_4: mov     ax,3e00h
+cw12_4:
+        mov     ah,3eh
         int     21h
         jmp     cw12_5
-
 ;
 ;Nothing on the end of the extender so replace the exec name with first
 ;command line argument and shuffle everything else down. Allows CW32 to be used
 ;to run 32-bit programs not attached to it from the command line.
 ;
+        assume ds:GROUP16
+
 cw12_SetRUN:
-        mov     ax,3e00h                ;close file, we don't need it.
+        mov     ah,3eh                  ;close file, we don't need it.
         int     21h
-        mov     ax,_cwMain
-        mov     ds,ax
-        assume ds:_cwMain
         push    es
         mov     es,RealPSPSegment
         mov     si,80h
         xor     ch,ch
         mov     cl,BYTE PTR es:[si]
-        or      cx,cx
-        jz      cw12_sr5
+        jcxz    cw12_sr5
         inc     si
         mov     di,offset MainExec      ;default to storeing program name.
         ;
@@ -4555,8 +3734,7 @@ cw12_sr0:
         cmp     al," "
         jnz     cw12_sr1
         inc     si
-        dec     cx
-        jnz     cw12_sr0
+        loop    cw12_sr0
         jmp     cw12_sr3
         ;
         ;Get program name.
@@ -4569,8 +3747,7 @@ cw12_sr1:
         mov     [di],al
         inc     si
         inc     di
-        dec     cx
-        jnz     cw12_sr1
+        loop    cw12_sr1
 cw12_sr2:
         mov     b[di],0
 cw12_sr3:
@@ -4580,26 +3757,27 @@ cw12_sr3:
 ;
         push    es
         mov     es,RealPSPSegment
+        assume es:_cwEnd
         mov     si,80h
         xor     ch,ch
         mov     cl,BYTE PTR es:[si]
-        or      cx,cx
-        jz      cw12_cl3
+        jcxz    cw12_cl3
         inc     si
         mov     di,si
 cw12_cl0:
         cmp     BYTE PTR es:[si],' '
         jnz     cw12_cl1
         inc     si
-        dec     cx
-        jnz     cw12_cl0
+        loop     cw12_cl0
 cw12_cl1:
         jcxz    cw12_cl2
         push    cx
         push    ds
+
         push    es
         pop     ds
         rep     movsb                   ;Copy it down.
+
         pop     ds
         pop     cx
 cw12_cl2:
@@ -4614,7 +3792,6 @@ cw12_sr5:
         ;
 cw12_5:
         pop     ds
-        assume ds:_cwMain
         ret
 GetSystemFlags  endp
 
@@ -4627,13 +3804,16 @@ GetProtectedType proc near
         call    ChkDPMI                 ;32 bit DPMI server present?
         jc      cw13_0
         or      ProtectedFlags,1
-cw13_0: call    ChkVCPI                 ;VCPI >= v1.0 present?
+cw13_0:
+        call    ChkVCPI                 ;VCPI >= v1.0 present?
         jc      cw13_1
         or      ProtectedFlags,2
-cw13_1: call    ChkRAW                  ;Running in real mode?
+cw13_1:
+        call    ChkRAW                  ;Running in real mode?
         jc      cw13_2
         or      ProtectedFlags,4
-cw13_2: ret
+cw13_2:
+        ret
 GetProtectedType endp
 
 
@@ -4658,13 +3838,6 @@ cw14_2:
         mov     ax,PT_DPMI
 cw14_3:
         mov     ProtectedType,ax
-        push    ds
-        mov     dx,_cwInit
-        mov     ds,dx
-        assume ds:_cwInit
-        mov     IProtectedType,ax
-        pop     ds
-        assume ds:_cwMain
         ret
 SetProtectedType endp
 
@@ -4722,6 +3895,7 @@ cw16_IsHandler:
         pop     si
         mov     es:[67h*4+0],si         ;restore int 67h
         mov     es:[67h*4+2],di
+        assume es:nothing
         sti
         ;
         cmp     al,0
@@ -4730,7 +3904,7 @@ cw16_IsHandler:
         cmp     bh,'1'
         jc      cw16_NotThere
         mov     ax,si
-        or      ax,di                   ;Only pretending to be their?
+        or      ax,di                   ;Only pretending to be there?
         jz      cw16_HopeThere
         ;
         call    cw16_ChkEMS             ;Make sure EMS is in first
@@ -4891,36 +4065,76 @@ MakeGate       proc    near
         ret
 MakeGate       endp
 
-
-;-------------------------------------------------------------------------------
-;
-;Dummy routine to call so that IDT value is re-loaded.
-;
-if 0
-IDTFlush        proc    far
-        ret
-IDTFlush        endp
-endif
-
 ;--- PL0 proc to (re)load IDT
 
 loadidt proc far
         .386p
-        assume ds:_cwRaw
+        assume ds:GROUP16
         lidt [IDTVal]
         assume ds:nothing
         .386
         retd   ; called thru a 32-bit call gate!
 loadidt endp
 
+setcr0cr4 proc
+; MED 12/04
+; check if CPUID is available, if so, check if need to enable SSE instructions
+        pushfd
+        pop     eax
+        mov     ecx,eax
+        xor     eax,200000h             ; toggle cpu id bit
+        push    eax
+        popfd
+        pushfd
+        pop     eax
+        xor     eax,ecx                 ; see if cpu id bit was changed
+        je      nosse                   ; no, cpuid instruction not supported
+
+        .586p
+        mov     eax,1
+        cpuid
+        and     edx,3000000h            ; only want SSE and FXSR bit status
+        cmp     edx,3000000h
+        jne     nosse                   ; both bits required
+        mov     eax,cr0
+        and     al,NOT 6                ; clear EM and MP bits
+        mov     cr0,eax
+        mov     eax,cr4
+        or      ax,200h                 ; set OSFXSR bit to allow SSE instructions
+        mov     cr4,eax
+nosse:
+        cld
+        clts
+        retd
+setcr0cr4 endp
+
 _cwInit ends
 
+        .386p
+        include rawvcpi2.inc
+
+_TEXT32 segment para use32 public 'CODE'
+_TEXT32 ends
+_DATA32 segment para use32 public 'DATA'
+_DATA32 ends
+
+_TEXT32 segment
+        include exceptn.inc
+        include api.inc
+        include int10h.inc
+        include int21h.inc
+        include int33h.inc
+_TEXT32 ends
+
+_DATA32 segment
+endGroup32 equ $
+_DATA32 ends
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;End marker so we know what to resize program memory size to initialy.
 ;
-_cwEnd  segment para public 'end marker'
+_cwEnd  segment para public 'end marker' use16
 _cwEnd  ends
 
         end     Startup

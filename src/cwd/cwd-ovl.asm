@@ -12139,6 +12139,7 @@ Int03Handler	proc	near
 	test	SystemFlags,1
 	jz	@@Use32_1
 
+if 0
 ; MED 08/15/96
 ; attempt to allow debugging of hardware interrupt handler
 ;  which has extra values placed on stack
@@ -12157,7 +12158,7 @@ Int03Handler	proc	near
 	add	DebugESP,sizeof IFRAME16
 	jmp	@@Use0_1
 med2a:
-
+endif
 	mov	ax,[ebp].IFRAME16.rFl
 	mov	w[DebugEFL],ax
 	mov	ax,[ebp].IFRAME16.rCs
@@ -12170,7 +12171,7 @@ med2a:
 	jmp	@@Use0_1
 
 @@Use32_1:
-
+if 0
 ; MED 08/15/96
 ; attempt to allow debugging of hardware interrupt handler
 ;  which has extra values placed on stack
@@ -12189,7 +12190,7 @@ med2a:
 	add	DebugESP,sizeof IFRAME32
 	jmp	@@Use0_1
 med2b:
-
+endif
 	mov	eax,[ebp].IFRAME32.rFl
 	mov	DebugEFL,eax
 	mov	eax,[ebp].IFRAME32.rCs

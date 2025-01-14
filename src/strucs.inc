@@ -1,42 +1,5 @@
 ;------------------------------------------------------------------------------
 ;
-;Some equates to make stacked register access simpler.
-;--- it's for a) DPMI API ( file api.inc, proc cwAPIpatch )
-;---          b) DOS API ( file int21h.inc, proc Int21h )
-;
-Int_EDI	equ	0
-Int_DI	equ	0
-Int_ESI	equ	4
-Int_SI	equ	4
-Int_EBP	equ	8
-Int_BP	equ	8
-Int_ESP	equ	12
-Int_SP	equ	12
-Int_EBX	equ	16
-Int_BX	equ	16
-Int_BL	equ	16
-Int_BH	equ	17
-Int_EDX	equ	20
-Int_DX	equ	20
-Int_DL	equ	20
-Int_DH	equ	21
-Int_ECX	equ	24
-Int_CX	equ	24
-Int_CL	equ	24
-Int_CH	equ	25
-Int_EAX	equ	28
-Int_AX	equ	28
-Int_AL	equ	28
-Int_AH	equ	29
-Int_GS	equ	32
-Int_FS	equ	36
-Int_ES	equ	40
-Int_DS	equ	44
-Int_Off	equ	48
-Int_Seg16	equ	50
-Int_Seg32	equ	52
-Int_Flags16	equ	52
-Int_Flags32	equ	56
 
 ResHead struc
 ResHead_Prev    dd 0
@@ -75,92 +38,11 @@ MEM_PHYS	equ	32	;physical mapping.
 ;
 MEM_FILL	equ	(MEM_LOCK_MASK shl MEM_LOCK_SHIFT)+MEM_START
 
-
-;; MED 02/16/96
-MaxCallBacks		equ	32+3		;maximum number of call back table entries.
-;MaxCallBacks		equ	32+4		;maximum number of call back table entries.
-
-;; MED increased 512 to 1024, 12/05/95
-IFDEF BIGSTACK
-RawStackDif		equ	5*1024		;size of interrupt stacks.
-ELSE
-;RawStackDif		equ	1280		;size of interrupt stacks.
-RawStackDif		equ	1024		;size of interrupt stacks.
-;RawStackDif		equ	512		;size of interupt stacks.
-ENDIF
-
-IFDEF BIGSTACK
-RawStackTotal	equ	(10*RawStackDif)+RawStackDif
-ELSE
-;RawStackTotal	equ	8192+512
-RawStackTotal	equ	8192+RawStackDif
-;RawStackTotal	equ	(16*RawStackDif)+RawStackDif
-ENDIF
-
-tPL2StackSize	equ	4		;other priveledge level stacks. never used.
-tPL1StackSize	equ	4
-tPL0StackSize	equ	256		;Interupt catcher stack.
-
-
-GDTNul		equ	00h			;Null entry.
-;
-VCPI_0		equ	08h			;blank entries for VCPI to fill in.
-VCPI_1		equ	10h			;/
-VCPI_2		equ	18h			;/
-;
-KernalTS		equ	20h+3		;Kernal TSS
-KernalCS0		equ	28h			;Kernal PL0 code seg.
-KernalPL0		equ	30h			;PL0 stack.
-KernalSwitchPL0	equ	38h			;Mode switch PL0 stack.
-Kernal40h		equ	40h+3		;DOS/BIOS data area access.
-KernalPL3toPL0	equ	48h+3		;PL3 to PL0 call gate.
-;
-KernalLDT		equ	50h+3
-KernalCS		equ	58h+3			;Kernal CS
-KernalDS		equ	60h+3			;Kernal DS
-KernalSS		equ	68h+3			;Kernal SS
-KernalZero		equ	70h+3			;Kernal 0-4G data referance.
-;
-MainCS		equ	78h+3			;Main code seg.
-MainDS		equ	80h+3			;Main data seg.
-MainSS		equ	88h+3			;Main stack seg.
-MainPSP		equ	90h+3			;PSP segment.
-MainEnv		equ	98h+3			;Enviroment segment.
-;
-InitCS		equ	0a0h+3		;Init code seg.
-InitCS0		equ	0a8h		;Init code seg at PL0.
-InitDS		equ	0b0h+3		;Init data seg.
-InitPL3toPL0	equ	0b8h+3	;call gate
-;
-DpmiEmuCS		equ	0c0h+3	;DPMI emulator code seg.
-DpmiEmuCS0		equ	0c8h	;DPMI emulator code seg at PL0.
-DpmiEmuDS		equ	0d0h+3	;DPMI emulator data seg.
-DpmiEmuPL3toPL0	equ	0d8h+3	;call gate
-;
-GDTData		equ	0e0h+3		; GDT selector r/w
-;
-ifdef KRNLDBG
-GDTDbg		equ	0f0h
-GDT_Entries		equ	108h/8
-else
-GDT_Entries		equ	0f0h/8		;GDT entries to allocate.
-endif
 ;
 KernalB000		equ	0b000h+3
 KernalB800		equ	0b800h+3
 KernalA000		equ	0a000h+3
 
-;
-CallBackStruc	struc
-CallBackFlags	db ?      ; b[0]:1=in use;b[7]:1=busy
-CallBackNum		db ?      ; interrupt#
-CallBackOff		dw ?
-CallBackProt		df ?
-CallBackRegs		df ?
-CallBackReal		dd ?
-CallBackStackSel	dw ?
-		dw ?
-CallBackStruc	ends
 ;
 Desc		struc
 Limit		dw 0		;Offset of last byte.
@@ -245,80 +127,79 @@ v86CallStruc		ends
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-TSSFields		struc
+TSSFields	struc
 ;
 ;Task segment structure.
 ;
-Back		dw 0		;Back link to any previous TSS.
-		dw 0		;Reserved.
-ESP0		dd 0		;SP for level 0 interupt.
-SS0		dw 0
-		dw 0		;reserved.
-ESP1		dd 0		;Level 1 interupt handlers stack.
-SS1		dw 0
-		dw 0		;reserved.
-ESP2		dd 0		;Level 2 interupt handlers stack.
-SS2		dw 0
-		dw 0		;reserved.
-tCR3		dd 0		;CR3 value.
-tEIP		dd 0		;Instruction pointer.
-tEFlags		dw 0		;EFlags.
-		dw 0
-tEAX		dd 0		;AX for init.
-tECX		dd 0		;CX for init.
-tEDX		dd 0		;DX for init.
-tEBX		dd 0
-tESP		dd 0
-tEBP		dd 0
-tESI		dd 0
-tEDI		dd 0
-tES		dw 0
-		dw 0		;reserved.
-tCS		dw 0
-		dw 0		;reserved.
-tSS		dw 0
-		dw 0		;reserved.
-tDS		dw 0
-		dw 0		;reserved.
-tFS		dw 0
-		dw 0		;reserved.
-tGS		dw 0
-		dw 0		;reserved.
-tLDT		dw 0
-		dw 0		;reserved.
-		dw 0		;reserved.
-IOMap		dw 0		;displacement to I/O map.
+Back	dw ?,?  	;Back link to any previous TSS.
+ESP0	dd ?		;SP for level 0 interupt.
+SS0		dw ?,?
+ESP1	dd ?		;Level 1 interupt handlers stack.
+SS1		dw ?,?
+ESP2	dd ?		;Level 2 interupt handlers stack.
+SS2		dw ?,?
+tCR3	dd ?		;CR3 value.
+tEIP	dd ?		;Instruction pointer.
+tEFlags	dd ?		;EFlags.
+tEAX	dd ?		;AX for init.
+tECX	dd ?		;CX for init.
+tEDX	dd ?		;DX for init.
+tEBX	dd ?
+tESP	dd ?
+tEBP	dd ?
+tESI	dd ?
+tEDI	dd ?
+tES		dd ?
+tCS		dd ?
+tSS		dd ?
+tDS		dd ?
+tFS		dd ?
+tGS		dd ?
+tLDT	dw ?
+		dw ?		;reserved.
+		dw ?		;reserved.
+IOMap	dw ?		;displacement to I/O map.
 ;
-tPL3Stack		db tPL2StackSize dup (0)
-tPL2Stack		db tPL1StackSize dup (0)
-tPL1Stack		db tPL0StackSize dup (0)
-tPL0Stack		dw ?
-TSSFields		ends
+ifdef tPL2StackSize
+if tPL2StackSize
+tPL3Stack	db tPL2StackSize dup (?)
+endif
+endif
+ifdef tPL1StackSize
+if tPL1StackSize
+tPL2Stack	db tPL1StackSize dup (?)
+endif
+endif
+ifdef tPL0StackSize
+tPL1Stack	db tPL0StackSize dup (?)
+endif
+;tPL0Stack	dw ?
+TSSFields	ends
 
 NewHeaderStruc	struc
-NewID		db '3P'	;identifier.
-NewSize		dd 0		;byte size of 3P section of file.
-NewLength		dd 0		;byte size of exe image data.
-NewAlloc		dd 0		;byte size of program.
-NewSegments		dw 0		;number of segment definitions.
-NewRelocs		dd 0		;number of relocation table entries.
-NewEntryEIP		dd 0		;entry offset.
-NewEntryCS		dw 0		;segment list entry number for entry CS.
-NewEntryESP		dd 0		;ESP offset.
-NewEntrySS		dw 0		;segment list entry number for SS.
-NewFlags		dd 0		;Control flags.
-NewAutoStack		dd 0		;Auto stack size.
-NewAutoDS		dw 0		;Auto DS segment number +1
-NewExports		dd 0		;Length of EXPORT section.
-NewImports		dd 0		;Length of IMPORT section.
-NewImportModCnt	dd 0		;Number of IMPORT modules.
+NewID		db '3P'	;+0 identifier.
+NewSize		dd ?		;+2 byte size of 3P section of file.
+NewLength		dd ?		;+6  byte size of exe image data.
+NewAlloc		dd ?		;+10 byte size of program.
+NewSegments		dw ?		;+14 number of segment definitions.
+NewRelocs		dd ?		;+16 number of relocation table entries.
+NewEntryEIP		dd ?		;+20 entry offset.
+NewEntryCS		dw ?		;+24 segment list entry number for entry CS.
+NewEntryESP		dd ?		;+26 ESP offset.
+NewEntrySS		dw ?		;+30 segment list entry number for SS.
+NewFlags		dd ?		;+32 Control flags.
+NewAutoStack		dd ?		;+36 Auto stack size.
+NewAutoDS		dw ?		;+40 Auto DS segment number +1
+NewExports		dd ?		;+42 Length of EXPORT section.
+NewImports		dd ?		;+46 Length of IMPORT section.
+NewImportModCnt	dd ?		;+50 Number of IMPORT modules.
 ;NewReserved		db 64-NewReserved dup (?)
 NewReserved		db 64-$ dup (?)
 NewHeaderStruc	ends
 ;
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-ifdef CW4
+ifndef CW3
 LE_OBJ_Flags_Read       equ 1   ;Readable.
 LE_OBJ_Flags_Write      equ 2   ;Writeable.
 LE_OBJ_Flags_Exec       equ 4   ;Executable.

@@ -5,11 +5,9 @@
 
 ;--- this version has been adjusted and needs to find cwstub.exe!
 
-;---  WL32 needs .dosseg to ensure that stack is last
-
 	.386
 	.model flat
-	.dosseg
+	.dosseg		;WL32 needs .dosseg to ensure that stack is last
 	.stack 4096
 
 	include general.inc
