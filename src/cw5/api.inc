@@ -355,7 +355,7 @@ cwAPIpatch      proc    near
         assume ds:GROUP16
         cmp     Int21hExecCount,0
         pop     ds
-        assume ds:GROUP32
+        assume ds:nothing
         jnz     api1_Nope
 ;
 ;Check if this is a CauseWay function.
@@ -391,7 +391,6 @@ api1_GotCall:
 ;
         mov     esi,Int_Flags32
         test    BYTE PTR cs:apiSystemFlags,1
-        assume ds:GROUP32
         jz      api1_32Bit0
         movzx   ebp,bp
         mov     esi,Int_Flags16
@@ -406,7 +405,6 @@ api1_32Bit0:
 ;
 api1_NoInts:
         call    DWORD PTR cs:[edi]              ;Pass control to handler.
-        assume ds:GROUP32
         popad
         pop     gs
         pop     fs
@@ -431,6 +429,7 @@ api1_Nope:
 ;
 cwAPIpatch      endp
 
+        assume ds:nothing
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -849,7 +848,7 @@ cwAPI_GetDOSTrans proc near
         mov     es,cs:apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:_cwEnd
+        assume es:_cwEnd    ; use _cwEnd so the assembler assumes a 16-bit segment
         mov     ax,es:[EPSP_Struc.EPSP_TransReal]
         mov     [ebp+Int_BX],ax
         mov     ax,es:[EPSP_Struc.EPSP_TransProt]
@@ -878,7 +877,7 @@ cwAPI_SetDOSTrans proc near
         mov     es,cs:apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:_cwEnd
+        assume es:_cwEnd    ; use _cwEnd so the assembler assumes a 16-bit segment
 ;        assume ds:GROUP32
         mov     es:[EPSP_Struc.EPSP_TransReal],bx
         mov     es:[EPSP_Struc.EPSP_TransProt],dx
@@ -913,7 +912,7 @@ cwAPI_Info      proc    near
         mov     ax,RealSegment
         mov     bx,PSPSegment
         mov     es,ebx
-        assume es:_cwEnd
+        assume es:_cwEnd    ; use _cwEnd so the assembler assumes a 16-bit segment
         mov     dx,es:[EPSP_Struc.EPSP_TransReal]
         mov     ecx,es:[EPSP_Struc.EPSP_TransSize]
         mov     es,es:[EPSP_Struc.EPSP_TransProt]
@@ -4506,10 +4505,11 @@ RegisterResource proc near
         assume ds:GROUP16
         mov     es,RealSegment
         mov     fs,PSPSegment
+        assume fs:_cwEnd         ; to make the assemble assume a 16-bit segment
         ;
         cmp     ResourceTracking,0
         jz      api77_9
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],0   ;allocated memory for list yet?
+        cmp     fs:[EPSP_Struc.EPSP_Resource],0   ;allocated memory for list yet?
         jnz     api77_0
         ;
         ;Allocate initial resource list space.
@@ -4517,10 +4517,10 @@ RegisterResource proc near
         pushad
         call    api77_GetAndInit
         jc      api77_1
-        mov     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],esi
+        mov     fs:[EPSP_Struc.EPSP_Resource],esi
 api77_1:
         popad
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],0
+        cmp     fs:[EPSP_Struc.EPSP_Resource],0
         jz      api77_90
         ;
 api77_0:
@@ -4529,7 +4529,7 @@ api77_0:
         cld
         mov     ebp,ecx                 ;Copy value 2.
         mov     ah,al                   ;Copy type.
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 api77_FreeLoop:
         mov     edi,esi
         add     edi,size ResHead        ;point to types.
@@ -4746,14 +4746,15 @@ ReleaseResource proc near
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         mov     fs,PSPSegment
+        assume fs:_cwEnd
         cmp     ResourceTracking,0
         jz      api78_9
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],0
+        cmp     fs:[EPSP_Struc.EPSP_Resource],0
         jz      api78_9
         xchg    eax,edx
         mov     es,RealSegment
         cld
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 api78_LookLoop:
         mov     edi,esi
         add     edi,size ResHead + ResNum
@@ -4826,12 +4827,12 @@ api78_psp:
 ;
 ;Remove links to all other modules.
 ;
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Imports],0
+        cmp     fs:[EPSP_Struc.EPSP_Imports],0
         jz      api78_no_imports
         push    ecx
         push    esi
         push    edi
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Imports]
+        mov     esi,fs:[EPSP_Struc.EPSP_Imports]
         mov     ecx,es:[esi]
         add     esi,4
 api78_imp0:
@@ -4927,10 +4928,10 @@ api78_fPSP2:
 api78_NoPSPSearch:
         ;Now release all other types of resource.
         ;
-        cmp     WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem],0 ;Any DPMI save buffer?
+        cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0 ;Any DPMI save buffer?
         jz      api78_psp_0
         xor     bx,bx
-        xchg    bx,WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem]
+        xchg    bx,fs:[EPSP_Struc.EPSP_DPMIMem]
         Sys     RelMem
 api78_psp_0:
         cmp     fs:[EPSP_Struc.EPSP_INTMem],0 ;Any int/excep vector memory?
@@ -5182,6 +5183,7 @@ FindResource    proc    near
         assume ds:GROUP16
         mov     es,RealSegment
         mov     fs,PSPSegment
+        assume fs:_cwEnd
         xchg    eax,edx
         xor     edi,edi
         xchg    edi,ForcedFind
@@ -5190,10 +5192,10 @@ FindResource    proc    near
         jnz     api79_Found
         cmp     ResourceTracking,0
         jz      api79_8
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],0
+        cmp     fs:[EPSP_Struc.EPSP_Resource],0
         jz      api79_8
         ;
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 api79_LookLoop:
         mov     ecx,ResNum              ;get number of entries.
         mov     edi,esi
@@ -5322,7 +5324,7 @@ api80_GetRVect:
 ;Save DPMI state.
 ;
         mov     es,PSPSegment
-        mov     WORD PTR es:[EPSP_Struc.EPSP_DPMIMem],bx
+        mov     es:[EPSP_Struc.EPSP_DPMIMem],bx
         mov     es,ebx
         xor     edi,edi
         mov     al,0
@@ -5411,7 +5413,7 @@ api81_Rdone:
 ;
 api81_NoIntRel:
         mov     es,PSPSegment
-        mov     ax,WORD PTR es:[EPSP_Struc.EPSP_DPMIMem]
+        mov     ax,es:[EPSP_Struc.EPSP_DPMIMem]
         or      ax,ax
         jz      api81_NoDPMIRel
         jmp     api81_NoDPMIRel
@@ -5546,11 +5548,12 @@ api82_memOK2:
         xor     edx,edx
         mov     DWORD PTR es:[EPSP_Struc.EPSP_Resource],edx ;Clear memory fields.
         mov     es:[EPSP_Struc.EPSP_INTMem],edx
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_DPMIMem],edx
-        mov     WORD PTR es:[EPSP_Struc.EPSP_Parent],fs     ;set parent PSP.
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_DTA+0],80h      ;Use default PSP DTA.
+;        mov     DWORD PTR es:[EPSP_Struc.EPSP_DPMIMem],edx ;this is type WORD!!!
+        mov     es:[EPSP_Struc.EPSP_DPMIMem],dx
+        mov     es:[EPSP_Struc.EPSP_Parent],fs              ;set parent PSP.
+        mov     DWORD PTR es:[EPSP_Struc.EPSP_DTA+0],80h    ;Use default PSP DTA.
         mov     WORD PTR es:[EPSP_Struc.EPSP_DTA+4],es
-        mov     ax,fs:[EPSP_Struc.EPSP_TransProt]  ;inherit current transfer buffer.
+        mov     ax,fs:[EPSP_Struc.EPSP_TransProt]           ;inherit current transfer buffer.
         mov     es:[EPSP_Struc.EPSP_TransProt],ax
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[EPSP_Struc.EPSP_TransReal],ax
@@ -5559,12 +5562,12 @@ api82_memOK2:
         mov     eax,fs:[EPSP_Struc.EPSP_mcbMaxAlloc]
         mov     es:[EPSP_Struc.EPSP_mcbMaxAlloc],eax
         mov     es:[EPSP_Struc.EPSP_mcbHead],edx
-        cmp     [api82_Flags],2                             ;cwLoad?
+        cmp     [api82_Flags],2                              ;cwLoad?
         jz      api82_NoNext
-        mov     WORD PTR fs:[EPSP_Struc.EPSP_Next],es
+        mov     fs:[EPSP_Struc.EPSP_Next],es
 api82_NoNext:
-        mov     WORD PTR es:[EPSP_Struc.EPSP_Next],dx
-        mov     WORD PTR es:[PSP_Struc.PSP_Environment],dx
+        mov     es:[EPSP_Struc.EPSP_Next],dx
+        mov     es:[PSP_Struc.PSP_Environment],dx
         mov     es:[EPSP_Struc.EPSP_SegBase],dx
         mov     es:[EPSP_Struc.EPSP_SegSize],dx
         mov     es:[EPSP_Struc.EPSP_Exports],edx
@@ -5697,7 +5700,7 @@ api82_NoPSwitch0:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     WORD PTR es:[PSP_Struc.PSP_Environment],ax
+        mov     es:[PSP_Struc.PSP_Environment],ax
         jmp     api82_GotEnv
 
 api82_CopyEnv:
@@ -5706,9 +5709,9 @@ api82_CopyEnv:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     ax,WORD PTR es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
+        mov     ax,es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
         mov     es,[api82_PSP]
-        mov     WORD PTR es:[PSP_Struc.PSP_Environment],ax
+        mov     es:[PSP_Struc.PSP_Environment],ax
         pop     es
         jmp     api82_NoEnv
 
@@ -5720,8 +5723,8 @@ api82_ParentEnv:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     es,WORD PTR es:[EPSP_Struc.EPSP_Parent]     ;Get parent PSP.
-        mov     es,WORD PTR es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
+        mov     es,es:[EPSP_Struc.EPSP_Parent]     ;Get parent PSP.
+        mov     es,es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
 ;
 ;Find out how long current environment is.
 ;
@@ -5744,7 +5747,7 @@ api82_gp2:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     WORD PTR es:[PSP_Struc.PSP_Environment],bx
+        mov     es:[PSP_Struc.PSP_Environment],bx
         mov     ecx,esi                 ;get length again.
         push    ds
         mov     ds,eax
@@ -5761,7 +5764,7 @@ api82_GotEnv:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     es,WORD PTR es:[PSP_Struc.PSP_Environment]
+        mov     es,es:[PSP_Struc.PSP_Environment]
         xor     edi,edi
 api82_gp0:
         mov     al,es:[edi]             ;Get a byte.
@@ -5839,7 +5842,7 @@ api83_NoIRel:
 api83_YesRelRes:
         assume es:nothing
         mov     es,w[api83_PSP]
-        mov     bx,WORD PTR es:[EPSP_Struc.EPSP_Parent]
+        mov     bx,es:[EPSP_Struc.EPSP_Parent]
         cmp     d[api83_Flags],2
         jz      api83_NoPRel
         mov     ah,50h                  ;set PSP
@@ -5853,7 +5856,7 @@ api83_NoPRel:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     WORD PTR es:[EPSP_Struc.EPSP_Next],0
+        mov     es:[EPSP_Struc.EPSP_Next],0
 api83_NoNRel:
         pop     gs
         pop     fs
@@ -5962,7 +5965,7 @@ api84_imp3:
         assume es:GROUP16
         mov     es,es:PSPSegment
         assume es:nothing
-        mov     bx,WORD PTR es:[PSP_Struc.PSP_Environment]
+        mov     bx,es:[PSP_Struc.PSP_Environment]
         pop     es
         push    edx
         push    ecx

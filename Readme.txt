@@ -1,15 +1,19 @@
 
  About
 
- This repository contains the CauseWay DOS Extender, both v3.xx and v4.0x
- (Open Watcom).
+ This repository contains the CauseWay DOS Extender, an old v3.49 
+ (or perhaps v3.52) and a modified v4.05 (now called v5.0), got from
+ Open Watcom.
  
- The sources are in Masm v6 syntax. Some bugs have been fixed, in both
- the extender and the debugger. Also, the extender does now support the
- kernel debugger API of DebugR, so it's possible to debug it at privilege
- level 0 (using Deb386, or possibly Microsoft's WDeb386). Some optimizations
- have been done, data has been arranged to avoid unaligned access and
- binary size is significantly reduced.
+ The sources are in Masm v6 syntax. Changes are:
+ - quite a few bugs have been fixed, in both the extender and the debugger
+ - the extender does now support the kernel debugger API of DebugR, so it's
+   possible to debug it at privilege level 0 (using Deb386, or possibly
+   Microsoft's WDeb386).
+ - some optimizations have been done, data has been arranged to avoid
+   unaligned access and binary size as well as DOS memory usage is
+   significantly reduced.
+ - the DPMI raw-mode switches have been implemented in raw/vcpi mode.
 
  WarpLink and the CauseWay linker WL32 are in a separate repository.
  
@@ -22,7 +26,7 @@
 
  CW    : CauseWay EXE maker
  CW349 : the CauseWay Extender v3.xx ( 3.49/3.52? )
- CW404 : the CauseWay Extender v4.0x ( supplied with Open Watcom )
+ CW5   : the updated CauseWay Extender, was v4.0x ( supplied with Open Watcom )
  CWD   : the CauseWay Debugger
  CWL   : (internal) CauseWay Linker ( obsolete )
  CWC   : CauseWay File Compressor

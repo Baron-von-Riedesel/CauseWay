@@ -174,7 +174,7 @@ DecodeCWC       proc    near
         assume ds:GROUP16
         mov     ds,PSPSegment
         assume ds:nothing
-        mov     ecx,DWORD PTR ds:[EPSP_Struc.EPSP_TransSize]
+        mov     ecx,ds:[EPSP_Struc.EPSP_TransSize]
         mov     ax,ds:[EPSP_Struc.EPSP_TransProt]
         mov     bx,ds:[EPSP_Struc.EPSP_TransReal]
         assume ds:GROUP32

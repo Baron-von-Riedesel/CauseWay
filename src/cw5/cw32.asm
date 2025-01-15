@@ -2801,7 +2801,8 @@ cw5_NoState:
         mov     WORD PTR es:[EPSP_Struc.EPSP_ExecCount+2],ds
         mov     es:[EPSP_Struc.EPSP_Resource],edx           ;Clear memory fields.
         mov     es:[EPSP_Struc.EPSP_INTMem],edx
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_DPMIMem],edx  ;is a word only!
+;        mov     DWORD PTR es:[EPSP_Struc.EPSP_DPMIMem],edx  ;is a word only!
+        mov     es:[EPSP_Struc.EPSP_DPMIMem],dx
         mov     es:[EPSP_Struc.EPSP_Parent],es              ;set parent PSP.
         mov     es:[EPSP_Struc.EPSP_Next],dx
         mov     DWORD PTR es:[EPSP_Struc.EPSP_DTA+0],80h    ;Use default PSP DTA.

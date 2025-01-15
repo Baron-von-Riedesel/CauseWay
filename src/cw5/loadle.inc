@@ -828,7 +828,7 @@ load1_loadz:
         mov     DWORD PTR es:[esi],0    ;clear entry count for now.
         push    es
         mov     es,[load1_PSP]
-        mov     DWORD PTR es:[EPSP_Struc.EPSP_Imports],esi
+        mov     es:[EPSP_Struc.EPSP_Imports],esi
         pop     es
         mov     [load1_ModLink+0],esi
         ;
@@ -1695,7 +1695,7 @@ load1_SegDone:
         jz      load1_NoPSwitch2
         push    fs
         mov     fs,[load1_PSP]
-        mov     bx,WORD PTR fs:[EPSP_Struc.EPSP_Parent]
+        mov     bx,fs:[EPSP_Struc.EPSP_Parent]
         pop     fs
         mov     ah,50h                  ;set PSP
         int     21h

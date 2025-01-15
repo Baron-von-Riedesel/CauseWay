@@ -1896,6 +1896,7 @@ rv30_CallB032 label fword
 
 RAWCallBack     endp
 
+	assume ds:nothing
 
 ;-------------------------------------------------------------------------------
 RAWICallBack    proc    near
@@ -1942,21 +1943,20 @@ rv31_NotBusy:
         or      cs:CallBackStruc.CallBackFlags[bx],128  ;mark it as busy.
         mov     bx,sp
         mov     ax,ss:[bx+(2+2+2)+(2+2)]
-        and     ax,0000110011010101b
-        or      ax,0000000000000010b
-        mov     WORD PTR cs:[rv31_FlagsStore],ax
+        and     ah,00001100b               ; clear TF,IF,IOPL,NT
+        mov     WORD PTR cs:[rv31_FlagsStore+0],ax
         pop     dx
         pop     bx
         pop     ax
         ;
         ;Switch to new stack.
         ;
-        mov     WORD PTR cs:[rv31_tVCPI_SP+0],sp  ;store current stack.
-        mov     WORD PTR cs:[rv31_tVCPI_SP+2],ss
-        mov     ss,cs:RawStackReal      ;_cwRaw   ;use new stack.
+        mov     w cs:[rv31_tVCPI_SP+0],sp  ;store current stack.
+        mov     w cs:[rv31_tVCPI_SP+2],ss
+        mov     ss,cs:RawStackReal         ;use new stack.
         mov     esp,cs:RawStackPos
         sub     cs:RawStackPos,RawStackDif
-        push    cs:[rv31_tVCPI_SP]      ;put old stack onto new one.
+        push    cs:[rv31_tVCPI_SP]         ;put old stack onto new one.
         ;
         ;Preserve registers.
         ;
@@ -1994,10 +1994,6 @@ rv31_NotBusy:
         mov     bl,CallBackStruc.CallBackNum[bx]        ;get int number.
         push    ax
         push    ebx
-        push    ds
-        mov     ax,KernalDS
-        mov     ds,ax
-        assume ds:GROUP16
         movzx   eax,bl
         mov     ebx,eax
         shl     ebx,1           ;*2
@@ -2009,10 +2005,10 @@ rv31_NotBusy:
         mov     ax,DpmiEmuDS
         mov     ds,ax
         assume ds:_cwDPMIEMU
-        mov     edx,[ebx]               ;get offset.
-        mov     cx,4[ebx]               ;get segment selector.
+        mov     edx,[ebx+0]             ;get offset.
+        mov     cx,[ebx+4]              ;get segment selector.
         pop     ds
-        pop     ds
+        assume ds:GROUP16
         pop     ebx
         pop     ax
         test    BYTE PTR RawSystemFlags,1
@@ -2028,7 +2024,7 @@ rv31_Use16Bit12:
         ;Retrieve register values.
         ;
         mov     ax,KernalZero
-        mov     fs,ax
+        mov     es,ax
         movzx   esi,w[rv31_tVCPI_SP+2]
         shl     esi,4
         movzx   eax,w[rv31_tVCPI_SP+0]
@@ -2037,13 +2033,13 @@ rv31_Use16Bit12:
         pop     eax
         shr     eax,16
         mov     w[rv31_FlagsStore+2],ax
-        mov     eax,fs:[esi+32]
-        mov     ebx,fs:[esi+28]
-        mov     ecx,fs:[esi+24]
-        mov     edx,fs:[esi+20]
-        mov     edi,fs:[esi+12]
-        mov     ebp,fs:[esi+8]
-        mov     esi,fs:[esi+16]
+        mov     eax,es:[esi+32]
+        mov     ebx,es:[esi+28]
+        mov     ecx,es:[esi+24]
+        mov     edx,es:[esi+20]
+        mov     edi,es:[esi+12]
+        mov     ebp,es:[esi+8]
+        mov     esi,es:[esi+16]
         push    [rv31_tVCPI_SP]
         push    [rv31_CallTab]
         push    ds
@@ -2088,7 +2084,7 @@ rv31_Use16Bit13:
         push    esi
         push    eax
         mov     ax,KernalZero
-        mov     fs,ax
+        mov     es,ax
         movzx   esi,w[rv31_tVCPI_SP+2]
         shl     esi,4
         movzx   eax,w[rv31_tVCPI_SP+0]
@@ -2097,25 +2093,25 @@ rv31_Use16Bit13:
         ;Set new register values.
         ;
         pop     eax
-        mov     fs:[esi+32],eax
-        mov     fs:[esi+28],ebx
-        mov     fs:[esi+24],ecx
-        mov     fs:[esi+20],edx
+        mov     es:[esi+32],eax
+        mov     es:[esi+28],ebx
+        mov     es:[esi+24],ecx
+        mov     es:[esi+20],edx
         pop     eax
-        mov     fs:[esi+16],eax
-        mov     fs:[esi+12],edi
-        mov     fs:[esi+8],ebp
+        mov     es:[esi+16],eax
+        mov     es:[esi+12],edi
+        mov     es:[esi+8],ebp
         ;
         ;Update flags.
         ;
-        movzx   eax,WORD PTR fs:[(2+2+2+2)+(4+4+4+4+4+4+4)+esi]
-        movzx   esi,WORD PTR fs:[(2+2+2+2)+(4+4+4+4+4+4+4)+(2)+esi]
+        movzx   eax,WORD PTR es:[(2+2+2+2)+(4+4+4+4+4+4+4)+esi]
+        movzx   esi,WORD PTR es:[(2+2+2+2)+(4+4+4+4+4+4+4)+(2)+esi]
         shl     esi,4
         add     esi,eax
         mov     ax,w[rv31_FlagsStore]
         and     ah,11111000b           ;clear TF, IF & DF
-        and     WORD PTR fs:[(2+2)+esi],0000011100000000b
-        or      fs:[(2+2)+esi],ax
+        and     WORD PTR es:[(2+2)+esi],0000011100000000b
+        or      es:[(2+2)+esi],ax
         ;
         mov     bx,[rv31_CallTab]      ;restore call back structure.
         and     CallBackStruc.CallBackFlags[bx],255-128 ;clear busy flag.
@@ -2131,6 +2127,7 @@ rv31_Use16Bit13:
         pop     fs
         pop     es
         pop     ds
+        assume ds:nothing
         pop     ebp
         pop     edi
         pop     esi
@@ -2138,10 +2135,8 @@ rv31_Use16Bit13:
         pop     ecx
         pop     ebx
         pop     eax
-        assume ds:nothing
         lss     sp,[esp]                ;restore original stack.
         add     cs:RawStackPos,RawStackDif
-        assume ds:GROUP16
         iret
 ;
 	align 4
@@ -2155,6 +2150,7 @@ rv31_zero        dd 0
 
 RAWICallBack    endp
 
+        assume ds:GROUP16
 
 ;-------------------------------------------------------------------------------
 ;

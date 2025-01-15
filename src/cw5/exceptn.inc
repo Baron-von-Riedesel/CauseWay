@@ -761,7 +761,7 @@ DebugSegmentDPMI proc near
         mov     ax,dx
         pop     dx
         pop     cx
-        sub     eax,DWORD PTR fs:[EPSP_Struc.EPSP_MemBase]  ;get offset within application.
+        sub     eax,fs:[EPSP_Struc.EPSP_MemBase]   ;get offset within application.
         mov     ebx,eax
 exc21_9:
         pop     fs
@@ -1464,10 +1464,10 @@ exc22_ssebp3:
         mov     fs,apiDSeg16
         assume fs:GROUP16
         mov     fs,fs:PSPSegment
-        assume fs:nothing
+        assume fs:_cwEnd   ; make assembler assume a 16-bit segment
         push    es
         pushad
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_Resource],0
+        cmp     fs:[EPSP_Struc.EPSP_Resource],0
         jz      exc22_r8
 
         mov     edx,offset ResHeader
@@ -1486,7 +1486,7 @@ exc22_ssebp3:
         assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 exc22_LookLoop:
         push    esi
         mov     ebp,ResNum              ;get number of entries.
@@ -1499,7 +1499,7 @@ exc22_r0:
         cmp     BYTE PTR es:[edi],Res_SEL
         jnz     exc22_r1
 exc22_r1_0:
-        mov     ax,WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem]
+        mov     ax,fs:[EPSP_Struc.EPSP_DPMIMem]
         cmp     WORD PTR es:[esi],ax
         jz      exc22_r1
 
@@ -1558,7 +1558,7 @@ exc22_Use32It:
         mov     ebx,edx
         pushad
 
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 exc22_s2:
         push    esi
         mov     ebp,ResNum              ;get number of entries.
@@ -1572,10 +1572,10 @@ exc22_s0:
         mov     eax,fs:[EPSP_Struc.EPSP_INTMem]
         cmp     es:[esi],eax
         jz      exc22_s1
-        cmp     WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem],0
+        cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmi
         pushad
-        mov     bx,WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem]
+        mov     bx,fs:[EPSP_Struc.EPSP_DPMIMem]
         Sys     GetSelDet32
         cmp     es:[esi],edx
         popad
@@ -1600,9 +1600,9 @@ exc22_s1:
         ;
         ;Have a look in the MCB list.
         ;
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead],0
+        cmp     fs:[EPSP_Struc.EPSP_mcbHead],0
         jz      exc22_nomcbsel
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead]
+        mov     esi,fs:[EPSP_Struc.EPSP_mcbHead]
 exc22_mcbs0:
         mov     edi,esi
         add     esi,MCBCHUNKLEN
@@ -1708,7 +1708,7 @@ exc22_r1:
         mov     ebx,[exc22_Handle]
         int     21h
         ;
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:RealSegment
@@ -1726,10 +1726,10 @@ exc22_m0:
         mov     eax,fs:[EPSP_Struc.EPSP_INTMem]
         cmp     es:[esi],eax
         jz      exc22_m1
-        cmp     WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem],0
+        cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmimem
         pushad
-        mov     bx,WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem]
+        mov     bx,fs:[EPSP_Struc.EPSP_DPMIMem]
         Sys     GetSelDet32
         cmp     es:[esi],edx
         popad
@@ -1740,10 +1740,10 @@ exc22_nodpmimem:
         ;Check if this is an MCB block.
         ;
         push    edi
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead],0
+        cmp     fs:[EPSP_Struc.EPSP_mcbHead],0
         jz      exc22_MEM
         mov     ebx,es:[esi]
-        mov     edi,DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead]
+        mov     edi,fs:[EPSP_Struc.EPSP_mcbHead]
 exc22_mcbmc0:
         cmp     ebx,edi
         jz      exc22_mcbmc1
@@ -1817,9 +1817,9 @@ exc22_m1:
         ;
         ;Now print MCB controlled blocks.
         ;
-        cmp     DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead],0
+        cmp     fs:[EPSP_Struc.EPSP_mcbHead],0
         jz      exc22_nomcbdis
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_mcbHead]
+        mov     esi,fs:[EPSP_Struc.EPSP_mcbHead]
 exc22_mcb0:
         mov     edi,esi
         add     esi,MCBCHUNKLEN
@@ -1831,10 +1831,10 @@ exc22_mcb1:
         sub     eax,MCBLEN
         cmp     esi,eax
         jz      exc22_mcb2
-        cmp     WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem],0
+        cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmimemhere
         pushad
-        mov     bx,WORD PTR fs:[EPSP_Struc.EPSP_DPMIMem]
+        mov     bx,fs:[EPSP_Struc.EPSP_DPMIMem]
         Sys     GetSelDet32
         sub     edx,MCBLEN
         cmp     esi,edx
@@ -1928,7 +1928,7 @@ exc22_nomcbdis:
         mov     ebx,[exc22_Handle]
         int     21h
         ;
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 exc22_lLookLoop:
         push    esi
         mov     ebp,ResNum              ;get number of entries.
@@ -1984,7 +1984,7 @@ exc22_l1:
         mov     ebx,[exc22_Handle]
         int     21h
         ;
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 exc22_dmLookLoop:
         push    esi
         mov     ebp,ResNum              ;get number of entries.
@@ -2228,7 +2228,7 @@ exc22_ri1:
         mov     ebx,[exc22_Handle]
         int     21h
         ;
-        mov     esi,DWORD PTR fs:[EPSP_Struc.EPSP_Resource]
+        mov     esi,fs:[EPSP_Struc.EPSP_Resource]
 exc22_cbLookLoop:
         push    esi
         mov     ebp,ResNum              ;get number of entries.

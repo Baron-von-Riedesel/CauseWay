@@ -929,7 +929,7 @@ int2121_1:
         cmp     WORD PTR es:[ebx],0             ;got an environment?
         jnz     int2121_Ef10
 int2121_2:
-        mov     ds,WORD PTR fs:[PSP_Struc.PSP_Environment]      ;Get current environment.
+        mov     ds,fs:[PSP_Struc.PSP_Environment]      ;Get current environment.
         jmp     int2121_Ef12
 int2121_Ef10:
         mov     ds,es:[ebx]             ;get environment segment.
@@ -1070,6 +1070,8 @@ Int21hExecFile  endp
 ;Function 4E emulation.
 ;
 Int21hFindFirstFile proc near
+
+        assume fs:_cwEnd
 
         mov     es,cs:apiDSeg16        ;point to new source.
         mov     edi,offset DtaBuffer    ;use the real DTA buffer.
@@ -1397,7 +1399,7 @@ if 0
         mov     al,-1
         rep     stosb           ;initialise the table first.
         mov     edi,offset PSP_HandleList
-        lds     si,DWORD PTR fs:[PSP_Struc.PSP_HandlePtr]       ;point to current list.
+        lds     si,fs:[PSP_Struc.PSP_HandlePtr]       ;point to current list.
         movzx   esi,si
         mov     ecx,20
         rep     movsb           ;copy 1st 20 entries.
@@ -1479,7 +1481,7 @@ int2129_shb0:
         rep     stosb           ;initialise table to nothing.
         xor     edi,edi
         push    ds
-        lds     si,DWORD PTR fs:[PSP_Struc.PSP_HandlePtr]
+        lds     si,fs:[PSP_Struc.PSP_HandlePtr]
         movzx   esi,si
         mov     cx,WORD PTR fs:[PSP_Struc.PSP_Handles]
         movzx   ecx,cx
