@@ -26,7 +26,7 @@ endif
 
 	.const
 
-ifdef DEBUG
+ifdef _DEBUG
 @dbgmsg macro text:vararg
 local sym
 	.const
@@ -2218,26 +2218,7 @@ NewCauseWay	proc	near
 ;
 ;Write new CauseWay loader to a 3P file.
 ;
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET debug1
-	mov	ecx,SIZEOF debug1
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	jmp	med1
-debug1	DB	'In NewCauseWay',13,10
-med1:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
-ENDIF
+	@dbgmsg <"NewCauseWay enter",13,10>
 	mov	bx,EXEHandle
 	call	CloseFile
 	mov	edx,offset EXEFileName
@@ -2342,26 +2323,7 @@ medexe5:
 	cmp	eax,ebx		;did we write enough?
 	jnz	@@9
 
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET debug3
-	mov	ecx,SIZEOF debug3
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	jmp	med3
-debug3	DB	'At memory release',13,10
-med3:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
-ENDIF
+	@dbgmsg <"At memory release",13,10>
 
 ;	sys	RelMemNear		;release memory now.
 	call	RelMemLinear32
@@ -2422,26 +2384,7 @@ medexe6:
 	shl	ebx,16
 	mov	bx,ax
 
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET debug4
-	mov	ecx,SIZEOF debug4
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	jmp	med4
-debug4	DB	'At get memory',13,10
-med4:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
-ENDIF
+	@dbgmsg <'At get memory',13,10>
 
 ;	push	ebx
 ;	sys	GetMemNear		;get some memory for it.
@@ -2479,26 +2422,6 @@ ENDIF
 ;	sys	RelMemNear		;release the memory.
 	call	RelMemLinear32
 
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET debug5
-	mov	ecx,SIZEOF debug5
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	jmp	med5
-debug5	DB	'At file close',13,10
-med5:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
-ENDIF
 
 	;
 	;Close the files.
@@ -2514,28 +2437,12 @@ ENDIF
 	mov	SHELLHandle,0
 	;
 
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET EXEFileName
-med6a:
-	cmp	BYTE PTR [edx],0
-	je	med6
-	mov	ecx,1
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	inc	edx
-	jmp	med6a
-med6:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
+IFDEF _DEBUG
+	@dbgmsg <"File:">
+	mov edx,OFFSET EXEFileName
+	mov ah,9
+	int 21h
+	@dbgmsg <13,10>
 ENDIF
 
 	;Delete origional .EXE
@@ -2547,26 +2454,7 @@ ENDIF
 	jc	@@9
 	;
 
-IFDEF DEBUG
-	push	eax
-	push	ebx
-	push	ecx
-	push	edx
-	push	ds
-	mov	edx,OFFSET debug2
-	mov	ecx,SIZEOF debug2
-	mov	ebx,1
-	mov	ah,40h
-	int	21h
-	jmp	med2
-debug2	DB	'At rename',13,10
-med2:
-	pop	ds
-	pop	edx
-	pop	ecx
-	pop	ebx
-	pop	eax
-ENDIF
+	@dbgmsg <'At rename',13,10>
 
 	;now rename it.
 	;

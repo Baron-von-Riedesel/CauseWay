@@ -2,10 +2,6 @@
 TRAPINT00 equ 1		;1=DPMI host requires to trap int 00 instead of exc 00
 EXC16INCS16 equ 1	;1=DPMI host requires 16-bit exceptions be handled by 16-bit code (Win9x!)
 
-;-------------------------------------------------------------------------
-ExcepSystemFlags dd ?
-;
-
 EXCFRY  struc
 _ebp    dd ?
 _edi    dd ?
@@ -19,6 +15,12 @@ _fs     dd ?
 _es     dd ?
 _ds     dd ?
 EXCFRY  ends
+
+_DATA32 segment
+
+;-------------------------------------------------------------------------
+ExcepSystemFlags dd ?
+;
 
 DebugBuffer EXCFRY <>
 ;--- followed by an IRET32 frame
@@ -46,8 +48,6 @@ DebugExceptionCode dd 0
 DebugExceptionIndex dw 0
 
 NUMEXC equ 16
-
-_DATA32 segment
 
 	align 4
 OldExceptions df NUMEXC dup (0)
@@ -216,7 +216,6 @@ DumpAsciiFlag   DB      ?
 ExcBitStr dw 01110001111110001b
 
 _DATA32 ends
-
 
 ;-------------------------------------------------------------------------
 
@@ -508,7 +507,7 @@ DPMIExcPatch    proc    far
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     ebp, esp
-        test    BYTE PTR cs:ExcepSystemFlags,1
+        test    BYTE PTR ExcepSystemFlags,1
         jz      @F
         movzx   ebp, bp
 @@:
@@ -526,9 +525,9 @@ DPMIExcPatch    proc    far
         mov     ds,apiDSeg16
         assume ds:GROUP16
         mov     LinearAddressCheck,0
-        test    BYTE PTR cs:ExcepSystemFlags,1
         pop     ds
         assume ds:GROUP32
+        test    BYTE PTR ExcepSystemFlags,1
         pop     ebp
         pop     edi
         pop     esi
@@ -554,9 +553,8 @@ exc20_Not14Special:
         jz      exc20_ok
         mov     esi,[ebp].STKFRAME.wExc
         add     esi,esi        ; esi = esi*6
-        mov     eax,esi
-        add     esi,esi
-        add     esi,eax
+        lea     esi,[esi*2+esi]
+;--- table OldExceptions[] holds old vectors for exceptions 0-15 only!
         add     esi,offset OldExceptions
         mov     eax,[esi+0]
         mov     d[InExcepJMP+0],eax
@@ -772,6 +770,7 @@ DebugSegmentDPMI endp
 
         assume ds:GROUP32
 
+_DATA32 segment
 stdregdump label dword
     dd offset DebugCR0,         offset DebugCR0t
     dd offset DebugCR2,         offset DebugCR2t
@@ -793,6 +792,8 @@ segregdump label dword
     dd offset DebugBuffer._fs,  offset DebugFSt, offset DebugFSAppt
     dd offset DebugBuffer._gs,  offset DebugGSt, offset DebugGSAppt
     dd offset DebugSS,          offset DebugSSt, offset DebugSSAppt
+_DATA32 ends
+
 ;-------------------------------------------------------------------------
 ;
 ;Do a debug dump. Very rough but it works for now....

@@ -147,18 +147,18 @@ int333_SwapEvent:
         push    edi
         push    ebp
         push    ds
-        assume ds:nothing
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         cmp     Int33hUserOK,0  ;handler installed?
         jnz     int333_se0
         ;
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:GROUP32
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:GROUP32
+;        pop     ds
         jz      int333_se1
         xchg    dx,w[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+2]
@@ -195,12 +195,13 @@ int333_se2:
         jmp     int333_se9
         ;
 int333_se0:
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:GROUP32
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:GROUP32
+;        pop     ds
         jz      int333_se3
         xchg    dx,w[Int33hUserCode+0]
         mov     ax,w[Int33hUserCode+2]
@@ -265,12 +266,13 @@ int333_Reset:
         assume ds:GROUP32
         mov     Int33hUserOK,0
         mov     d[Int33hUserCode+0],offset Int33hDummy
-        push    ds
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:GROUP32
-        pop     ds
+;        push    ds
+;        mov     ds,apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:GROUP32
+;        pop     ds
         jz      int333_r32
         mov     w[Int33hUserCode+2],cs
         jmp     int333_r0
@@ -358,7 +360,6 @@ int333_SetEvent:
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         test    BYTE PTR SystemFlags,1
-        assume ds:nothing
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     Int33hUserOK,0          ;disable old handler.
@@ -602,12 +603,13 @@ int333_Done:
         push    ebx
         pushf
         pop     ax                      ;get new flags.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int333_Use32Bit8
         mov     bx,sp
         mov     bx,ss:[bx+(4+4)+(2+2)]          ;get original flags.
@@ -618,12 +620,13 @@ int333_Use16Bit8:
         and     bx,0000011000000000b            ;retain IF & DF.
         and     ah,11111001b                    ;lose IF & DF.
         or      ax,bx                           ;get old IF.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int333_Use32Bit9
         mov     bx,sp
         mov     ss:[bx+(4+4)+(2+2)],ax          ;modify stack flags.
@@ -633,12 +636,13 @@ int333_Use32Bit9:
 int333_Use16Bit9:
         pop     ebx
         pop     eax
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int333_Use32Bit10
         iret
 int333_Use32Bit10:
@@ -659,12 +663,13 @@ Int33h  endp
 
 MouseEvent      proc    far
 
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int334_start32
         movzx esi, si
         movzx edi, di
@@ -732,12 +737,13 @@ MouseEvent      endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Int33hDummy     proc    near
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int335_32Bit
         retw
 int335_32Bit:

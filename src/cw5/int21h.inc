@@ -2,29 +2,7 @@
 ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 ;
 
-_DATA32 segment
-
-	align 4
-
-;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-OldInt21h       df 0
-Int21hSystemFlags dd ?
-;
-Int21hCountryTab RealRegsStruc <?>
-;
-Int21hDOS4GFlag db 0
-;
-DOS16DummySegment       DW      0
-
-_DATA32 ends
-;------------------------------------------------------------------------------
-;
-;DTA size for find first/next seems to be a little volatile so I'll use an EQU
-;here incase it needs to change again.
-;
-DTASize equ     44-1
-
-;------------------------------------------------------------------------------
+;--- macros
 ;
 
 Int21h_repmovs  macro
@@ -34,7 +12,7 @@ Int21h_repmovs  macro
         pop     ecx
         and     ecx,3
         rep     movsb
-        endm
+endm
 
 
 DOS4GExtend     macro p1
@@ -43,7 +21,109 @@ DOS4GExtend     macro p1
         jz      __0
         mov     p1,0
 __0:
-        endm
+endm
+
+_DATA32 segment
+
+	align 4
+
+OldInt21h       df 0
+	align 4
+Int21hCountryTab RealRegsStruc <?>
+DOS16DummySegment       DW      0
+Int21hDOS4GFlag db 0
+
+	align 4
+;------------------------------------------------------------------------------
+;
+;The jump table used to pass control to the right routine.
+;
+Int21hTable     label dword
+        DD 08h - ( $ - Int21hTable ) / 4 dup (0)
+        dd Int21hNotOurs        ;08
+        dd Int21hPrintString    ;09
+        dd Int21hGetString      ;0A
+        DD 0Fh - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hInvalid        ;0F
+        DD 18h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
+        DD 1Ah - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hSetDTA         ;1A
+        DD 20h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hNotOurs        ;20
+        DD 25h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
+
+        dd Int21hSetVect        ;25
+        DD 2Ah - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
+        DD 2Fh - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hGetDTA         ;2F
+        DD 35h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hGetVect        ;35
+        DD 38h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hGetSetCountry  ;38
+        dd Int21hCreateDIR      ;39
+        dd Int21hCreateDIR      ;3A
+        dd Int21hCreateDIR      ;3B
+        dd Int21hCreateFile     ;3C
+        dd Int21hOpenFile       ;3D
+        dd Int21hNotOurs        ;3E
+        dd Int21hReadFile       ;3F
+
+        dd Int21hWriteFile      ;40
+        dd Int21hOpenFile       ;41
+        dd Int21hNotOurs        ;42
+        dd Int21hCreateFile     ;43
+        dd Int21hIOCTLDispatch  ;44
+        DD 47h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hGetCurDir      ;47
+
+        dd Int21hAllocMem       ;48
+        dd Int21hRelMem         ;49
+        dd Int21hResMem         ;4A
+        dd Int21hExecFile       ;4B
+        DD 4Eh - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hFindFirstFile  ;4E
+        dd Int21hFindNextFile   ;4F
+        dd Int21hSetPSP         ;50
+        dd Int21hGetPSP         ;51
+        DD 56h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hRenameFile     ;56
+        dd Int21hNotOurs        ;57
+
+        dd Int21hNotOurs        ;58
+        dd Int21hGetErrorInfo   ;59
+        dd Int21hCreateTemp     ;5A
+        dd Int21hCreateFile     ;5B
+        DD 5Eh - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hMSNet          ;5E
+        dd Int21hNotOurs        ;5F
+        DD 62h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hGetPSP         ;62
+        DD 67h - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hSetHandles     ;67
+        DD 6Ch - ( $ - Int21hTable ) / 4 dup (0)
+
+        dd Int21hExtendOpen     ;6C
+        DD 70h  - ( $ - Int21hTable ) / 4 dup (0)
+_DATA32 ends
+
+;------------------------------------------------------------------------------
+;
+;DTA size for find first/next seems to be a little volatile so I'll use an EQU
+;here incase it needs to change again.
+;
+DTASize equ     44-1
 
         assume ds:nothing, es:nothing
 
@@ -65,19 +145,22 @@ __0:
 ;Media ID byte pointer of Get drive default data not yet implemented.
 ;
 Int21h  proc    near
+
         push    ds
         push    es
         push    fs
         push    gs
         pushad          ;/
-        push    eax
+        mov     ebp,esp
         movzx   eax,ah          ;Need extended register version.
-        cmp     cs:[Int21hTable+eax*4],offset Int21hNotOurs
+        cmp     al,-1
+        jz      Int21hDOS4GTest
+        cmp     al,70h
+        jae     Int21hNotOurs
+        cmp     cs:[Int21hTable+eax*4],0
         jz      Int21hNotOurs
-        pop     eax
-        mov     ebp,esp         ;Make registers addressable.
         mov     esi,Int_Flags32
-        test    BYTE PTR cs:Int21hSystemFlags,1 ;/
+        test    BYTE PTR cs:apiSystemFlags,1 ;/
         jz      int211_32Bit0           ;/
         movzx   ebp,bp          ;/
         mov     esi,Int_Flags16
@@ -85,49 +168,141 @@ int211_32Bit0:
         add     esi,ebp
         and     BYTE PTR ss:[esi],not 1
         cld                     ;Default direction.
+if 0
         test    WORD PTR ss:[esi],1 shl 9       ;Were interrupts enabled?
         jz      int211_NoInts
         sti                     ;Turn interrupts back on.
 int211_NoInts:
+endif
         mov     fs,cs:apiDSeg16
         assume fs:GROUP16
         mov     fs,fs:PSPSegment        ;Point to PSP.
         assume fs:nothing
-        movzx   eax,ah          ;Need extended register version.
         call    cs:[Int21hTable+eax*4]        ;Pass control to handler.
-        popad                   ;\
+int21_backtocaller::
+        popad
         pop     gs
         pop     fs
         pop     es
         pop     ds
-        test    BYTE PTR cs:Int21hSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,1
         jz      int211_32Bit1
         iret
 int211_32Bit1:
         iretd                   ;Return to caller.
 Int21h  endp
 
+;------------------------------------------------------------------------------
 
+Int21hInvalid   proc    near
+;       jmp     Int21hNotOurs
+Int21hInvalid   endp ; fall thru
 ;------------------------------------------------------------------------------
 ;
 ;Handler for functions that need to be passed to old DOS interrupt.
 ;
 Int21hNotOurs   proc    near
-        pop     eax             ;Lose return address.
+        mov     esp,ebp
         popad                   ;Restore registers.
         pop     gs
         pop     fs
         pop     es
         pop     ds
-;       cli
         jmp     cs:[OldInt21h]  ;pass it onto previous handler.
 Int21hNotOurs   endp
 
-
 ;------------------------------------------------------------------------------
-Int21hInvalid   proc    near
-        jmp     Int21hNotOurs
-Int21hInvalid   endp
+;
+;Function FF, DOS4G detection.
+;
+Int21hDOS4GTest proc near
+;
+;This check only allowed for 32-bit programs which is what DOS4G uses.
+;
+        test    BYTE PTR cs:apiSystemFlags,1
+        jnz     Int21hNotOurs
+;
+;Check register setup.
+;
+        cmp     b[ebp+Int_AL],0 ;AX=0FF00h
+        jnz     Int21hNotOurs
+        cmp     w[ebp+Int_DX],78h       ;DX=0078h
+        jnz     Int21hNotOurs
+
+        push    offset int21_backtocaller
+
+; changed for dummy segment modification
+;       mov     w[ebp+Int_GS],ds
+
+        mov     d[ebp+Int_EAX],4734ffffh
+
+;
+;Flag DOS4G mode for INT handling.
+;
+        push    ds
+        push    eax
+        push    ebx
+        push    ecx
+;       mov     ecx,ds                  ; save application DS value
+        xor     ecx,ecx
+        mov     cx,ds                   ; save application DS value
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
+
+; give Watcom a dummy segment for it to stuff silly __D16SegInfo
+; values in without trashing things, MED 12/12/95
+        mov     ax,DOS16DummySegment
+        test    ax,ax
+        jne     setgs
+        push    ecx                     ; save application DS value
+
+; MED 07/15/97
+DUMMYSEGMENTSIZE        EQU     48h     ; must be multiple of four
+;       mov     ecx,44h                 ; dummy segment size
+        mov     ecx,DUMMYSEGMENTSIZE
+
+        Sys     GetMem32                ; allocate the memory
+        jnc     zerodummy               ; no error allocating memory
+        pop     ebx
+        push    ebx                     ; use application DS value if can't create dummy value
+        jmp     savedummy
+
+; MED 07/15/97, zero out dummy segment
+zerodummy:
+        push    edx
+        push    ds
+        mov     ds,bx
+        mov     ecx,DUMMYSEGMENTSIZE-4
+
+dumloop:
+        mov     DWORD PTR ds:[ecx],0
+        sub     ecx,4
+        jns     dumloop
+        pop     ds
+        pop     edx
+
+savedummy:
+        add     esp,4                   ; throw away application DS value
+        mov     DOS16DummySegment,bx
+        mov     eax,ebx                 ; allocated memory or application DS selector to put in GS
+
+setgs:
+        mov     WORD PTR [ebp+Int_GS],ax
+
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        or      DOS4GFlag,-1
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
+        or      Int21hDOS4GFlag,-1
+        pop     ecx
+        pop     ebx
+        pop     eax
+        pop     ds
+        assume ds:nothing
+;
+        ret
+Int21hDOS4GTest endp
 
 
 ;------------------------------------------------------------------------------
@@ -279,7 +454,7 @@ Int21hGetVect   endp
 ;Function 38 emulation.
 ;
 Int21hGetSetCountry proc near
-        test    BYTE PTR cs:Int21hSystemFlags,1 ;16 or 32-bit -1 check?
+        test    BYTE PTR cs:apiSystemFlags,1 ;16 or 32-bit -1 check?
         jz      int2110_32Bit0
         cmp     dx,-1           ;Setting code?
         jmp     int2110_ExitCheck               ;pass to old handler?
@@ -805,7 +980,7 @@ int2121_OK:
         lds     esi,fword ptr [ebx+4+2] ; load cmdline into ds:esi
         jmp     int2121_Ef4
 int2121_0:
-        test    BYTE PTR cs:Int21hSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,1
         jz      int2121_Ef3
         movzx   ebx,bx
         movzx   esi,w[ebx+2]            ;Get command line offset.
@@ -832,12 +1007,13 @@ if 0
         push    edi
         push    ds
         push    es
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int2121_Ef6
         movzx   ebx,bx
         movzx   edi,WORD PTR es:[ebx+(2)+(2+2)] ;Get FCB 1 offset.
@@ -874,12 +1050,13 @@ int2121_Ef7:
         push    edi
         push    ds
         push    es
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int2121_Ef8
         movzx   ebx,bx
         movzx   edi,WORD PTR es:[ebx+(2)+(2+2)+(2+2)] ;Get FCB 2 offset.
@@ -1208,7 +1385,7 @@ Int21hRenameFile proc near
         mov     edi,offset Int21Buffer
         mov     es,cs:apiDSeg16
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
-        mov     es:RealRegsStruc.Real_EDX[edi],0
+        mov     w es:RealRegsStruc.Real_EDX[edi],0
         mov     es:RealRegsStruc.Real_EDI[edi],edx
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     es:RealRegsStruc.Real_ES[edi],ax
@@ -1250,7 +1427,7 @@ Int21hCreateTemp proc near
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_ECX]
         mov     es:RealRegsStruc.Real_ECX[edi],eax
-        mov     es:RealRegsStruc.Real_EDX[edi],0
+        mov     w es:RealRegsStruc.Real_EDX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1289,7 +1466,7 @@ Int21hMSNet     proc    near
         mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
-        mov     es:RealRegsStruc.Real_EDX[edi],0
+        mov     w es:RealRegsStruc.Real_EDX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1607,101 +1784,6 @@ Int21hExtendOpen endp
 
 ;------------------------------------------------------------------------------
 ;
-;Function FF, DOS4G detection.
-;
-Int21hDOS4GTest proc near
-;
-;This check only allowed for 32-bit programs which is what DOS4G uses.
-;
-        test    BYTE PTR cs:Int21hSystemFlags,1
-        jnz     Int21hNotOurs
-;
-;Check register setup.
-;
-        cmp     b[ebp+Int_AL],0 ;AX=0FF00h
-        jnz     Int21hNotOurs
-        cmp     w[ebp+Int_DX],78h       ;DX=0078h
-        jnz     Int21hNotOurs
-
-; changed for dummy segment modification
-;       mov     w[ebp+Int_GS],ds
-
-        mov     d[ebp+Int_EAX],4734ffffh
-
-;
-;Flag DOS4G mode for INT handling.
-;
-        push    ds
-        push    eax
-        push    ebx
-        push    ecx
-;       mov     ecx,ds                  ; save application DS value
-        xor     ecx,ecx
-        mov     cx,ds                   ; save application DS value
-
-        assume ds:nothing
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
-
-; give Watcom a dummy segment for it to stuff silly __D16SegInfo
-; values in without trashing things, MED 12/12/95
-        mov     ax,DOS16DummySegment
-        test    ax,ax
-        jne     setgs
-        push    ecx                     ; save application DS value
-
-; MED 07/15/97
-DUMMYSEGMENTSIZE        EQU     48h     ; must be multiple of four
-;       mov     ecx,44h                 ; dummy segment size
-        mov     ecx,DUMMYSEGMENTSIZE
-
-        Sys     GetMem32                ; allocate the memory
-        jnc     zerodummy               ; no error allocating memory
-        pop     ebx
-        push    ebx                     ; use application DS value if can't create dummy value
-        jmp     savedummy
-
-; MED 07/15/97, zero out dummy segment
-zerodummy:
-        push    edx
-        push    ds
-        mov     ds,bx
-        mov     ecx,DUMMYSEGMENTSIZE-4
-
-dumloop:
-        mov     DWORD PTR ds:[ecx],0
-        sub     ecx,4
-        jns     dumloop
-        pop     ds
-        pop     edx
-
-savedummy:
-        add     esp,4                   ; throw away application DS value
-        mov     DOS16DummySegment,bx
-        mov     eax,ebx                 ; allocated memory or application DS selector to put in GS
-
-setgs:
-        mov     WORD PTR [ebp+Int_GS],ax
-
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        or      DOS4GFlag,-1
-        assume ds:nothing
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
-        or      Int21hDOS4GFlag,-1
-        assume ds:nothing
-        pop     ecx
-        pop     ebx
-        pop     eax
-        pop     ds
-;
-        ret
-Int21hDOS4GTest endp
-
-
-;------------------------------------------------------------------------------
-;
 ;Get extended error information.
 ;
 Int21hGetErrorInfo proc near
@@ -1765,8 +1847,7 @@ Int21hGetErrorInfo endp
 ;
 Int21hExtend_DS_ESI proc near
         push    eax
-        xor     eax,eax
-        mov     ax,ds
+        mov     eax,ds
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int2133_32Bit
@@ -1793,8 +1874,7 @@ Int21hExtend_DS_ESI endp
 ;
 Int21hExtend_ES_EDI proc near
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int2134_32Bit
@@ -1839,7 +1919,7 @@ Int21hStringLen endp
 
 ;------------------------------------------------------------------------------
 Int21hAL2Carry  proc    near
-        test    BYTE PTR cs:Int21hSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,1
         jz      int2136_32Bit
         or      b[ebp+Int_Flags16],al
         ret
@@ -1847,94 +1927,6 @@ int2136_32Bit:
         or      b[ebp+Int_Flags32],al
         ret
 Int21hAL2Carry  endp
-
-
-	align 4
-;------------------------------------------------------------------------------
-;
-;The jump table used to pass control to the right routine.
-;
-Int21hTable     label dword
-        DD 08h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-        dd Int21hNotOurs        ;08
-        dd Int21hPrintString    ;09
-        dd Int21hGetString      ;0A
-        DD 0Fh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hInvalid        ;0F
-        DD 18h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
-        DD 1Ah - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hSetDTA         ;1A
-        DD 20h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hNotOurs        ;20
-        DD 25h - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
-
-        dd Int21hSetVect        ;25
-        DD 2Ah - ( $ - Int21hTable ) / 4 dup (Int21hInvalid)
-        DD 2Fh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hGetDTA         ;2F
-        DD 35h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hGetVect        ;35
-        DD 38h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hGetSetCountry  ;38
-        dd Int21hCreateDIR      ;39
-        dd Int21hCreateDIR      ;3A
-        dd Int21hCreateDIR      ;3B
-        dd Int21hCreateFile     ;3C
-        dd Int21hOpenFile       ;3D
-        dd Int21hNotOurs        ;3E
-        dd Int21hReadFile       ;3F
-
-        dd Int21hWriteFile      ;40
-        dd Int21hOpenFile       ;41
-        dd Int21hNotOurs        ;42
-        dd Int21hCreateFile     ;43
-        dd Int21hIOCTLDispatch  ;44
-        DD 47h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hGetCurDir      ;47
-
-        dd Int21hAllocMem       ;48
-        dd Int21hRelMem         ;49
-        dd Int21hResMem         ;4A
-        dd Int21hExecFile       ;4B
-        DD 4Eh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hFindFirstFile  ;4E
-        dd Int21hFindNextFile   ;4F
-        dd Int21hSetPSP         ;50
-        dd Int21hGetPSP         ;51
-        DD 56h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hRenameFile     ;56
-        dd Int21hNotOurs        ;57
-
-        dd Int21hNotOurs        ;58
-        dd Int21hGetErrorInfo   ;59
-        dd Int21hCreateTemp     ;5A
-        dd Int21hCreateFile     ;5B
-        DD 5Eh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hMSNet          ;5E
-        dd Int21hNotOurs        ;5F
-        DD 62h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hGetPSP         ;62
-        DD 67h - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hSetHandles     ;67
-        DD 6Ch - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hExtendOpen     ;6C
-        DD 70h  - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-        DD 0ffh - ( $ - Int21hTable ) / 4 dup (Int21hNotOurs)
-
-        dd Int21hDOS4GTest      ;FF
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -1962,16 +1954,13 @@ int2137_Use0:
         mov     bl,21h
         Sys     SetVect
         ;
-        mov     eax,es:SystemFlags
-        mov     Int21hSystemFlags,eax
-        ;
-        assume es:nothing
-        assume ds:nothing
         clc
 int2137_9:
         ret
 Int21hOpen      endp
 
+        assume es:nothing
+        assume ds:nothing
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;

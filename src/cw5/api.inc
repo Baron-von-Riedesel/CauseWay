@@ -2803,7 +2803,8 @@ _SetSelector    proc near
         cmp     ebx,-1
         jz      api61_ok
         add     ebx,4095
-        and     ebx,0FFFFFFFFh-4095
+;        and     ebx,0FFFFFFFFh-4095
+        and     bx,0F000h
         dec     ebx
         ;
 api61_ok:
@@ -3309,7 +3310,8 @@ cwAPI_GetMCBSize endp
 cwAPI_SetMCBSize proc near
         mov     ecx,[ebp+Int_ECX]
         add     ecx,4095
-        and     ecx,not 4095
+;        and     ecx,not 4095
+        and     cx,0f000h
         cmp     ecx,65536+1
         jc      api68_1
         stc
@@ -7412,6 +7414,7 @@ api90_meventnodum:
 ExecModule      endp
 
 
+if 0
 ;-------------------------------------------------------------------------
 ;
 ;Convert number into ASCII Hex version.
@@ -7454,7 +7457,7 @@ api91_0:
         ret
 HexTableA       db '0123456789ABCDEF'
 Bin2HexA        endp
-
+endif
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 LoseFileHandles proc near
@@ -7881,6 +7884,7 @@ Int24Handler    endp
         include loadle.inc
         include decode_c.inc
 
+_DATA32 segment
 ;
 ;Export table for base PSP. EXPORT's internal functions.
 ;
@@ -7947,6 +7951,7 @@ apiExport09     dd __cwAPI_ResMemLinear32
 apiExport10     dd __cwAPI_RelMemLinear32
         dw apiEXPORT_apiCode
         db 22,"__CWAPI_RELMEMLINEAR32"
+_DATA32 ends
 
 __cwAPI_CreatePSP proc far
         call    CreatePSP

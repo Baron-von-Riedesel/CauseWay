@@ -13,7 +13,7 @@ DEBUG=0
 all: Build\cw.exe Build\cwj.exe
 
 !if $(DEBUG)
-AOPTD = /DDEBUG
+AOPTD = /D_DEBUG
 !else
 AOPTD =
 !endif

@@ -115,21 +115,18 @@ int103_GetFont:
         push    fs
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg16
-        assume es:GROUP16
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         mov     bx,es:[edi].RealRegsStruc.Real_ES
         mov     ax,0002h
         int     31h
         jc      int103_9
-        mov     ebp,es:[edi].RealRegsStruc.Real_EBP
-        movzx   ebp,bp
+        movzx   ebp,w es:[edi].RealRegsStruc.Real_EBP
         mov     edx,es:[edi].RealRegsStruc.Real_EDX
         mov     ecx,es:[edi].RealRegsStruc.Real_ECX
-        mov     es,ax
+        mov     es,eax
 int103_9:
         pop     fs
         pop     ds
@@ -167,6 +164,7 @@ int103_Use32Bit503:
         movzx   esi,si
 int103_Use32Bit504:
         pop     eax
+
         push    ax
         push    bx
         push    cx
@@ -186,6 +184,7 @@ int103_Use32Bit504:
         pop     cx
         pop     bx
         pop     ax
+
         push    ax
         push    bx
         push    cx
@@ -195,22 +194,17 @@ int103_Use32Bit504:
         movzx   ecx,ax
         mov     esi,ebp         ;source buffer.
         push    es
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        mov     fs,PSPSegment
-        mov     edi,8
-        mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         pop     ds
-        assume ds:nothing
+        mov     edi,8
         cld
         rep     movsb           ;copy into transfer buffer.
         pop     dx
         pop     cx
         pop     bx
         pop     ax
+
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg16
-        assume es:GROUP16
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
@@ -220,7 +214,6 @@ int103_Use32Bit504:
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_DS,ax
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         mov     eax,es:[edi].RealRegsStruc.Real_EAX
@@ -529,7 +522,7 @@ int103_Use32Bit50:
         mov     es,cs:apiDSeg16
         assume es:GROUP16
         xor     edx,edx
-        mov     es:[edi].RealRegsStruc.Real_EAX,1002h
+        mov     w es:[edi].RealRegsStruc.Real_EAX,1002h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
@@ -578,7 +571,7 @@ int103_Use32Bit51:
         assume es:GROUP16
         mov     fs,es:PSPSegment
         xor     edx,edx
-        mov     es:[edi].RealRegsStruc.Real_EAX,1009h
+        mov     w es:[edi].RealRegsStruc.Real_EAX,1009h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
@@ -651,7 +644,7 @@ int103_Use32Bit52:
         mov     es,cs:apiDSeg16
         assume es:GROUP16
         xor     edx,edx
-        mov     es:[edi].RealRegsStruc.Real_EAX,1012h
+        mov     w es:[edi].RealRegsStruc.Real_EAX,1012h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
@@ -704,7 +697,7 @@ int103_Use32Bit53:
         assume es:GROUP16
         mov     fs,es:PSPSegment
         xor     edx,edx
-        mov     es:[edi].RealRegsStruc.Real_EAX,1017h
+        mov     w es:[edi].RealRegsStruc.Real_EAX,1017h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
@@ -1007,12 +1000,13 @@ int103_Done:
         push    ebx
         pushf
         pop     ax                      ;get new flags.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int103_Use32Bit8
         mov     bx,sp
         mov     bx,ss:[bx+(4+4)+(2+2)]          ;get original flags.
@@ -1023,12 +1017,13 @@ int103_Use16Bit8:
         and     bx,0000011000000000b            ;retain IF & DF.
         and     ah,11111001b                    ;lose IF & DF.
         or      ax,bx                           ;get old IF.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int103_Use32Bit9
         mov     bx,sp
         mov     ss:[bx+(4+4)+(2+2)],ax          ;modify stack flags.
@@ -1038,12 +1033,13 @@ int103_Use32Bit9:
 int103_Use16Bit9:
         pop     ebx
         pop     eax
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
-        assume ds:nothing
-        pop     ds
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
+;        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
+;        assume ds:nothing
+;        pop     ds
         jz      int103_Use32Bit10
         iret
         ;

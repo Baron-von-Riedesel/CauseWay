@@ -237,9 +237,9 @@ ExtensionList   label word
 ExtensionListEnd label word
 
 EXTENSION struct
-pInit   df ?            ;+4  init code.
-pExit   df ?            ;+10 remove code.
-wFlgs   dw ?            ;+20 installed flag.
+pInit   df ?            ;+0  init code.
+pExit   df ?            ;+6  remove code.
+wFlgs   dw ?            ;+12 installed flag.
 EXTENSION ends
 
 ;
@@ -3079,7 +3079,7 @@ endif
         mov     b[IErrorM00n+1],dl
 
         mov     ax,w[InitErrorList]     ;get the "CauseWay error nn : " string
-        mov     di,offset Int21Buffer
+        mov     edi,offset Int21Buffer
         push    ds
         pop     es
         mov     w RealRegsStruc.Real_EDX[di],ax
@@ -3152,10 +3152,10 @@ InitError       endp
 ;
 InitHardwareInts proc near
         .386
-        push    ds
+;        push    ds
         push    es
-        mov     ax,KernalDS
-        mov     ds,ax
+;        mov     ax,KernalDS
+;        mov     ds,ax
         assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,ax
@@ -3169,7 +3169,7 @@ InitHardwareInts proc near
         mov     cl,24h                  ;patch critical error.
         call    cw7_0
         pop     es
-        pop     ds
+;        pop     ds
         ret
         ;
 cw7_0:
@@ -3263,11 +3263,8 @@ nextchar:
         jnc     done
         sub     al,"0"
         movzx   eax,al
-        add     edx,edx
-        mov     ebx,edx
-        add     edx,edx
-        add     edx,edx
-        add     edx,ebx
+        shl     edx,1
+        lea     edx,[edx*4+edx]   ;*10
         add     edx,eax
         inc     si
         jmp     nextchar

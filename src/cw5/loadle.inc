@@ -418,7 +418,8 @@ load1_NoExports:
 load1_objup0:
         mov     eax,es:LE_OBJ.LE_OBJ_Size[esi]
         add     eax,4095
-        and     eax,not 4095            ;page align objects
+;        and     eax,not 4095            ;page align objects
+        and     ax,0f000h               ;page align objects
         mov     es:LE_OBJ.LE_OBJ_Size[esi],eax
         add     ebp,eax                 ;update program memory length.
         add     esi,size LE_OBJ
@@ -1949,7 +1950,8 @@ if 0
         mov     b[ErrorM11_0+2]," "
         mov     ecx,8
         mov     edi,offset ErrorM11_1
-        call    Bin2HexA
+;        call    Bin2HexA
+        call    Bin2Hex
 endif
         pop     ds
         assume ds:GROUP32

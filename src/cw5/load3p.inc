@@ -1381,7 +1381,8 @@ api89_file_error2:
         mov     b[ErrorM11_0+2]," "
         mov     ecx,8
         mov     edi,offset ErrorM11_1
-        call    Bin2HexA
+;        call    Bin2HexA
+        call    Bin2Hex
         pop     ds
         assume ds:GROUP32
         mov     ax,2

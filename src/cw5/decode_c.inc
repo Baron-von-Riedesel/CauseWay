@@ -159,7 +159,6 @@ DecodeCWC       proc    near
         push    es
         push    fs
         push    gs
-        assume ds:nothing
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     CWCStack,esp            ;Set for error exit.
@@ -177,8 +176,8 @@ DecodeCWC       proc    near
         mov     ecx,ds:[EPSP_Struc.EPSP_TransSize]
         mov     ax,ds:[EPSP_Struc.EPSP_TransProt]
         mov     bx,ds:[EPSP_Struc.EPSP_TransReal]
-        assume ds:GROUP32
         pop     ds
+        assume ds:GROUP32
         mov     cDiskBufferMax,ecx
         mov     cDiskBufferSeg,ax
         mov     cDiskBufferReal,bx
@@ -506,5 +505,4 @@ dec2_FB_2:
         popad
         xor     esi,esi
         ret
-        assume ds:GROUP32
 DecodeCWC       endp

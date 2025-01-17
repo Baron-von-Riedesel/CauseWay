@@ -10,8 +10,8 @@ Int_ESI	equ	4
 Int_SI	equ	4
 Int_EBP	equ	8
 Int_BP	equ	8
-Int_ESP	equ	12
-Int_SP	equ	12
+Int_ESP	equ	12  ;not used
+Int_SP	equ	12  ;not used
 Int_EBX	equ	16
 Int_BX	equ	16
 Int_BL	equ	16
@@ -32,10 +32,10 @@ Int_GS	equ	32
 Int_FS	equ	36
 Int_ES	equ	40
 Int_DS	equ	44
-Int_Off	equ	48
-Int_Seg16	equ	50
+Int_Off	equ	48  ;E/IP
+Int_Seg16	equ	50  ;CS
 Int_Seg32	equ	52
-Int_Flags16	equ	52
+Int_Flags16	equ	52  ;E/FL
 Int_Flags32	equ	56
 
 ;; MED 02/16/96

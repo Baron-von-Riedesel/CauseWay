@@ -1,19 +1,22 @@
-ALL: Build\cwc.exe
 
 # tool makeasm.com generates an assembly include file from a binary.
 # it's used to translate copystub.com and decstub.com; the include file are
 # included into cmc.asm.
 
 LINK = \msvc\bin\link
+ASM  = jwasm
+
+ALL: Build Build\cwc.exe
+
+Build:
+	@mkdir Build
 
 Build\cwc.exe:	Build\cwc.obj
-	@cd Build
-	@wl32 /q/m/cs/non cwc.obj,,,..\..\..\bin\cw.lib;
-	@cd ..
-	@..\..\bin\cwc /q /l245 Build\cwc.exe
+	@wl32 /q/m/cs/non Build\cwc.obj,Build\cwc.exe,Build\cwc.map,..\..\bin\cw.lib;
+#	@..\..\bin\cwc /q /l245 Build\cwc.exe
 
 Build\cwc.obj:	cwc.asm copystub.inc decstub.inc
-	@ml -c -nologo -Cx /DENGLISH=1 /Zf /Zd -FlBuild\ -FoBuild\ -I.. cwc.asm
+	@$(ASM) -c -nologo -FlBuild\ -FoBuild\ -I.. cwc.asm
 
 copystub.inc: copystub.asm
 	@ml -c -nologo -FlBuild\ -FoBuild\ copystub.asm

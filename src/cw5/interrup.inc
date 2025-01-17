@@ -38,19 +38,6 @@ _ds     dw ?,?
 EXCFRX  ends
 
 ExceptionRegs EXCFRX <>
-if 0
-ExceptionEBP    dd ?
-ExceptionEDI    dd ?
-ExceptionESI    dd ?
-ExceptionEDX    dd ?
-ExceptionECX    dd ?
-ExceptionEBX    dd ?
-ExceptionEAX    dd ?
-ExceptionGS     dw ?,?
-ExceptionFS     dw ?,?
-ExceptionES     dw ?,?
-ExceptionDS     dw ?,?
-endif
 ExceptionEIP    dd ?
 ExceptionCS     dw ?,?
 ExceptionEFL    dd ?
@@ -120,6 +107,33 @@ ExceptionHeaderEnd      label byte
 
 ExceptionIntBuffer RealRegsStruc <?>
 ;
+	align 4
+reg8dmptab label dword
+	dd offset ExceptionCR0      , offset ExceptionCR0t
+	dd offset ExceptionCR2      , offset ExceptionCR2t
+	dd offset ExceptionCR3      , offset ExceptionCR3t
+	dd offset ExceptionRegs._eax, offset ExceptionEAXt
+	dd offset ExceptionRegs._ebx, offset ExceptionEBXt
+	dd offset ExceptionRegs._ecx, offset ExceptionECXt
+	dd offset ExceptionRegs._edx, offset ExceptionEDXt
+	dd offset ExceptionRegs._esi, offset ExceptionESIt
+	dd offset ExceptionRegs._edi, offset ExceptionEDIt
+	dd offset ExceptionRegs._ebp, offset ExceptionEBPt
+	dd offset ExceptionESP      , offset ExceptionESPt
+	dd offset ExceptionEIP      , offset ExceptionEIPt
+	dd offset ExceptionEFL      , offset ExceptionEFLt
+	dd offset DpmiEmuSystemFlags, offset ExceptionSysFlags
+reg4dmptab label dword
+	dd offset ExceptionCode     , offset ExceptionENum
+	dd offset ExceptionTR       , offset ExceptionTRt
+	dd offset ExceptionCS       , offset ExceptionCSt
+	dd offset ExceptionRegs._ds , offset ExceptionDSt
+	dd offset ExceptionRegs._es , offset ExceptionESt
+	dd offset ExceptionRegs._fs , offset ExceptionFSt
+	dd offset ExceptionRegs._gs , offset ExceptionGSt
+	dd offset ExceptionSS       , offset ExceptionSSt
+endregdmptab label byte
+
 	align 4
 ;
 ;Generate the initial entry points for the interupt handlers.
@@ -316,7 +330,8 @@ Special14:
         ;
 inter8_Normal:
         movzx   ebx,bl
-        imul    ebx,6
+        shl     ebx,1
+        lea     ebx,[ebx*2+ebx]         ;*6
         add     ebx,offset ExceptionTable
         mov     edx,[ebx+0]             ;get offset.
         mov     cx,[ebx+4]              ;get segment selector.
@@ -529,13 +544,9 @@ RawSetEVector   proc    near
         mov     ax,DpmiEmuDS
         mov     ds,eax
         movzx   eax,bl
-        push    eax
         mov     ebx,eax
         shl     ebx,1           ;*2
-        mov     eax,ebx
-        shl     ebx,1           ;*4
-        add     ebx,eax         ;*6
-        pop     eax
+        lea     ebx,[ebx*2+ebx] ;*6
         add     ebx,offset ExceptionTable
         ;
         cmp     al,14           ;Special case for 14
@@ -1106,11 +1117,9 @@ inter15_i2Use0:
         and     ah,11111100b                 ;lose IF & TF
         push    eax                          ;int handler flags.
         ;
-        mov     eax,[ebx+4*4]   ;get INT index.
-        shl     eax,1
-        mov     esi,eax
-        shl     eax,1
-        add     esi,eax         ;*6 for index into table.
+        mov     esi,[ebx+4*4]   ;get INT index.
+        shl     esi,1
+        lea     esi,[esi*2+esi] ;*6 for index into table.
         add     esi,offset InterruptTable
         movzx   eax,word ptr cs:[esi+4] ;int handler CS
         push    eax
@@ -1222,10 +1231,8 @@ IntDispatch     proc    near
         assume ds:_cwDPMIEMU
         and     w[ExceptionFlags],1111110011111111b   ; clear IF & TF
         mov     esi,ExceptionIndex      ;Get the exception number.
-        add     esi,esi         ;*2
-        mov     eax,esi
-        add     esi,esi         ;*4
-        add     esi,eax         ;*6
+        shl     esi,1
+        lea     esi,[esi*2+esi] ;*6
         test    ExceptionFlags,ISEXCEPTION
         jnz     inter17_Excep
         ;
@@ -1677,97 +1684,27 @@ inter19_pl0:
         mov     ecx,2
         mov     edi,offset ExceptionINum
         call    Bin2HexE
-        mov     eax,ExceptionCode       ;high word undefined upto 486.
-        mov     ecx,4
-        mov     edi,offset ExceptionENum
-        call    Bin2HexE
+
         ;
-        movzx   eax,ExceptionTR
-        mov     ecx,4
-        mov     edi,offset ExceptionTRt
-        call    Bin2HexE
-        mov     eax,ExceptionCR0
-        mov     ecx,8
-        mov     edi,offset ExceptionCR0t
-        call    Bin2HexE
-        mov     eax,ExceptionCR2
-        mov     ecx,8
-        mov     edi,offset ExceptionCR2t
-        call    Bin2HexE
-        mov     eax,ExceptionCR3
-        mov     ecx,8
-        mov     edi,offset ExceptionCR3t
-        call    Bin2HexE
-        ;
-        mov     eax,ExceptionRegs._eax
-        mov     ecx,8
-        mov     edi,offset ExceptionEAXt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._ebx
-        mov     ecx,8
-        mov     edi,offset ExceptionEBXt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._ecx
-        mov     ecx,8
-        mov     edi,offset ExceptionECXt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._edx
-        mov     ecx,8
-        mov     edi,offset ExceptionEDXt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._esi
-        mov     ecx,8
-        mov     edi,offset ExceptionESIt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._edi
-        mov     ecx,8
-        mov     edi,offset ExceptionEDIt
-        call    Bin2HexE
-        mov     eax,ExceptionRegs._ebp
-        mov     ecx,8
-        mov     edi,offset ExceptionEBPt
-        call    Bin2HexE
-        mov     eax,ExceptionESP
-        mov     ecx,8
-        mov     edi,offset ExceptionESPt
-        call    Bin2HexE
-        mov     eax,ExceptionEIP
-        mov     ecx,8
-        mov     edi,offset ExceptionEIPt
-        call    Bin2HexE
-        mov     eax,ExceptionEFL
-        mov     ecx,8
-        mov     edi,offset ExceptionEFLt
-        call    Bin2HexE
-        ;
-        movzx   eax,ExceptionCS
-        mov     ecx,4
-        mov     edi,offset ExceptionCSt
-        call    Bin2HexE
-        movzx   eax,ExceptionRegs._ds
-        mov     ecx,4
-        mov     edi,offset ExceptionDSt
-        call    Bin2HexE
-        movzx   eax,ExceptionRegs._es
-        mov     ecx,4
-        mov     edi,offset ExceptionESt
-        call    Bin2HexE
-        movzx   eax,ExceptionRegs._fs
-        mov     ecx,4
-        mov     edi,offset ExceptionFSt
-        call    Bin2HexE
-        movzx   eax,ExceptionRegs._gs
-        mov     ecx,4
-        mov     edi,offset ExceptionGSt
-        call    Bin2HexE
-        movzx   eax,ExceptionSS
-        mov     ecx,4
-        mov     edi,offset ExceptionSSt
-        call    Bin2HexE
-        mov     edi,offset ExceptionSysFlags
-        mov     eax,DpmiEmuSystemFlags
-        mov     ecx,8
-        call    Bin2HexE
+		mov esi, offset reg8dmptab
+		mov ecx, 8
+nextreg:
+		mov eax, [esi+0]
+		mov eax, [eax]
+		mov edi, [esi+4]
+		call Bin2HexE
+		add esi, 2*4
+		cmp esi, offset reg4dmptab
+		jnz nextreg
+		mov ecx, 4
+nextsreg:
+		mov eax, [esi+0]
+		mov ax, [eax]
+		mov edi, [esi+4]
+		call Bin2HexE
+		add esi, 2*4
+		cmp esi, offset endregdmptab
+		jnz nextsreg
 ;
 ;Copy register details into the transfer buffer.
 ;
@@ -1819,4 +1756,5 @@ else
         jmp [TerminationHandler]
 endif
         assume ds:_cwDPMIEMU
+
 ExcepNN386      endp

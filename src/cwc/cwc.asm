@@ -1,4 +1,6 @@
 
+	option casemap:none
+
 	include cwlib.inc
 	include cw.inc
 	include strucs.inc
@@ -128,26 +130,32 @@ ErrorM10	db "Can't expand EXE's.",13,10,0
 CRText	db 13,10,0
 FileList	dd 0
 CursorPos	dd 0
+	.data?
 FileName	db 256 dup (?)
-TempFileName	db 256 dup (0)
+TempFileName	db 256 dup (?)
+	.data
 TempBase	db '\ckanetdy.ckq',0
 ;
-ExeSignature	db ?	;00 Identifier text.
-	db ?	;01 /
-ExeLength	dw ?	;02 Length of file MOD 512
-	dw ?	;04 Length of file in 512 byte blocks.
-ExeRelocNum	dw ?	;06 Number of relocation items.
-ExeHeaderSize	dw ?	;08 Length of header in 16 byte paragraphs.
-ExeMinAlloc	dw ?	;0A Minimum number of para's needed above program.
-ExeMaxAlloc	dw ?	;0C Maximum number of para's needed above program.
-ExeStackSeg	dw ?	;0E Segment displacement of stack module.
-ExeEntrySP	dw ?	;10 value for SP at entry.
-ExeCheckSum	dw ?	;12 Check sum...
-ExeEntryIP	dw ?	;14 Contents of IP at entry.
-ExeEntryCS	dw ?	;16 Segment displacement of CS at entry.
-ExeRelocFirst	dw ?	;18 First relocation item offset.
-ExeOverlayNum	db ?	;1A Overlay number.
-	db 20h-1bh dup (0)
+MZHdr struct
+Signature	dw ?	;00 Identifier text 'MZ', '3P'.
+_Length		dw ?	;02 Length of file MOD 512
+			dw ?	;04 Length of file in 512 byte blocks.
+RelocNum	dw ?	;06 Number of relocation items.
+HeaderSize	dw ?	;08 Length of header in 16 byte paragraphs.
+MinAlloc	dw ?	;0A Minimum number of para's needed above program.
+MaxAlloc	dw ?	;0C Maximum number of para's needed above program.
+StackSeg	dw ?	;0E Segment displacement of stack module.
+EntrySP		dw ?	;10 value for SP at entry.
+CheckSum	dw ?	;12 Check sum...
+EntryIP	dw ?	;14 Contents of IP at entry.
+EntryCS	dw ?	;16 Segment displacement of CS at entry.
+RelocFirst	dw ?	;18 First relocation item offset.
+OverlayNum	db ?	;1A Overlay number.
+MZHdr ends
+
+exehdr MZHdr <>
+	db 20h - sizeof MZHdr dup (0)
+
 ;
 NewHeader	NewHeaderStruc <>	;make space for a header.
 ;
@@ -172,10 +180,10 @@ _CD_SigInCount	dd ?
 _CD_OutCtrl	dd ?
 _CD_CtrlSize	dd 4
 _CD_CtrlBits	dd 32
-_CD_OutBuffer	db 32768 dup (0)
-	db 32768 dup (0)
-	db 32768 dup (0)
-	db 32768 dup (0)
+	.data?
+_CD_OutBuffer label byte
+	db 4*32768 dup (?)
+	.data
 _CD_FoundPos	dd ?
 _CD_FoundLen	dd ?
 _CD_LastLen	dd ?
@@ -220,14 +228,14 @@ CodePos	dd ?
 
 ;
 Copyright	db 13,10
-	db "CauseWay Compressor 3.01 Public Domain.",13,10
+	db "CauseWay Compressor 3.02 Public Domain.",13,10
 	db 0
 
 ;------------------------------------------------------------------------------
 ;
 ;Main entry point from default startup code.
 ;
-_Main	proc	near
+_Main	proc	near public
 	mov	ErrorStack,esp	;Store the stack so it can be
 	;			;retrieved for error processing.
 	;
@@ -382,7 +390,7 @@ _Main	proc	near
 	;
 	mov	ErrorNumber,10
 	cmp	OptionTable+"E",0
-	jnz	@@error
+	jnz	@@Error
 	mov	edx,offset FileName
 	call	EXEProcess
 	jmp	@@Next
@@ -391,7 +399,7 @@ _Main	proc	near
 	;
 	mov	ErrorNumber,10
 	cmp	OptionTable+"E",0
-	jnz	@@error
+	jnz	@@Error
 	mov	edx,offset FileName
 	call	Process3P
 	jc	@@Error
@@ -401,7 +409,7 @@ _Main	proc	near
 	;
 	mov	ErrorNumber,10
 	cmp	OptionTable+"E",0
-	jnz	@@error
+	jnz	@@Error
 	mov	edx,offset FileName
 	call	EXEand3PProcess
 	jc	@@Error
@@ -479,9 +487,9 @@ EXEProcess	proc	near
 ;Load the EXE into memory in a suitable order.
 ;
 	mov	ErrorNumber,7
-	mov	edx,offset ExeSignature
+	mov	edx,offset exehdr
 	mov	ebx,@@InHandle
-	mov	ecx,1bh
+	mov	ecx,sizeof MZHdr
 	call	ReadFile
 	jc	@@9
 	cmp	eax,ecx
@@ -489,7 +497,7 @@ EXEProcess	proc	near
 	;
 	;Get header size in bytes.
 	;
-	mov	bx,w[ExeHeaderSize]	;Work out header size.
+	mov	bx,exehdr.HeaderSize	;Work out header size.
 	xor	cx,cx		;/
 	add	bx,bx		;/
 	adc	cx,0		;/
@@ -505,10 +513,10 @@ EXEProcess	proc	near
 	;
 	;Get exe image size in bytes.
 	;
-	mov	ax,w[ExeLength+2]	;get length in 512 byte blocks
+	mov	ax,exehdr._Length+2	;get length in 512 byte blocks
 
 ; MED 01/17/96
-	cmp	WORD PTR [ExeLength],0
+	cmp	exehdr._Length,0
 	je	medexe2	; not rounded if no modulo
 
 	dec	ax		;lose 1 cos its rounded up
@@ -519,7 +527,7 @@ medexe2:
 	mov	dl,ah
 	mov	ah,al
 	mov	al,dh		;mult by 256=*512
-	add	ax,w[ExeLength]	;add length mod 512
+	add	ax,exehdr._Length	;add length mod 512
 	adc	dx,0		;add any carry to dx
 	shl	edx,16
 	mov	dx,ax
@@ -551,18 +559,18 @@ medexe2:
 	;
 	;Copy the header to the end of the image.
 	;
-	mov	esi,offset ExeSignature
+	mov	esi,offset exehdr
 	mov	edi,@@EXEMem
 	add	edi,@@ImageLen
-	mov	ecx,1bh
+	mov	ecx,sizeof MZHdr
 	rep	movsb
 	;
 	;Read the relocation table to the end of the header.
 	;
-	movzx	ecx,ExeRelocFirst
+	movzx	ecx,exehdr.RelocFirst
 	xor	al,al
 	call	SetFilePointer
-	movzx	ecx,ExeRelocNum
+	movzx	ecx,exehdr.RelocNum
 	shl	ecx,2		;4 bytes per entry.
 	mov	edx,@@EXEMem
 	add	edx,@@ImageLen
@@ -576,7 +584,7 @@ medexe2:
 ;Write a dummy EXE header and stub to the output file.
 ;
 	mov	ErrorNumber,8
-	mov	edx,offset ExeSignature
+	mov	edx,offset exehdr
 	mov	ebx,@@OutHandle
 	mov	ecx,20h		;has to be a multiple of 16
 	call	WriteFile
@@ -596,7 +604,7 @@ medexe2:
 ;Work out how much we've to compress for the status print routine plus init
 ;cursor position.
 ;
-	movzx	eax,ExeRelocNum
+	movzx	eax,exehdr.RelocNum
 	shl	eax,2
 	add	eax,@@ImageLen
 	add	eax,1bh
@@ -678,18 +686,18 @@ medexe2:
 	mov	eax,ecx
 	mov	edx,eax
 	and	eax,511
-	mov	w[EXELength],ax
+	mov	exehdr._Length,ax
 	shr	ecx,9
 	or	ax,ax
 	jz	@@0
 	inc	ecx
-@@0:	mov	w[EXELength+2],cx
-	mov	w[ExeHeaderSize],2
-	movzx	ecx,w[EXERelocNum]
-	mov	w[ExeRelocNum],0
-	mov	w[ExeEntryIP],0
-	mov	w[ExeEntryCS],0
-	mov	w[EXERelocFirst],20h
+@@0:	mov	exehdr._Length+2,cx
+	mov	exehdr.HeaderSize,2
+	movzx	ecx,exehdr.RelocNum
+	mov	exehdr.RelocNum,0
+	mov	exehdr.EntryIP,0
+	mov	exehdr.EntryCS,0
+	mov	exehdr.RelocFirst,20h
 	mov	eax,EXECopyStubLen
 	add	eax,15
 	and	eax,not 15
@@ -697,9 +705,9 @@ medexe2:
 	sub	eax,CWCStackSize
 
 	shr	eax,4
-	mov	w[ExeStackSeg],ax
-;	mov	w[ExeEntrySP],100h-10h
-	mov	w[ExeEntrySP],CWCStackSize-10h
+	mov	exehdr.StackSeg,ax
+;	mov	exehdr.EntrySP,100h-10h
+	mov	exehdr.EntrySP,CWCStackSize-10h
 
 	;
 	mov	eax,@@ImageLen	;origional image length.
@@ -719,7 +727,7 @@ medexe2:
 	mov	eax,edx
 @@1:	shr	eax,4
 	inc	eax
-	add	w[EXEMinAlloc],ax
+	add	exehdr.MinAlloc,ax
 	;
 	;Write new header.
 	;
@@ -728,7 +736,7 @@ medexe2:
 	xor	al,al
 	call	SetFilePointer
 	;
-	mov	edx,offset ExeSignature
+	mov	edx,offset exehdr
 	mov	ecx,20h
 	mov	ErrorNumber,7
 	call	WriteFile
@@ -762,7 +770,7 @@ medexe2:
 	mov	eax,@@CompLen
 	add	eax,15
 	and	eax,not 15
-	mov	ebx,size EXEDecStubLen
+	mov	ebx,EXEDecStubLen
 	add	ebx,15
 	and	ebx,not 15
 	add	eax,ebx
@@ -937,17 +945,17 @@ EXEand3PProcess proc near
 ;Copy stub loader into temp file.
 ;
 	mov	ErrorNumber,7
-	mov	edx,offset ExeSignature
+	mov	edx,offset exehdr
 	mov	ebx,@@InHandle
-	mov	ecx,1bh
+	mov	ecx,sizeof MZHdr
 	call	ReadFile
 	jc	@@9
 	cmp	eax,ecx
 	jnz	@@9
-	mov	ax,w[ExeLength+2]	;get length in 512 byte blocks
+	mov	ax,exehdr._Length+2	;get length in 512 byte blocks
 
 ; MED 01/17/96
-	cmp	WORD PTR [ExeLength],0
+	cmp	exehdr._Length,0
 	je	medexe3	; not rounded if no modulo
 
 	dec	ax		;lose 1 cos its rounded up
@@ -958,7 +966,7 @@ medexe3:
 	mov	dl,ah
 	mov	ah,al
 	mov	al,dh		;mult by 256=*512
-	add	ax,w[ExeLength]	;add length mod 512
+	add	ax,exehdr._Length	;add length mod 512
 	adc	dx,0		;add any carry to dx
 	mov	cx,ax
 	xchg	cx,dx
@@ -1971,7 +1979,7 @@ EncodeFile	proc	near
 	mov	_CD_OutCtrl,eax
 	mov	_CD_OutCount,eax
 	mov	eax,_CD_CtrlSize
-	mov	_CD_Outpos,eax
+	mov	_CD_OutPos,eax
 	mov	_CD_SigOutCount,eax
 	;
 	pushad
@@ -1998,7 +2006,7 @@ EncodeFile	proc	near
 	mov	CodeCount,0
 	mov	CodePos,0
 	mov	ecx,65536*(4+4)
-	call	malloc
+	call	Malloc
 	jc	@@code0
 	mov	CodeHeads,esi
 	mov	edi,esi
@@ -2007,7 +2015,7 @@ EncodeFile	proc	near
 	mov	ecx,_CD_RepMaxSize
 	add	ecx,8
 	shl	ecx,3
-	call	malloc
+	call	Malloc
 	jc	@@code0
 	mov	CodeFree,esi
 	mov	CodeFree+4,esi
@@ -2694,12 +2702,12 @@ _CD_Exit	proc	near
 	cmp	CodeHeads,0
 	jz	@@0
 	mov	esi,CodeHeads
-	call	free
+	call	Free
 	mov	CodeHeads,0
 @@0:	cmp	CodeFree+4,0
 	jz	@@1
 	mov	esi,CodeFree+4
-	call	free
+	call	Free
 	mov	CodeFree+4,0
 @@1:	popf
 	popad
@@ -2892,29 +2900,29 @@ FileErrorPrint	endp
 GetFileType	proc	near
 	call	OpenFile
 	jc	@@9
-	mov	edx,offset ExeSignature
+	mov	edx,offset exehdr
 	mov	ecx,2
 	call	ReadFile
 	jc	@@8
 	cmp	eax,ecx
 	jnz	@@8
 	mov	eax,1
-	cmp	w[ExeSignature],"P3"	;Stand alone 3P?
+	cmp	exehdr.Signature,"P3"	;Stand alone 3P?
 	jz	@@7
 	mov	eax,3
-	cmp	w[ExeSignature],"ZM"	;Real mode EXE?
+	cmp	exehdr.Signature,"ZM"	;Real mode EXE?
 	jnz	@@7
-	mov	ecx,1bh-2		;Better read the rest of the
-	mov	edx,offset ExeSignature+2	;header so we can look for a
-	call	ReadFile		;3P on the end.
+	mov	ecx,sizeof MZHdr - 2	;Better read the rest of the
+	mov	edx,offset exehdr+2		;header so we can look for a
+	call	ReadFile			;3P on the end.
 	jc	@@8
 	cmp	eax,ecx		;check we read enough.
 	jnz	@@8
 	;
-	mov	ax,w[ExeLength+2]	;get length in 512 byte blocks
+	mov	ax,exehdr._Length+2	;get length in 512 byte blocks
 
 ; MED 01/17/96
-	cmp	WORD PTR [ExeLength],0
+	cmp	exehdr._Length,0
 	je	medexe4	; not rounded if no modulo
 
 	dec	ax		;lose 1 cos its rounded up
@@ -2925,7 +2933,7 @@ medexe4:
 	mov	dl,ah
 	mov	ah,al
 	mov	al,dh		;mult by 256=*512
-	add	ax,w[ExeLength]	;add length mod 512
+	add	ax,exehdr._Length	;add length mod 512
 	adc	dx,0		;add any carry to dx
 	mov	cx,ax
 	xchg	cx,dx
@@ -2936,14 +2944,14 @@ medexe4:
 	call	SetFilePointer	;move to end of this chunk.
 	;
 	mov	ecx,2
-	mov	edx,offset EXESignature
+	mov	edx,offset exehdr
 	call	ReadFile		;read a header again.
 	jc	@@8
 	cmp	eax,ecx
 	jnz	@@0
 	;
 	mov	eax,2
-	cmp	w[ExeSignature],"P3"	;Tagged on 3P?
+	cmp	exehdr.Signature,"P3"	;Tagged on 3P?
 	jz	@@7
 @@0:	mov	eax,0		;real mode EXE.
 	;

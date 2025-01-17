@@ -642,7 +642,8 @@ RawDiscardPages proc    near
 ;
         mov     eax,ebx
         add     ebx,4095
-        and     ebx,not 4095
+;        and     ebx,not 4095
+        and     bx,0f000h
         sub     eax,ebx
         neg     eax
         cmp     eax,esi
@@ -651,7 +652,8 @@ RawDiscardPages proc    near
 ;
 ;Round length down a page.
 ;
-        and     esi,not 4095
+;        and     esi,not 4095
+        and     si,0f000h
         or      esi,esi
         jz      mem4_8
 ;
@@ -754,7 +756,8 @@ mem5_0:
 
 ; MED 04/18/96
         mov     ecx,es:[ebp+eax*4]
-        and     ecx,(NOT 4095)  ; get linear address
+;        and     ecx,not 4095            ; get linear address
+        and     cx,0f000h               ; get linear address
         cmp     ecx,ebx                 ; see if matches desired linear address
         jne     med2c                   ; no, continue as before
         mov     edi,eax
@@ -906,10 +909,12 @@ RAWLockMemory   proc    near
         shl     esi,16
         mov     si,di
         add     esi,ebx
-        and     ebx,not 4095            ;round down to nearest page.
+;        and     ebx,not 4095            ;round down to nearest page.
+        and     bx,0f000h               ;round down to nearest page.
         mov     [_LM_BlockBase],ebx
         add     esi,4095
-        and     esi,not 4095            ;round up to next page.
+;        and     esi,not 4095            ;round up to next page.
+        and     si,0f000h               ;round up to next page.
         dec     esi
         mov     [_LM_BlockEnd],esi      ;store address of last page.
         ;
@@ -1067,10 +1072,12 @@ RAWUnLockMemory proc near
         shl     esi,16
         mov     si,di
         add     esi,ebx
-        and     ebx,0FFFFFFFFh-4095     ;round down to nearest page.
+;        and     ebx,0FFFFFFFFh-4095     ;round down to nearest page.
+        and     bx,0F000h       ;round down to nearest page.
         mov     [_LM_BlockBase],ebx
         add     esi,4095
-        and     esi,0FFFFFFFFh-4095     ;round up to next page.
+;        and     esi,0FFFFFFFFh-4095     ;round up to next page.
+        and     si,0F000h       ;round up to next page.
         dec     esi
         mov     [_LM_BlockEnd],esi      ;store address of last page.
         ;
@@ -1665,7 +1672,8 @@ MapPhysical     proc    near
         ;
         and     ecx,1           ;put user bits in useful place.
         shl     ecx,10
-        and     edx,0FFFFFFFFh-4095     ;lose user bits.
+;        and     edx,0FFFFFFFFh-4095     ;lose user bits.
+        and     dx,0F000h       ;lose user bits.
         mov     eax,LinearEntry ;get new entry number.
         shr     eax,10          ;/1024 for page dir entry.
         ;
@@ -2091,7 +2099,8 @@ mem12_5:
         and     DWORD PTR fs:[edi],0FFFFFFFFh-1 ;mark as not present.
         mov     edx,fs:[edi]            ;get page entry.
         mov     ecx,edx
-        and     edx,0FFFFFFFFh-4095     ;lose flag bits.
+;        and     edx,0FFFFFFFFh-4095     ;lose flag bits.
+        and     dx,0F000h       ;lose flag bits.
         shr     ecx,10
         and     ecx,1           ;preserve user flags.
         call    EmuCR3Flush

@@ -24,13 +24,13 @@ sdata	macro
 efile	macro
 	endm
 
-extdef	macro var				;Declare a variable/routine as
-	ifdef TASM				;external and public depending on
-	global var				;whats required. "var" is the name of
-	else					;the symbol to declare.
-	externdef var
-	endif
+ifdef TASM			;external and public depending on
+extdef	macro var	;Declare a variable/routine as
+	global var		;whats required. "var" is the name of the symbol to declare.
 	endm
+else				
+extdef TEXTEQU	<externdef>
+endif
 
 
 ;------------------------------------------------------------------------------

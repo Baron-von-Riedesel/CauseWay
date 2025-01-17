@@ -1376,7 +1376,8 @@ PhysicalGetPage proc near
         jmp     rv50_9
         ;
 rv50_8:
-        and     edx,not 4095
+;        and     edx,not 4095
+        and     dx,0f000h
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -1745,8 +1746,10 @@ rv54_nomaxlimit:
         shl     ebp,10          ;*1024 (1k)
         add     ebx,ebp         ;get real top.
         add     edi,4095                ;round up to next page.
-        and     edi,0FFFFFFFFh-4095     ;/
-        and     ebx,0FFFFFFFFh-4095     ;round down to nearest page.
+;        and     edi,0FFFFFFFFh-4095     ;/
+        and     di,0f000h
+;        and     ebx,0FFFFFFFFh-4095     ;round down to nearest page.
+        and     bx,0f000h
         mov     [esi].XMSMEMITEM.dwBase,edi
         mov     [esi].XMSMEMITEM.dwEnd,ebx   ;store base and end.
         jmp     rv54_3          ;start again.
@@ -2127,9 +2130,10 @@ use88hResult2:
 
 GIComputeBytes2:
         shl     eax,10          ; * 1024
-        add     eax,100000h             ;add in 1 meg base address.
+        add     eax,100000h     ;add in 1 meg base address.
         dec     eax
-        and     eax,0FFFFFFFFh-4095     ;round down to nearest page.
+;        and     eax,0FFFFFFFFh-4095     ;round down to nearest page.
+        and     ax,0F000h       ;round down to nearest page.
         mov     ebx,eax
         pop     esi
         pop     edi
@@ -2153,7 +2157,8 @@ GIComputeBytes2:
         div     ecx             ;get chunk size.
         inc     eax
         or      Int15Size,-1            ;set chunk size to use.
-        and     eax,not 4095
+;        and     eax,not 4095
+        and     ax,0f000h
         jz      rv56_GotSize
         mov     Int15Size,eax   ;set chunk size to use.
 rv56_GotSize:
@@ -2361,7 +2366,8 @@ rv57_GotBottom:
         shl     eax,10          ; * 1024
         add     eax,100000h             ;add in 1 meg base address.
         dec     eax
-        and     eax,0FFFFFFFFh-4095     ;round down to nearest page.
+;        and     eax,0FFFFFFFFh-4095     ;round down to nearest page.
+        and     ax,0F000h       ;round down to nearest page.
         mov     ebx,eax
 ;       pop     esi
 
@@ -2575,7 +2581,8 @@ rv58_2: add     esi,sizeof DOSMEMITEM    ;next entry.
         shl     eax,4           ;linear address.
         mov     ebx,eax
         add     eax,4095
-        and     eax,0ffffffffh-4095     ;round up to next page.
+;        and     eax,0ffffffffh-4095     ;round up to next page.
+        and     ax,0f000h       ;round up to next page.
         sub     eax,ebx
         shr     eax,4
         mov     [esi].DOSMEMITEM.wSize,ax   ;store new size.
@@ -2593,7 +2600,8 @@ rv58_GotOne:
         mov     es,bx
         mov     esi,PTMAPADDR           ;base of page alias's.
         mov     eax,es:[esi+eax*4]      ;get physical address.
-        and     eax,0ffffffffh-4095     ;lose user bits.
+;        and     eax,0ffffffffh-4095     ;lose user bits.
+        and     ax,0f000h       ;lose user bits.
         mov     edx,eax
         ;
         xor     ecx,ecx

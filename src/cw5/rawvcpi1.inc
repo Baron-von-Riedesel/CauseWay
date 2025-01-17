@@ -1994,12 +1994,9 @@ rv31_NotBusy:
         mov     bl,CallBackStruc.CallBackNum[bx]        ;get int number.
         push    ax
         push    ebx
-        movzx   eax,bl
-        mov     ebx,eax
+        movzx   ebx,bl
         shl     ebx,1           ;*2
-        mov     eax,ebx
-        shl     ebx,1           ;*4
-        add     ebx,eax         ;*6
+        lea     ebx,[ebx*2+ebx] ;*6
         add     ebx,offset InterruptTable
         push    ds
         mov     ax,DpmiEmuDS
