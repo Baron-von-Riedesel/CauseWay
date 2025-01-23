@@ -19,9 +19,14 @@ EXCFRY  ends
 _DATA32 segment
 
 ;-------------------------------------------------------------------------
-ExcepSystemFlags dd ?
 ;
-
+InExcepJMP      df 0
+;-------------1----1----0----0
+;-------------5----0----5----0
+ExcBitStr dw 01110001111110001b
+InExcep db 0
+	align 4
+;
 DebugBuffer EXCFRY <>
 ;--- followed by an IRET32 frame
 DebugEIP        dd ?
@@ -57,7 +62,9 @@ endif
 if EXC16INCS16
 cs16sel         dw 0    ;16-bit CS alias
 endif
+exc22_Handle  dd ?      ;file handle for DebugDisplay
 
+NewCWErrName    DB      81 DUP (0)    ; error file name set with cw function 0xff32
 ;
 DebugName       db 'cw.err',0
 ;
@@ -198,9 +205,6 @@ DebugHeaderEnd  label byte
 ;
 HexTable        db '0123456789ABCDEF'
 ;
-InExcep db 0
-InExcepJMP      df 0
-;
 WritingCWERR    db "Writing CW.ERR file....",13,10,13,10,36
 ;
 
@@ -210,10 +214,23 @@ SSEBPDebugText  DB      "SS:EBP > ",0
 UserDebugText   DB      "User   > ",0
 LoadAddrDebugText       DB      "Program Linear Load Address: ",0
 DumpAsciiFlag   DB      ?
+EnableDebugDump DB 1       ; may be set/reset by int 31h, ax=0ff30h
 
-;-------------1----1----0----0
-;-------------5----0----5----0
-ExcBitStr dw 01110001111110001b
+	align 4
+
+ErrorList       label dword
+        dd ErrorM00,ErrorM01,ErrorM02,ErrorM03,ErrorM04,ErrorM05,ErrorM06,ErrorM07
+        dd ErrorM08,ErrorM09,ErrorM10,ErrorM11,ErrorM12,ErrorM13,ErrorM14,ErrorM15
+        dd ErrorM16
+SELECTTEXT = 1
+        include texts.inc
+
+Copyright       label byte
+        db 'CauseWay DOS Extender v'
+VersionMajor    db '5.'
+VersionMinor    db '00'
+        db " MIT License.",13,10,0
+SizeCopyright equ $ - offset Copyright - 1
 
 _DATA32 ends
 
@@ -225,8 +242,8 @@ _DATA32 ends
 ExcepOpen       proc    far
 ;        mov     ExcepDSeg,es            ;Store GROUP16 data selector.
 ;        mov     ExcepDDSeg,ds
-        mov     eax,SystemFlags
-        mov     ExcepSystemFlags,eax
+;        mov     eax,d SystemFlags
+;        mov     ExcepSystemFlags,eax
         ;
 ;--- actually, installs handler for Exc 00, 04-09 and 0D-0F only.
 ;--- also, handler for Int 00.
@@ -238,7 +255,7 @@ if EXC16INCS16
         mov     ebp, cs
         cmp     ProtectedType,PT_DPMI
         jnz     @F
-        test    byte ptr ExcepSystemFlags,1
+        test    byte ptr apiSystemFlags,1
         jz      @F
         call    dpmi16bitspec
 @@:
@@ -264,7 +281,7 @@ if TRAPINT00
         ;
         mov     bl,00
         Sys     GetVect
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc1_i00Use32
         movzx   edx, dx
 exc1_i00Use32:
@@ -281,7 +298,7 @@ endif
 exc1_1:
         mov     ax,202h
         int     31h
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc1_Use32
         movzx   edx,dx
 exc1_Use32:
@@ -396,7 +413,7 @@ Int00Handler    proc    near
         mov     DebugBuffer._fs,fs
         mov     DebugBuffer._gs,gs
         ;
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc3_Use32_0
         add     DebugESP,2+2+2
         movzx   ebp,sp
@@ -449,10 +466,10 @@ thunk_16to32 ends
 EXCEPT = 0
 DPMIExc00Patch16:
     rept 16
-    thunk_16to32 <,offset DPMIExc00Patch+EXCEPT*4>
+    thunk_16to32 <,lowword offset DPMIExc00Patch+EXCEPT*4>
 EXCEPT = EXCEPT + 1
     endm
-thunk_reenter_from_exc thunk_16to32 <,offset offset exc20_Use0_2>
+thunk_reenter_from_exc thunk_16to32 <,lowword offset exc20_Use0_2>
 endif
 
 EXCEPT = 0
@@ -507,7 +524,7 @@ DPMIExcPatch    proc    far
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     ebp, esp
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      @F
         movzx   ebp, bp
 @@:
@@ -527,7 +544,7 @@ DPMIExcPatch    proc    far
         mov     LinearAddressCheck,0
         pop     ds
         assume ds:GROUP32
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         pop     ebp
         pop     edi
         pop     esi
@@ -572,7 +589,7 @@ exc20_Not14Special:
         pop     es
         pop     ds
         lea     esp,[esp+4]         ;skip exception#
-        jmp     FWORD PTR cs:[InExcepJMP]
+        jmp     cs:[InExcepJMP]
         assume ds:GROUP32
         ;
 exc20_ok:
@@ -591,7 +608,7 @@ exc20_ok:
         ;
         lodsd   [esi]               ;exception#
         mov     es:DebugExceptionIndex, ax
-        test    BYTE PTR es:ExcepSystemFlags,1
+        test    BYTE PTR es:apiSystemFlags,1
         jz      exc20_Use32Bit17
         movzx   eax,w[ebp+sizeof STKFRAME+(2+2)]
         mov     es:DebugExceptionCode,eax
@@ -800,7 +817,7 @@ _DATA32 ends
 ;called by cwClose as FAR32
 ;checks UserTermFlag and DebugDump variables
 ;
-DebugDisplay    proc    far
+DebugDisplay    proc    near
 
         push    ds
         mov     ds,cs:apiDSeg16
@@ -846,11 +863,12 @@ dd2:
         jz      exc22_9
         mov     DebugDump,0
 
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
+
         cmp     EnableDebugDump,0       ; see if debug dumping enabled
         je      exc22_9
 
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
         ;
         mov     ah,0fh
         int     10h
@@ -868,19 +886,15 @@ exc22_ModeOk:
         mov     ah,3ch
 
 ; MED 06/18/96
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         mov     edx,OFFSET NewCWErrName ; new error file name set with (undoc) cw func 0xff32?
 ;        cmp     ds:[edx],al            ; fixed - AL most likely isn't 00 here!
-        cmp     ds:[edx],cl             ; file name set?
+        cmp     [edx],cl                ; file name set?
         je      oldcwerr                ; no new error file name
         int     21h
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
         jnc     debhand                 ; successfully created new error file
 oldcwerr:
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
         mov     edx,offset DebugName    ; the default "cw.err" file name
         xor     cx,cx
         mov     ah,3ch
@@ -892,16 +906,11 @@ debhand:
 exc22_NoFile:
         ;Display debug info.
         ;
-        push    ds
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
         mov     edx,offset Copyright
         mov     ecx,SizeCopyright
         mov     ebx,[exc22_Handle]
         mov     ah,40h
         int     21h
-        pop     ds
-        assume ds:GROUP32
         ;
         mov     ax,DebugExceptionIndex
         mov     cx,2
@@ -967,9 +976,9 @@ exc22_1:
         ;Now print the results.
         ;
 
-        push    ds
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
+;        push    ds
+;        mov     ds,apiDSeg16
+;        assume ds:GROUP16
         mov     esi,offset Copyright
 exc22_cp0:
         cmp     b[esi],0
@@ -980,8 +989,8 @@ exc22_cp0:
         inc     esi
         jmp     exc22_cp0
 exc22_cp1:
-        assume ds:GROUP32
-        pop     ds
+;        assume ds:GROUP32
+;        pop     ds
 
 
         mov     edx,offset DebugHeader
@@ -1033,7 +1042,7 @@ SSEBPDEBUGDUMPCOUNT     EQU     256     ; should be multiple of 16
         mov     ecx,CSEIPDEBUGDUMPCOUNT
         mov     fs,DebugCS
         mov     esi,DebugEIP
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc22_cseip32
         movzx   esi,si
 
@@ -1063,7 +1072,7 @@ exc22_cseip2:
         xor     edx,edx
 exc22_cseip0:
         push    ecx
-        mov     ecx,2
+        mov     cx,2
         mov     al,fs:[esi]
         call    Bin2Hex
         pop     ecx
@@ -1117,7 +1126,7 @@ exc22_cseip3:
         assume ds:GROUP32
         mov     DumpAsciiFlag,al
 
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      user32
         movzx   esi,si
 
@@ -1146,7 +1155,7 @@ user2:
         xor     edx,edx
 user0:
         push    ecx
-        mov     ecx,2
+        mov     cx,2
         mov     al,fs:[esi]
         cmp     DumpAsciiFlag,0 ; show as ASCII if so flagged
         je      userbin                 ; binary
@@ -1205,7 +1214,7 @@ ssesp:
         mov     ecx,SSESPDEBUGDUMPCOUNT
         mov     fs,DebugSS
         mov     esi,DebugESP
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc22_ssesp32
         movzx   esi,si
 
@@ -1236,7 +1245,7 @@ exc22_ssesp2:
 
 exc22_ssesp0:
         push    ecx
-        mov     ecx,2
+        mov     cx,2
         mov     al,fs:[esi]
         call    Bin2Hex
         pop     ecx
@@ -1291,7 +1300,7 @@ exc22_ssesp3:
 med2d:
         sub     esi,ecx
 
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      medssebp32
         movzx   esi,si
 
@@ -1345,7 +1354,7 @@ med3d:
 medssebp0:
         push    ecx
         mov     al,fs:[esi]
-        mov     ecx,2
+        mov     cx,2
         call    Bin2Hex
         pop     ecx
 
@@ -1388,7 +1397,7 @@ ebpdump:
         mov     ecx,SSEBPDEBUGDUMPCOUNT
         mov     fs,DebugSS
         mov     esi,DebugBuffer._ebp
-        test    BYTE PTR ExcepSystemFlags,1
+        test    BYTE PTR apiSystemFlags,1
         jz      exc22_ssebp32
         movzx   esi,si
 
@@ -1419,7 +1428,7 @@ exc22_ssebp2:
 
 exc22_ssebp0:
         push    ecx
-        mov     ecx,2
+        mov     cx,2
         mov     al,fs:[esi]
         call    Bin2Hex
         pop     ecx
@@ -1659,7 +1668,7 @@ exc22_r5:
         shr     ax,3
         sub     ax,bx
         inc     ax
-        mov     ecx,4
+        mov     cx,4
         call    Bin2Hex
         jmp     exc22_r20
         ;
@@ -1693,7 +1702,7 @@ exc22_r1:
         ;
         mov     edi,offset TotalSelsNum
         mov     eax,TotalSelectors
-        mov     ecx,4
+        mov     cx,4
         call    Bin2Hex
         mov     ecx,TotalSelsTLen
         mov     edx,offset TotalSelsText
@@ -1905,15 +1914,15 @@ exc22_nomcbdis:
         ;
         mov     edi,offset TotalMemNum1
         mov     eax,TotalLinearMem
-        mov     ecx,8
+        mov     cx,8
         call    Bin2Hex
         mov     edi,offset TotalMemNum2
         mov     eax,TotalLinearMem+4
-        mov     ecx,8
+        mov     cx,8
         call    Bin2Hex
         mov     edi,offset TotalMemNum3
         mov     eax,TotalLinearMem+8
-        mov     ecx,8
+        mov     cx,8
         call    Bin2Hex
         mov     ecx,TotalMemTLen
         mov     edx,offset TotalMemText
@@ -2292,8 +2301,8 @@ exc22_cb1:
         assume ds:GROUP16
         mov     eax,MouseETarget+0
         mov     ebx,MouseETarget+4
-        assume ds:GROUP32
         pop     ds
+        assume ds:GROUP32
         mov     ecx,eax
         or      ecx,ebx
         jz      exc22_r8
@@ -2312,7 +2321,7 @@ exc22_cb1:
         mov     b[edi],':'
         inc     edi
         mov     eax,ebx
-        mov     ecx,8
+        mov     cx,8
         call    Bin2Hex
         mov     b[edi],13
         inc     edi
@@ -2329,7 +2338,6 @@ exc22_cb1:
         mov     ah,40h
         mov     ebx,[exc22_Handle]
         int     21h
-
 exc22_r8:
         popad
         pop     es
@@ -2340,16 +2348,46 @@ exc22_r8:
         mov     ah,3eh
         int     21h
         ;
-
+        mov     ds,apiDSeg16
+        assume ds:GROUP16
 exc22_9:
+        mov     ax,ErrorNumber          ;Get the error number.
+        cmp     ax,0
+        jz      cw2_NoError
+
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
+
+        movzx   ebx,ax
+        xor     dx,dx
+        mov     cx,10
+        div     cx
+        add     al,'0'
+        mov     b[ErrorM00n+0],al
+        add     dl,'0'
+        mov     b[ErrorM00n+1],dl
+
+        cmp     EnableDebugDump,0       ; if debug dump turned off, no screen i/o
+        je      cw2_NoError
+
+        mov     edx,[ErrorList+0]
+        mov     ah,9
+        int     21h
+;
+;Get a pointer to the appropriate error message and print it.
+;
+        mov     edx,[ErrorList+ebx*4]
+        mov     ah,9
+        int     21h
+;
+;Now exit with the error number as the DOS "errorlevel".
+;
+cw2_NoError:
         pop     ds
-        retf
+        assume ds:nothing
+        ret
         ;
-align 4
-exc22_Handle  dd ?
-
 DebugDisplay    endp
-
 
 ;-------------------------------------------------------------------------
 ;
@@ -2362,14 +2400,14 @@ DebugDisplay    endp
 ;DS:EDI - Buffer to put string in.
 ;
 Bin2Hex proc    near
+        movzx   ecx,cx
+        add     edi,ecx
         push    eax
         push    ebx
         push    ecx
         push    edx
         push    edi
-        movzx   ecx,cx
         mov     ebx,offset HexTable
-        add     edi,ecx
         dec     edi
         mov     edx,eax
 exc23_0:
@@ -2379,17 +2417,12 @@ exc23_0:
         xlat    cs:[ebx]
         mov     [edi],al
         dec     edi
-        dec     ecx
-        jnz     exc23_0
+        loop    exc23_0
         pop     edi
         pop     edx
         pop     ecx
         pop     ebx
         pop     eax
-        push    ecx
-        movzx   ecx,cx
-        add     edi,ecx
-        pop     ecx
         ret
 Bin2Hex endp
 

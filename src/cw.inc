@@ -1195,9 +1195,18 @@ Real_EDI	dd ?	;EDI
 Real_ESI	dd ?	;ESI
 Real_EBP	dd ?	;EBP
 	dd ?	;Reserved.
+union
 Real_EBX	dd ?	;EBX
+Real_BX		dw ?
+ends
+union
 Real_EDX	dd ?	;EDX
+Real_DX		dw ?
+ends
+union
 Real_ECX	dd ?	;ECX
+Real_CX		dw ?
+ends
 union
 Real_EAX	dd ?	;EAX
 Real_AX		dw ?

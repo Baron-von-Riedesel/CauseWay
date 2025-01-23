@@ -8,6 +8,8 @@ _DATA32 segment
 OldInt10h       df 0
 Int10hStaticSel dw ?
 Int10hUltraFont dw ?
+	align 4
+Int10Buffer     RealRegsStruc <?>
 _DATA32 ends
 ;
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -114,7 +116,8 @@ int103_GetFont:
         push    ds
         push    fs
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     bl,10h
@@ -127,6 +130,7 @@ int103_GetFont:
         mov     edx,es:[edi].RealRegsStruc.Real_EDX
         mov     ecx,es:[edi].RealRegsStruc.Real_ECX
         mov     es,eax
+        assume es:nothing
 int103_9:
         pop     fs
         pop     ds
@@ -149,15 +153,13 @@ int103_UltraSetFont:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit503
         movzx   ebp,bp
 int103_Use32Bit503:
-        xor     eax,eax
-        mov     ax,ds
+        mov     eax,ds
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit504
@@ -204,13 +206,14 @@ int103_Use32Bit504:
         pop     ax
 
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
-        mov     es:[edi].RealRegsStruc.Real_ESI,0
-        mov     es:[edi].RealRegsStruc.Real_EBP,8
+        mov     w es:[edi].RealRegsStruc.Real_ESI,0
+        mov     w es:[edi].RealRegsStruc.Real_EBP,8
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_DS,ax
         mov     es:[edi].RealRegsStruc.Real_ES,ax
@@ -219,6 +222,7 @@ int103_Use32Bit504:
         mov     eax,es:[edi].RealRegsStruc.Real_EAX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -239,28 +243,26 @@ int103_UltraGetPal:
         push    es
         push    fs
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+;        mov     fs,PSPSegment
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX           ;read pen values.
-        mov     ds,cs:apiDSeg32
-        assume ds:GROUP32
+;        mov     ds,cs:apiDSeg32
+;        assume ds:GROUP32
         mov     bx,Int10hUltraFont
-        assume ds:nothing
         movzx   edx,es:[edi].RealRegsStruc.Real_DS
         shl     edx,4
         mov     ecx,65535
         Sys     SetSelDet32
-        mov     ds,bx
-        mov     edx,es:[edi].RealRegsStruc.Real_EDX
-        mov     esi,es:[edi].RealRegsStruc.Real_ESI
-        movzx   esi,si
-        movzx   edx,dx
+        mov     ds,ebx
+        assume ds:nothing
+        movzx   edx,es:[edi].RealRegsStruc.Real_DX
+        movzx   esi,w es:[edi].RealRegsStruc.Real_ESI
         pop     fs
         pop     es
+        assume es:nothing
         pop     ebp
         pop     edi
         pop     ecx
@@ -282,8 +284,7 @@ int103_UltraSetPal:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,ds
+        mov     eax,ds
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit502
@@ -303,19 +304,19 @@ int103_Use32Bit502:
         mov     ecx,16
         rep     movsb           ;copy into transfer buffer.
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     edx,edx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_DS,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -341,8 +342,7 @@ int103_VideoState:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit501
@@ -353,26 +353,29 @@ int103_Use32Bit501:
         push    es
         ;
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        mov     fs,PSPSegment
         xor     edx,edx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX           ;read pen values.
         mov     eax,es:[edi].RealRegsStruc.Real_EAX
         pop     es
+        assume es:nothing
         pop     edi
         cmp     al,1bh
         jz      int103_ok100
         pop     fs
         pop     es
         pop     ds
+        assume ds:nothing
         pop     ebp
         pop     edi
         pop     esi
@@ -385,8 +388,6 @@ int103_Use32Bit501:
 int103_ok100:
         push    eax
         push    edi
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
         xor     esi,esi
         mov     ds,fs:[EPSP_Struc.EPSP_TransProt]
         assume ds:nothing
@@ -400,13 +401,13 @@ int103_ok100:
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     bx,Int10hStaticSel
-        assume ds:nothing
         mov     WORD PTR es:[edi+2],bx
         Sys     SetSelDet32
         pop     eax
         pop     fs
         pop     es
         pop     ds
+        assume ds:nothing
         pop     ebp
         pop     edi
         pop     esi
@@ -429,8 +430,7 @@ int103_SetFont1:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit500
@@ -460,20 +460,20 @@ int103_Use32Bit500:
         pop     bx
         pop     ax
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
-        mov     es:[edi].RealRegsStruc.Real_EBP,0
+        mov     w es:[edi].RealRegsStruc.Real_EBP,0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -498,8 +498,7 @@ int103_SetPens:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit50
@@ -519,18 +518,18 @@ int103_Use32Bit50:
         mov     ecx,17
         rep     movsb           ;copy into transfer buffer.
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     edx,edx
-        mov     w es:[edi].RealRegsStruc.Real_EAX,1002h
+        mov     es:[edi].RealRegsStruc.Real_AX,1002h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -555,8 +554,7 @@ int103_GetPens:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit51
@@ -567,21 +565,21 @@ int103_Use32Bit51:
         push    es
         ;
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        mov     fs,PSPSegment
         xor     edx,edx
-        mov     w es:[edi].RealRegsStruc.Real_EAX,1009h
+        mov     es:[edi].RealRegsStruc.Real_AX,1009h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX           ;read pen values.
         pop     es
+        assume es:nothing
         pop     edi
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
         xor     esi,esi
         mov     ds,fs:[EPSP_Struc.EPSP_TransProt]
         assume ds:nothing
@@ -615,8 +613,7 @@ int103_SetColours:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit52
@@ -641,20 +638,20 @@ int103_Use32Bit52:
         rep     movsb           ;copy into transfer buffer.
         pop     cx
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     edx,edx
-        mov     w es:[edi].RealRegsStruc.Real_EAX,1012h
+        mov     es:[edi].RealRegsStruc.Real_AX,1012h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -680,8 +677,7 @@ int103_GetColours:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit53
@@ -693,24 +689,24 @@ int103_Use32Bit53:
         push    es
         ;
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        mov     fs,PSPSegment
         xor     edx,edx
-        mov     w es:[edi].RealRegsStruc.Real_EAX,1017h
+        mov     es:[edi].RealRegsStruc.Real_AX,1017h
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX           ;read pen values.
         pop     es
+        assume es:nothing
         pop     edi
         pop     ecx
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
         xor     esi,esi
         mov     ds,fs:[EPSP_Struc.EPSP_TransProt]
         assume ds:nothing
@@ -747,8 +743,7 @@ int103_WriteString:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit54
@@ -774,8 +769,8 @@ int103_noatts:
         rep     movsb           ;copy into transfer buffer.
         pop     cx
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     ebp,ebp
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
 ;       mov     es:[edi].RealRegsStruc.Real_EBP,edx
@@ -786,11 +781,11 @@ int103_noatts:
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -809,7 +804,8 @@ int103_StateSize:
         push    edi
         push    es
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     bl,10h
@@ -835,6 +831,7 @@ int103_ss2:
         shr     bx,6
 int103_ss3:
         pop     es
+        assume es:nothing
         pop     edi
         pop     ecx
         pop     eax
@@ -854,8 +851,7 @@ int103_StateSave:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit58
@@ -868,19 +864,21 @@ int103_Use32Bit58:
         push    es
         ;
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        mov     fs,PSPSegment
         xor     ebx,ebx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         pop     es
+        assume es:nothing
         pop     ecx
         pop     ebx
         pop     eax
@@ -896,8 +894,6 @@ int103_Use32Bit58:
         pop     eax
         shl     ecx,6           ;*64
         mov     edi,ebx         ;destination buffer.
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
         xor     esi,esi
         mov     ds,fs:[EPSP_Struc.EPSP_TransProt]
         assume ds:nothing
@@ -929,8 +925,7 @@ int103_StateRestore:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int103_Use32Bit59
@@ -969,20 +964,20 @@ int103_Use32Bit59:
         pop     eax
         ;
         mov     edi,offset Int10Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     ebx,ebx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,10h
         Sys     IntXX
         ;
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi

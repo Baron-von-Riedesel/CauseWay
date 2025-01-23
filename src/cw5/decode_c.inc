@@ -489,7 +489,7 @@ dec2_FB_2:
         mov     ax,cDiskBufferReal
         mov     RealRegsStruc.Real_DS[edi],ax
         mov     RealRegsStruc.Real_EDX[edi],esi
-        mov     RealRegsStruc.Real_EAX[edi],3f00h
+        mov     RealRegsStruc.Real_AX[edi],3f00h
         mov     ax,decode_c_handle
         mov     RealRegsStruc.Real_EBX[edi],eax
         mov     bl,21h

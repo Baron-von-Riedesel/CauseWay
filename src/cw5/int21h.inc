@@ -29,6 +29,7 @@ _DATA32 segment
 
 OldInt21h       df 0
 	align 4
+Int21Buffer      RealRegsStruc <?>
 Int21hCountryTab RealRegsStruc <?>
 DOS16DummySegment       DW      0
 Int21hDOS4GFlag db 0
@@ -335,10 +336,10 @@ int214_1:
         ;
         ;Call the real mode handler to deal with this chunk.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],0900h
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_AX[edi],0900h
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -369,10 +370,10 @@ Int21hGetString proc near
         ;
         ;Call the real mode handler to read the string.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],0A00h
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_AX[edi],0A00h
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -465,13 +466,13 @@ int2110_ExitCheck:
         ;
         ;Call the real mode handler to take care of things.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_EBX]
         mov     es:RealRegsStruc.Real_EBX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -558,11 +559,11 @@ Int21hCreateDIR proc near
         ;
         ;Pass control to real mode handler.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -597,13 +598,13 @@ Int21hCreateFile proc near
         ;
         ;Pass control to real mode handler.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_ECX]
         mov     es:RealRegsStruc.Real_ECX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -641,11 +642,11 @@ Int21hOpenFile  proc    near
         ;
         ;Pass control to real mode handler.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -668,7 +669,7 @@ Int21hReadFile  proc    near
         mov     ds,[ebp+Int_DS] ;Point to source.
         mov     esi,[ebp+Int_EDX]
         call    Int21hExtend_DS_ESI     ;Extend [E]SI.
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         movzx   edx,w[ebp+Int_CX]       ;Get length.
         cmp     cs:Int21hDOS4GFlag,0
@@ -683,7 +684,7 @@ int2114_0:
         mov     ecx,fs:[EPSP_Struc.EPSP_TransSize]
 int2114_1:
         mov     es:RealRegsStruc.Real_ECX[edi],ecx      ;Store length.
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     ax,[ebp+Int_AX]
@@ -746,7 +747,7 @@ Int21hWriteFile proc near
         mov     ds,[ebp+Int_DS] ;Point to source.
         mov     esi,[ebp+Int_EDX]
         call    Int21hExtend_DS_ESI     ;Extend [E]SI.
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         movzx   edx,w[ebp+Int_CX]       ;Get length.
         cmp     cs:Int21hDOS4GFlag,0
@@ -761,7 +762,7 @@ int2115_0:
         mov     ecx,fs:[EPSP_Struc.EPSP_TransSize]
 int2115_1:
         mov     es:RealRegsStruc.Real_ECX[edi],ecx      ;Store length.
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     ax,[ebp+Int_AX]
@@ -833,13 +834,13 @@ Int21hGetCurDir proc near
         ;
         ;Call the real mode handler to take care of things.
         ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_EDX]
         mov     es:RealRegsStruc.Real_EDX[edi],eax
-        mov     es:RealRegsStruc.Real_ESI[edi],0
+        mov     w es:RealRegsStruc.Real_ESI[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1127,10 +1128,10 @@ int2121_3:
         add     esi,256         ;make space for execution path.
         add     esi,15
         shr     esi,4           ;get paragraphs needed.
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     es:RealRegsStruc.Real_EBX[edi],esi
-        mov     w es:RealRegsStruc.Real_EAX[edi],4800h
+        mov     es:RealRegsStruc.Real_AX[edi],4800h
         pop     esi
         mov     bl,21h
         Sys     IntXX           ;allocate this memory.
@@ -1185,11 +1186,11 @@ ENDIF
         mov     w[esi+10],512+16        ;FCB 2 offset.
         mov     w[esi+12],ax            ;FCB 2 segment.
         ;
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
-        mov     w es:RealRegsStruc.Real_EAX[edi],4b00h
-        mov     w es:RealRegsStruc.Real_EBX[edi],512+32
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_AX[edi],4b00h
+        mov     es:RealRegsStruc.Real_BX[edi],512+32
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     es:RealRegsStruc.Real_ES[edi],ax
         mov     bl,21h
@@ -1221,16 +1222,16 @@ ENDIF
         or      dx,dx
         jz      int2121_Ef15            ;No environment to release.
         mov     es:RealRegsStruc.Real_ES[edi],dx
-        mov     w es:RealRegsStruc.Real_EAX[edi],4900h    ;release dos memory.
+        mov     es:RealRegsStruc.Real_AX[edi],4900h    ;release dos memory.
         mov     bl,21h
         Sys     IntXX
         ;
 int2121_Ef15:
         ;Put the DTA back where it's supposed to be.
         ;
-        mov     es:RealRegsStruc.Real_EDX[edi],offset DtaBuffer
+        mov     es:RealRegsStruc.Real_DX[edi],offset DtaBuffer
+        mov     es:RealRegsStruc.Real_AX[edi],1a00h
         mov     es:RealRegsStruc.Real_DS[edi],GROUP16
-        mov     w es:RealRegsStruc.Real_EAX[edi],1a00h
         mov     bl,21h
         Sys     IntXX
         ;
@@ -1265,13 +1266,13 @@ Int21hFindFirstFile proc near
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         xor     edi,edi
         rep     movsb
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_ECX]
         mov     es:RealRegsStruc.Real_ECX[edi],eax
-        mov     es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1306,8 +1307,8 @@ Int21hFindNextFile proc near
         lds     esi,fs:[EPSP_Struc.EPSP_DTA]  ;point to user buffer.
         mov     ecx,DTASize             ;length to copy.
         rep     movsb           ;copy data returned.
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     bl,21h
@@ -1382,10 +1383,10 @@ Int21hRenameFile proc near
         rep     movsb
         pop     edx
         ;
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     es:RealRegsStruc.Real_EDI[edi],edx
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     es:RealRegsStruc.Real_ES[edi],ax
@@ -1395,7 +1396,7 @@ Int21hRenameFile proc near
         Sys     IntXX
 
 ; return error status, MED 03/13/96
-        mov     ax,WORD PTR es:RealRegsStruc.Real_EAX[edi]
+        mov     ax,es:RealRegsStruc.Real_AX[edi]
         mov     w[ebp+Int_AX],ax
         DOS4GExtend w[ebp+Int_EAX+2]
 
@@ -1421,13 +1422,13 @@ Int21hCreateTemp proc near
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         xor     edi,edi
         rep     movsb
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_ECX]
         mov     es:RealRegsStruc.Real_ECX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1462,11 +1463,11 @@ Int21hMSNet     proc    near
         cmp     ax,5e00h
         jnz     Int21hNotOurs
         ;
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
-        mov     w es:RealRegsStruc.Real_EDX[edi],0
+        mov     es:RealRegsStruc.Real_DX[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1502,9 +1503,9 @@ Int21hSetHandles proc near
 ;
 ;Set handle count with DOS.
 ;
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],6700h
+        mov     es:RealRegsStruc.Real_AX[edi],6700h
         mov     ax,[ebp+Int_BX]
         mov     es:RealRegsStruc.Real_EBX[edi],eax
         mov     bl,21h
@@ -1600,14 +1601,13 @@ int2129_shs1:
         mov     WORD PTR fs:[PSP_Struc.PSP_Handles],bx  ;set new number of handles.
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-        push    ds
-        pop     es
         sub     TotalHandles,ax ;update total count needed.
         mov     ax,TotalHandles
         assume ds:nothing
         or      ax,1
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],6700h
+        mov     es:RealRegsStruc.Real_AX[edi],6700h
         mov     es:RealRegsStruc.Real_EBX[edi],eax
         mov     bl,21h
         Sys     IntXX           ;set new value with DOS.
@@ -1625,8 +1625,9 @@ int2129_shb0:
         add     ax,TotalHandles ;get total count needed.
         assume ds:nothing
         or      ax,1
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],6700h
+        mov     es:RealRegsStruc.Real_AX[edi],6700h
         mov     es:RealRegsStruc.Real_EBX[edi],eax
         mov     ecx,ebx
         mov     bl,21h
@@ -1694,7 +1695,7 @@ int2129_shb1:
         push    es
         movzx   edi,di
         movzx   ecx,cx
-        mov     es,bx
+        mov     es,ebx
         rep     stosb           ;initialise new entries.
         pop     es
         pop     ecx
@@ -1716,11 +1717,10 @@ int2129_shb2:
         assume ds:GROUP16
         mov     ax,TotalHandles ;get total count needed.
         assume ds:nothing
-        push    ds
-        pop     es
         or      ax,1
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],6700h
+        mov     es:RealRegsStruc.Real_AX[edi],6700h
         mov     es:RealRegsStruc.Real_EBX[edi],eax
         mov     bl,21h
         Sys     IntXX
@@ -1754,8 +1754,8 @@ Int21hExtendOpen proc near
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         xor     edi,edi
         rep     movsb
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_EBX]
@@ -1764,7 +1764,7 @@ Int21hExtendOpen proc near
         mov     es:RealRegsStruc.Real_ECX[edi],eax
         mov     eax,[ebp+Int_EDX]
         mov     es:RealRegsStruc.Real_EDX[edi],edx
-        mov     es:RealRegsStruc.Real_ESI[edi],0
+        mov     w es:RealRegsStruc.Real_ESI[edi],0
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
@@ -1787,8 +1787,8 @@ Int21hExtendOpen endp
 ;Get extended error information.
 ;
 Int21hGetErrorInfo proc near
+        mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        mov     es,cs:apiDSeg16
         mov     eax,[ebp+Int_EAX]
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     eax,[ebp+Int_EBX]

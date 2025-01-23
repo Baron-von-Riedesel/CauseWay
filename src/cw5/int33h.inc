@@ -15,6 +15,8 @@ Int33hCallBack  dd 0
 Int33hUserCode  df 0
 Int33hUserMask  dw 0
 Int33hUserOK    dw 0
+	align 4
+Int33Buffer     RealRegsStruc <?>
 
 _DATA32 ends
 ;
@@ -176,10 +178,10 @@ int333_se2:
         push    edx
         push    es
         mov     cx,w[Int33hUserMask]
-        mov     es,apiDSeg16
-        assume es:GROUP16
+        mov     es,apiDSeg32
+        assume es:GROUP32
         mov     edi,offset Int33Buffer
-        mov     es:RealRegsStruc.Real_EAX[edi],0ch
+        mov     es:RealRegsStruc.Real_AX[edi],0ch
         mov     es:RealRegsStruc.Real_ECX[edi],ecx
         mov     dx,w[Int33hCallBack]
         mov     es:RealRegsStruc.Real_EDX[edi],edx
@@ -234,14 +236,14 @@ int333_se5:
         push    ecx
         push    edx
         push    es
-        mov     es,apiDSeg16
-        assume es:GROUP16
+        mov     es,apiDSeg32
+        assume es:GROUP32
         mov     edi,offset Int33Buffer
-        mov     w es:RealRegsStruc.Real_EAX[edi],0
+        mov     es:RealRegsStruc.Real_AX[edi],0
         mov     bl,33h
         Sys     IntXX
-        assume es:nothing
         pop     es
+        assume es:nothing
         pop     edx
         pop     ecx
         ;
@@ -321,8 +323,8 @@ int333_Use32Bit50:
         rep     movsb           ;copy into transfer buffer.
         pop     ecx
         mov     edi,offset Int33Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     edx,edx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
@@ -330,11 +332,11 @@ int333_Use32Bit50:
         mov     es:[edi].RealRegsStruc.Real_ES,ax
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
-        assume es:nothing
         mov     bl,33h
         Sys     IntXX
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -374,23 +376,23 @@ int333_Use16Bit51:
         mov     w[Int33hUserMask],cx
         assume ds:nothing
         mov     ds,cs:apiDSeg32
-        mov     es,cs:apiDSeg16
         assume ds:GROUP32
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     edi,offset Int33Buffer
-        mov     es:RealRegsStruc.Real_EAX[edi],eax
-        mov     es:RealRegsStruc.Real_ECX[edi],ecx
-        mov     dx,w[Int33hCallBack]
-        mov     es:RealRegsStruc.Real_EDX[edi],edx
+        mov     RealRegsStruc.Real_EAX[edi],eax
+        mov     RealRegsStruc.Real_ECX[edi],ecx
+        mov     dx,w[Int33hCallBack+0]
+        mov     RealRegsStruc.Real_EDX[edi],edx
         mov     cx,w[Int33hCallBack+2]
-        mov     es:RealRegsStruc.Real_ES[edi],cx
+        mov     RealRegsStruc.Real_ES[edi],cx
         mov     bl,33h
         Sys     IntXX
         mov     Int33hUserOK,1  ;enable user routine.
-        assume ds:nothing
-        assume es:nothing
         pop     es
+        assume es:nothing
         pop     ds
+        assume ds:nothing
         pop     ebp
         pop     edi
         pop     esi
@@ -411,13 +413,15 @@ int333_GetStateSize:
         push    ebp
         push    ds
         push    es
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     edi,offset Int33Buffer
         mov     es:RealRegsStruc.Real_EAX[edi],eax
         mov     bl,33h
         Sys     IntXX
         mov     ebx,es:RealRegsStruc.Real_EBX[edi]
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi
@@ -443,7 +447,6 @@ int333_SaveState:
         push    fs
         ;
         push    eax
-        xor     eax,eax
         mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
@@ -455,23 +458,25 @@ int333_Use32Bit58:
         push    edx
         push    es
         mov     edi,offset Int33Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        mov     fs,PSPSegment
         xor     edx,edx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,33h
         Sys     IntXX
-        mov     es:RealRegsStruc.Real_EAX[edi],15h
+        mov     es:RealRegsStruc.Real_AX[edi],15h
         mov     bl,33h
         Sys     IntXX
         mov     ecx,es:RealRegsStruc.Real_EBX[edi]
         movzx   ecx,cx
         pop     es
+        assume es:nothing
         pop     edi
         ;
         mov     ds,cs:apiDSeg32
@@ -518,8 +523,7 @@ int333_ResState:
         push    es
         push    fs
         push    eax
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     int333_Use32Bit59
@@ -533,20 +537,20 @@ int333_Use32Bit59:
         push    eax
         push    edx
         push    es
-        mov     es,cs:apiDSeg16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         mov     edi,offset Int33Buffer
-        mov     es:RealRegsStruc.Real_EAX[edi],15h
+        mov     es:RealRegsStruc.Real_AX[edi],15h
         mov     bl,33h
         Sys     IntXX
-        mov     ecx,es:RealRegsStruc.Real_EBX[edi]
-        movzx   ecx,cx
+        movzx   ecx,es:RealRegsStruc.Real_BX[edi]
         pop     ds
         pop     esi
         pop     eax
         ;
         mov     es,cs:apiDSeg16
         assume es:GROUP16
-        mov     fs,es:PSPSegment
+        mov     fs,PSPSegment
         xor     edi,edi
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         assume es:nothing
@@ -564,8 +568,8 @@ int333_Use32Bit59:
         mov     es:[Int33hUserOK],ax
         lodsw   [esi]
         mov     es:[Int33hUserMask],ax
-        assume es:nothing
         pop     es
+        assume es:nothing
         pop     ds
         rep     movsb
         ;
@@ -573,19 +577,19 @@ int333_Use32Bit59:
         pop     edx
         pop     eax
         mov     edi,offset Int33Buffer
-        mov     es,cs:apiDSeg16
-        assume es:GROUP16
+        mov     es,cs:apiDSeg32
+        assume es:GROUP32
         xor     edx,edx
         mov     es:[edi].RealRegsStruc.Real_EAX,eax
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_ES,ax
-        assume es:nothing
         mov     bl,33h
         Sys     IntXX
         ;
         pop     fs
         pop     es
+        assume es:nothing
         pop     ds
         pop     ebp
         pop     edi

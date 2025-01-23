@@ -74,6 +74,11 @@ CriticalKeys    db 'aArRiIfF'
 CriticalCodes   db 2,2,1,1,0,0,3,3   ; must follow CriticalKeys!
 
 	align 4
+;--- stack (size 1200h) used in dpmi mode only for int 31h, ax=FF01/FF02 (IntXX/FarCallReal)
+DPMIStackSSSP   label dword
+DPMIStackOfs    dw ?       ; real-mode SP
+DPMIStackSeg    dw 0       ; real-mode SS
+
 api61_SelectorBase   dd ?
 api61_SelectorSize   dd ?
 api63_SelectorBase   dd ?
@@ -127,7 +132,7 @@ apiSystemFlags  dw 0,0
 DescriptorBuffer db 8 dup (?)
 
 apiDSeg16       dd ?	;data selector GROUP16
-apiDSeg32        dd ?	;data selector GROUP32
+apiDSeg32       dd ?	;data selector GROUP32
 ;
 apiNewHeader    NewHeaderStruc <>       ;make space for a header.
 	org apiNewHeader
@@ -616,8 +621,8 @@ cwAPI_UserErrTerm       ENDP
 ; None
 ;
 cwAPI_SetDump   PROC    NEAR
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         mov     al,[ebp+Int_CL]
         mov     EnableDebugDump,al
         ret
@@ -637,8 +642,6 @@ cwAPI_SetDump   ENDP
 ; None
 ;
 cwAPI_CWErrName PROC    NEAR
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
         mov     edx,[ebp+Int_EDX]
         test    BYTE PTR cs:apiSystemFlags,1
         jz      cen2
@@ -649,7 +652,8 @@ cen2:
         mov     es,eax
         mov     ebx,OFFSET NewCWErrName ; ds:ebx -> destination, es:edx -> source
         mov     cx,80                   ; don't allow more than 80 chars in file name
-
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
 cenloop:
         mov     al,es:[edx]
         test    al,al
@@ -928,70 +932,33 @@ cwAPI_Info      proc    near
         ret
 cwAPI_Info      endp
 
+;--- run real-mode code ( INT xx or far proc )
 
-;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-;
-;Pass control to a real mode interrupt handler.
-;
-;On Entry:
-;
-;BL     - INT number.
-;ES:[E]DI       - Real mode register structure.
-;
-cwAPI_IntXX     proc    near
+runrmcode proc        
         mov     edi,[ebp+Int_EDI]
         mov     es,[ebp+Int_ES]
-;       mov     bl,[ebp+Int_BL]
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,10000h
         jnc     api15_0
         movzx   edi,di
 api15_0:
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        cmp     ProtectedType,PT_DPMI
-        jnz     api15_NoStack0
-        sub     DPMIStackOff,RawStackDif
-        mov     ax,DPMIStackOff
-        add     ax,RawStackDif
-        mov     es:RealRegsStruc.Real_SP[edi],ax
-        mov     ax,DPMIStackSeg
-        mov     es:RealRegsStruc.Real_SS[edi],ax
-
-; MED 05/23/96
-        test    BYTE PTR cs:apiSystemFlags,1
-        jz      medUse32Bit8
-        mov     ebx,Int_Flags16
-        jmp     medUse16Bit8
-
-medUse32Bit8:
-        mov     ebx,Int_Flags32
-
-medUse16Bit8:
-        mov     ax,ss:[ebp+ebx]
-        and     ah,11111100b                        ;clear Trap and INT flag.
-        mov     es:RealRegsStruc.Real_Flags[edi],ax ; explicitly set flags on DPMI 300h call
-
+        xor     eax,eax
+        mov     ds,cs:apiDSeg32
         assume ds:GROUP32
-        jmp     api15_DoneStack0
-api15_NoStack0:
-        mov     es:RealRegsStruc.Real_SSSP[edi],0   ;use DPMI provided stack.
-api15_DoneStack0:
-        xor     cx,cx                               ;No stack parameters.
-        mov     bh,ch                               ;no flags.
-
-        mov     bl,ss:[ebp+Int_BL]
-
-        mov     ax,0300h
+        cmp     DPMIStackSeg,ax   ;"DPMI stack" allocated?
+        jz      NoStack           ;if no, use the one provided by the DPMI host (or DPMIEMU)
+        sub     DPMIStackOfs,RawStackDif
+        mov     eax,DPMIStackSSSP
+        add     ax,RawStackDif
+NoStack:
+        mov     es:RealRegsStruc.Real_SSSP[edi],eax
+        call    ecx
         cwAPI_CallOldCC
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        cmp     ProtectedType,PT_DPMI
-        jnz     api15_DoneStack1
-        add     DPMIStackOff,RawStackDif
-api15_DoneStack1:
+        cmp     DPMIStackSeg,0
+        jz      DoneStack1
+        add     DPMIStackOfs,RawStackDif
+DoneStack1:
         test    BYTE PTR cs:apiSystemFlags,1
         jz      api15_Use32Bit8
         mov     ebx,Int_Flags16
@@ -1004,9 +971,38 @@ api15_Use16Bit8:
         and     es:RealRegsStruc.Real_Flags[edi],1111100111111111b  ;lose IF & DF.
         or      es:RealRegsStruc.Real_Flags[edi],ax
         ret
-cwAPI_IntXX     endp
 
-        assume ds:GROUP32
+runrmcode endp
+
+;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+;
+;Pass control to a real mode interrupt handler.
+;
+;On Entry:
+;
+;BL     - INT number.
+;ES:[E]DI       - Real mode register structure.
+;
+cwAPI_IntXX     proc    near
+        mov     ecx, offset intxxproc
+        jmp     runrmcode
+intxxproc:
+        test    BYTE PTR cs:apiSystemFlags,1
+        jz      medUse32Bit8
+        mov     ebx,Int_Flags16
+        jmp     medUse16Bit8
+medUse32Bit8:
+        mov     ebx,Int_Flags32
+medUse16Bit8:
+        mov     ax,ss:[ebp+ebx]
+        and     ah,11111100b                        ;clear Trap and INT flag.
+        mov     es:RealRegsStruc.Real_Flags[edi],ax ; explicitly set flags on DPMI 300h call
+        xor     cx,cx                               ;No stack parameters.
+        mov     bh,ch                               ;no flags.
+        mov     bl,ss:[ebp+Int_BL]
+        mov     ax,300h
+        ret
+cwAPI_IntXX     endp
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -1017,57 +1013,18 @@ cwAPI_IntXX     endp
 ;ES:[E]DI       - Real mode register structure.
 ;
 cwAPI_FarCallReal proc near
-        mov     edi,[ebp+Int_EDI]
-        mov     es,[ebp+Int_ES]
-        xor     eax,eax
-        mov     ax,es
-        lsl     eax,eax
-        cmp     eax,10000h
-        jnc     api16_0
-        movzx   edi,di
-api16_0:
+        mov     ecx, offset farxxproc
+        jmp     runrmcode
+farxxproc:
         pushf
         pop     es:RealRegsStruc.Real_Flags[edi]
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        cmp     ProtectedType,PT_DPMI
-        jnz     api16_NoStack1
-        sub     DPMIStackOff,RawStackDif
-        mov     ax,DPMIStackOff
-        add     ax,RawStackDif
-        mov     es:RealRegsStruc.Real_SP[edi],ax
-        mov     ax,DPMIStackSeg
-        mov     es:RealRegsStruc.Real_SS[edi],ax
-        assume ds:GROUP32
-        jmp     api16_DoneStack2
-api16_NoStack1:
-        mov     es:RealRegsStruc.Real_SSSP[edi],0 ;use DPMI provided stack.
-api16_DoneStack2:
         xor     cx,cx                           ;No stack parameters.
         xor     bx,bx                           ;no flags.
-        mov     ax,0301h
-        cwAPI_CallOldCC
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        cmp     ProtectedType,PT_DPMI
-        jnz     api16_DoneStack3
-        add     DPMIStackOff,RawStackDif
-api16_DoneStack3:
-        test    BYTE PTR cs:apiSystemFlags,1
-        assume ds:GROUP32
-        jz      api16_Use32Bit8
-        mov     ebx,Int_Flags16
-        jmp     api16_Use16Bit8
-api16_Use32Bit8:
-        mov     ebx,Int_Flags32
-api16_Use16Bit8:
-        mov     ax,ss:[ebp+ebx]
-        and     ax,0000011000000000b            ;retain IF & DF.
-        and     es:RealRegsStruc.Real_Flags[edi],1111100111111111b  ;lose IF & DF.
-        or      es:RealRegsStruc.Real_Flags[edi],ax
+        mov     ax,301h
         ret
 cwAPI_FarCallReal endp
 
+        assume ds:GROUP32
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -5837,7 +5794,7 @@ DeletePSP       proc    near
 api83_NoIRel:
         mov     es,apiDSeg16
         assume es:GROUP16
-        cmp     WORD PTR es:[TerminationHandler+0],offset cwClose
+        cmp     DWORD PTR es:[TerminationHandler+0],offset cwClose
         jnz     api83_YesRelRes
         cmp     es:DebugDump,0
         jnz     api83_NoNRel
@@ -7306,12 +7263,15 @@ api90_Int21Patch:
 ;
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-        mov     ax,TSRSize
+
+;--- why using TSREnd here?
+        mov     ax,TSREnd
+        sub     ax,PSPSegment
+
         mov     edi,offset Int21Buffer
-        push    ds
-        pop     es
-        mov     w RealRegsStruc.Real_EAX[edi],3100h
-        mov     RealRegsStruc.Real_EDX[edi],eax
+        mov     es,cs:apiDSeg32
+        mov     es:RealRegsStruc.Real_AX[edi],3100h
+        mov     es:RealRegsStruc.Real_DX[edi],ax
         mov     bl,21h
         Sys     IntXX
         jmp     api90_KillIt                ;just incase!
@@ -7498,11 +7458,12 @@ api92_NoRelHandle:
 ;Reduce real mode handle count.
 ;
         mov     edi,offset Int21Buffer
+        mov     es,cs:apiDSeg32
         mov     ax,TotalHandles         ;get current count.
         sub     ax,WORD PTR fs:[PSP_Handles]
         or      ax,1                    ;force bit 0 for DOS bug.
-        mov     [edi].RealRegsStruc.Real_EAX,6700h
-        mov     [edi].RealRegsStruc.Real_EBX,eax
+        mov     es:[edi].RealRegsStruc.Real_AX,6700h
+        mov     es:[edi].RealRegsStruc.Real_EBX,eax
         mov     bl,21h
         push    ds
         pop     es
@@ -7878,12 +7839,6 @@ Int24Handler    endp
 
         assume ds:nothing
 
-	align 4
-
-        include load3p.inc
-        include loadle.inc
-        include decode_c.inc
-
 _DATA32 segment
 ;
 ;Export table for base PSP. EXPORT's internal functions.
@@ -7912,45 +7867,39 @@ apiExports      dd 10
 ;
 apiExportName   db 15,"CAUSEWAY_KERNAL"
 ;
-apiExport01     dd __cwAPI_CreatePSP
-        dw apiEXPORT_apiCode
-        db 17,"__CWAPI_CREATEPSP"
-;
-apiExport02     dd __cwAPI_DeletePSP
-        dw apiEXPORT_apiCode
-        db 17,"__CWAPI_DELETEPSP"
-;
-apiExport03     dd __cwAPI_ExecModule
-        dw apiEXPORT_apiCode
-        db 18,"__CWAPI_EXECMODULE"
-;
-apiExport04     dd __cwAPI_DSizeSelector
-        dw apiEXPORT_apiCode
-        db 21,"__CWAPI_DSIZESELECTOR"
-;
-apiExport05     dd __cwAPI_FindModule
-        dw apiEXPORT_apiCode
-        db 18,"__CWAPI_FINDMODULE"
-;
-apiExport06     dd __cwAPI_UnFindModule
-        dw apiEXPORT_apiCode
-        db 20,"__CWAPI_UNFINDMODULE"
-;
-apiExport07     dd __cwAPI_FindFunction
-        dw apiEXPORT_apiCode
-        db 20,"__CWAPI_FINDFUNCTION"
-;
-apiExport08     dd __cwAPI_GetMemLinear32
-        dw apiEXPORT_apiCode
-        db 22,"__CWAPI_GETMEMLINEAR32"
-;
-apiExport09     dd __cwAPI_ResMemLinear32
-        dw apiEXPORT_apiCode
-        db 22,"__CWAPI_RESMEMLINEAR32"
-;
-apiExport10     dd __cwAPI_RelMemLinear32
-        dw apiEXPORT_apiCode
-        db 22,"__CWAPI_RELMEMLINEAR32"
+
+EXPORTSTRUC struct
+dwOfs	dd ?
+wSeg	dw ?
+bLen	db ?
+EXPORTSTRUC ends
+
+@Export macro a,b,c
+local name_
+	EXPORTSTRUC <offset a,b,sizeof name_>
+name_ db c
+endm
+
+apiExport01 label EXPORTSTRUC
+	@Export __cwAPI_CreatePSP,     apiEXPORT_apiCode, "__CWAPI_CREATEPSP"
+apiExport02 label EXPORTSTRUC
+	@Export __cwAPI_DeletePSP,     apiEXPORT_apiCode, "__CWAPI_DELETEPSP"
+apiExport03 label EXPORTSTRUC
+	@Export __cwAPI_ExecModule,    apiEXPORT_apiCode, "__CWAPI_EXECMODULE"
+apiExport04 label EXPORTSTRUC
+	@Export __cwAPI_DSizeSelector, apiEXPORT_apiCode, "__CWAPI_DSIZESELECTOR"
+apiExport05 label EXPORTSTRUC
+	@Export __cwAPI_FindModule,    apiEXPORT_apiCode, "__CWAPI_FINDMODULE"
+apiExport06 label EXPORTSTRUC
+    @Export __cwAPI_UnFindModule,  apiEXPORT_apiCode, "__CWAPI_UNFINDMODULE"
+apiExport07 label EXPORTSTRUC
+	@Export __cwAPI_FindFunction,  apiEXPORT_apiCode, "__CWAPI_FINDFUNCTION"
+apiExport08 label EXPORTSTRUC
+	@Export __cwAPI_GetMemLinear32,apiEXPORT_apiCode, "__CWAPI_GETMEMLINEAR32"
+apiExport09 label EXPORTSTRUC
+	@Export __cwAPI_ResMemLinear32,apiEXPORT_apiCode, "__CWAPI_RESMEMLINEAR32"
+apiExport10 label EXPORTSTRUC
+	@Export __cwAPI_RelMemLinear32,apiEXPORT_apiCode, "__CWAPI_RELMEMLINEAR32"
 _DATA32 ends
 
 __cwAPI_CreatePSP proc far
@@ -8002,4 +7951,213 @@ __cwAPI_RelMemLinear32 proc far
         call    mcbRelMemLinear32
         ret
 __cwAPI_RelMemLinear32 endp
+
+;-------------------------------------------------------------------------------
+;
+;Final init stuff.
+;
+cwOpen  proc    near
+
+;        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        ;
+        mov     d[TerminationHandler+0],offset cwClose
+        mov     w[TerminationHandler+4],cs
+;
+;Now we know the machines details, re-size the program
+;block again to release as much memory as possible.
+;
+;        mov     edi,offset Int21Buffer
+        mov     edi,offset PageInt
+        push    ds
+        pop     es
+        mov     ax,RealPSPSegment
+        mov     [edi].RealRegsStruc.Real_ES,ax
+        mov     bx,TSREnd
+if SMARTRMALLOC
+        mov     RawStackPos, RawStackTotal ;increase size to normal.
+@@:
+ if 0 ; activate for debugging ( clears the stack space with -1 )
+        mov cx, _cwInit
+        mov dx, _cwMain
+        sub cx, dx
+        shl cx, 4   ; cx=offset for _cwInit in GROUP16
+        push di
+        push eax
+        mov di, cx
+        mov cx, RawStackTotal / 4
+        or eax, -1
+        rep stosd
+        pop eax
+        pop di
+ endif
+endif
+        sub     bx,ax                   ;Size program.
+        mov     [edi].RealRegsStruc.Real_BX,bx
+        mov     [edi].RealRegsStruc.Real_AX,4a00h
+        mov     bl,21h
+        mov     ErrorNumber,1
+        Sys     IntXX
+        test    [edi].RealRegsStruc.Real_Flags,1
+        jnz     cw1_9
+        mov     ErrorNumber,0           ;clear error number.
+;
+;Force accurate memory values.
+;
+        or      ecx,-1
+        Sys     GetMemLinear32
+;
+;Enable resource tracking and MCB allocations.
+;
+        or      ResourceTracking,-1     ;Enable resource tracking.
+;
+;Run the main program.
+;
+        mov     edx,offset MainExec     ;name to exec.
+        mov     esi,80h
+        mov     es,PSPSegment
+        xor     ecx,ecx
+        Sys     cwExec                  ;run the bugger.
+        jnc     cw1_8
+        add     ax,10-1                 ;convert error number.
+        mov     ErrorNumber,ax
+        jmp     cw1_9
+cw1_8:
+        cmp     DebugDump,0
+        jnz     cw1_9
+        mov     ErrorLevel,ax           ;store programs error level.
+        mov     ErrorNumber,0           ;clear error number.
+cw1_9:
+        jmp     cwClose
+cwOpen  endp
+
+
+;-------------------------------------------------------------------------------
+;
+;Shut everything down.
+;
+cwClose proc    near
+
+        mov     ds,cs:apiDSeg16
+        assume ds:GROUP16
+        ;
+        mov     ResourceTracking,0
+        mov     mcbAllocations,0
+        sti
+        mov     w[TerminationHandler+4],0
+        ;
+        call    DebugDisplay
+;
+;Remove extension patches.
+;
+        mov     edi,offset ExtensionEnd - sizeof EXTENSION
+cw2_p0:
+        cmp     [edi].EXTENSION.wFlgs,-1  ;installed?
+        jnz     cw2_p2
+        push    edi
+        call    [edi].EXTENSION.pExit
+        pop     edi
+cw2_p2:
+        sub     edi,sizeof EXTENSION
+        cmp     edi,offset ExtensionStart
+        jae     cw2_p0
+;
+;Remove api exception patches.
+;
+        cmp     apiExcepPatched,0
+        jz      cw2_pe0
+        mov     grp32Ofs, offset UnPatchExc
+        call    [grp32Proc]
+cw2_pe0:
+;
+;Remove the API patch.
+;
+        mov     es,Group32DS
+        assume es:GROUP32
+        mov     edx,DWORD PTR [OldInt31+0]
+        mov     cx,WORD PTR [OldInt31+4]
+        mov     bl,31h
+        mov     ax,205h
+        int     31h
+        mov     DWORD PTR [cwIdentity+0],0
+        mov     DWORD PTR [cwIdentity+4],0
+;        assume es:nothing
+        ;
+cw2_noAPI:
+
+; MED, 12/24/99, coalesce free memory by attempting to allocate largest possible
+;  with upper memory in the chain
+        mov     ax,5800h
+        int     21h
+        push    ax
+        mov     ax,5802h
+        int     21h
+        push    ax
+        mov     bx,1
+        mov     ax,5803h
+        int     21h
+        mov     bx,81h
+        mov     ax,5801h
+        int     21h
+
+        mov     ah,48h
+        mov     bx,-1
+        int     21h
+
+        pop     bx
+        mov     ax,5803h
+        int     21h
+        pop     bx
+        mov     ax,5801h
+        int     21h
+
+
+        cmp     ProtectedType,PT_DPMI
+        jz      cw2_DPMI
+;
+;Make RAW stuff addressable.
+;
+        cli                             ;Don't want interrupts interfering.
+;        mov     ax,KernalDS             ;Get supervisor data descriptor,
+;        mov     ds,ax                   ;DS,ES,FS,GS,SS must be data with 64k limit
+;        assume ds:GROUP16
+        mov     ax,KernalZero
+        mov     es,ax
+;
+;Switch to RAW exit code.
+;
+        push    offset cw2_InRealMode
+        db 66h,0eah    ;jmp far16 ptr []
+        dw offset RawVCPIRealMode, KernalCS
+;
+;Remove DPMI stuff.
+;
+cw2_DPMI:
+if 0
+        cmp     [OldInt21hExec],0
+        jz      cw2_d0
+        mov     bl,21h
+        mov     dx,w[OldInt21hExec+0]
+        mov     cx,w[OldInt21hExec+2]
+        mov     ax,201h
+        int     31h
+cw2_d0:
+endif
+        mov     al,b ErrorNumber
+        mov     ah,4ch
+        int     21h
+
+_cwMain segment
+cw2_InRealMode:
+        mov     ax,ErrorNumber
+        or      ax,ax
+        jnz     cw2_Exit
+        mov     ax,ErrorLevel
+cw2_Exit:
+        mov     ah,4ch
+        int     21h
+_cwMain ends
+
+cwClose endp
+
 

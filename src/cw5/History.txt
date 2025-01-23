@@ -14,9 +14,10 @@
    - fixed: emulation of DPMI functions 0300h-0302h did modify BX register.
    - fixed: int 31h, ax=0000 always returned with NC, although function might
      have failed.
-   - if PL3 stack couldn't be allocated in UMB (9k), it's now using memory
-     used by segments that were moved to extended memory. This may avoid
-     scattering of DOS memory.
+   - UMBs are now also preferably used in DPMI mode.
+   - if DOS memory blocks needed by CW itself couldn't be allocated in an UMB,
+     they're now located in space used by segments that were moved to extended
+     memory. This should avoid scattering of DOS memory.
    - _cwInit segment moved from last segment to just behind _cwRaw. This allows
      to put _cwMain, _cwRaw and _cwInit in a group, thus reducing segment register
      moves.
@@ -25,6 +26,7 @@
      when the application runs.
    - fixed: address space handling in raw/vcpi mode (memory.asm) ignored an
      overflow, resulting in a freeze or reboot.
-   - UMBs are now also preferably used in DPMI mode.
    - fixed: unhandled DPMI functions were routed to real-mode in raw/vcpi mode.
    - DPMI function 306h (return raw mode switch addresses) implemented.
+   - trace log writes (macro @dprintf) added.
+   - fixed: DPMI emulator func 0001 (release descriptor) always returned with NC.

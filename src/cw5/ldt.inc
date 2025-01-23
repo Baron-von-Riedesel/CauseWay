@@ -1,5 +1,11 @@
 
 ;--- for RAW/VCPI mode
+
+MAXREAL2PROT equ 128
+
+	align 2
+Real2ProtList   dw MAXREAL2PROT dup (0)
+
 ;-------------------------------------------------------------------------------
 ;
 ;Allocate block of descriptor entries.
@@ -14,22 +20,20 @@
 ;
 RawGetDescriptors proc near
         ;
-        push    ebx
         push    ecx
         push    edx
-        push    esi
         push    edi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
+        mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT memory addresable.
+        mov     ax,KernalZero
         mov     es,eax
         mov     edi,MDTLinear+4 ;point to descriptor map.
         movzx   edx,cx
         mov     ecx,8192
-        xor     al,al
+        mov     al,0
         cld
         dec     edx
         jnz     ldt1_0
@@ -39,7 +43,7 @@ RawGetDescriptors proc near
         repne   scasb           ;find a zero.
         jnz     ldt1_err
         dec     edi
-        inc     al
+        mov     al,1
         mov     es:[edi],al
         jmp     ldt1_1
         ;
@@ -61,47 +65,37 @@ ldt1_0:
         push    edi
         mov     ecx,edx
         inc     ecx
-        inc     al
+        mov     al,1
         rep     stosb           ;mark all entries as used.
         pop     edi
 ldt1_1:
         sub     edi,MDTLinear+4
         shl     edi,3
-        push    edi
+        push    eax
+        pop     ax
+        push    di
         add     edi,MDTLinear
-        xor     ecx,ecx
-        mov     es:[edi+0],ecx
-        mov     DWORD PTR es:[edi+4],(DescPresent+DescMemory+DescRWData+DescPL3) shl 8
-        or      edx,edx
-        jz      ldt1_2
         mov     ecx,edx
-        add     ecx,ecx
-        mov     esi,edi
-        add     edi,8
-        push    ds
-        push    es
-        pop     ds
-        rep     movsd
-        pop     ds
-        ;
+        inc     ecx
 ldt1_2:
-        pop     ax              ;don't modify hiword(eax)!
-        add     esp,2
-        or      ax,3+4          ;RPL=3, TI=1
-        clc
+        xor     eax,eax
+        stosd   es:[edi]
+        mov     eax,(DescPresent+DescMemory+DescRWData+DescPL3) shl 8
+        stosd   es:[edi]
+        loop    ldt1_2
+        pop     eax
+        or      ax,111b         ;RPL=3, TI=1
         jmp     ldt1_9
 ldt1_err:
         stc
 ldt1_9:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     edi
-        pop     esi
         pop     edx
         pop     ecx
-        pop     ebx
         ret
-        assume ds:_cwDPMIEMU
 RawGetDescriptors endp
 
 
@@ -115,67 +109,69 @@ RawGetDescriptors endp
 ;
 RawRelDescriptor proc near
         ;
-        ;Check segment registers for value we're releasing and clear
-        ;if found.
-        ;
         push    eax
-        push    ebx
         push    ecx
-        and     ebx,0ffffh-7
-        xor     ecx,ecx
-        xor     eax,eax
-        mov     eax,ds
-        and     eax,not 7
-        cmp     eax,ebx
-        jnz     ldt2_0
-        mov     ds,ecx
-ldt2_0: mov     eax,es
-        and     eax,not 7
-        cmp     eax,ebx
-        jnz     ldt2_1
-        mov     es,ecx
-ldt2_1: mov     eax,fs
-        and     eax,not 7
-        cmp     eax,ebx
-        jnz     ldt2_2
-        mov     fs,ecx
-ldt2_2: mov     eax,gs
-        and     eax,not 7
-        cmp     eax,ebx
-        jnz     ldt2_3
-        mov     gs,ecx
-ldt2_3:
-        pop     ecx
-        pop     ebx
-        pop     eax
-        ;
-        push    eax
         push    esi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
+        mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT addresable.
+        mov     ax,KernalZero
         mov     es,eax
+
+        test    bl,4            ;LDT selector?
+        jz      error
         movzx   esi,bx          ;Get selector to use.
         shr     esi,3           ;/8 for descriptor number.
+        cmp     esi,GDT_Entries
+        jc      error
         add     esi,MDTLinear+4
-        mov     BYTE PTR es:[esi],0             ;mark this entry as free.
+        cmp     BYTE PTR es:[esi],0  ;entry allocated?
+        jz      error
+        mov     BYTE PTR es:[esi],0  ;mark this entry as free.
         movzx   esi,bx
         and     esi,not 7
         add     esi,MDTLinear
         xor     eax,eax
         mov     es:[esi+0],eax
         mov     es:[esi+4],eax
+        xor     ecx,ecx
+        mov     esi,gs
+        lar     eax,esi
+        jz      @F
+        mov     gs,ecx
+@@:
+        mov     esi,fs
+        lar     eax,esi
+        jz      @F
+        mov     fs,ecx
+@@:
+        pop     esi
+        lar     eax,esi
+        jz      @F
+        mov     esi,ecx
+@@:
+        mov     es,esi
+        pop     esi
+        lar     eax,esi
+        jz      @F
+        mov     esi,ecx
+@@:
+        mov     ds,esi
         ;
         clc
+        jmp     rrd_9
+error:
         pop     es
         pop     ds
+        stc
+rrd_9: 
+        assume ds:nothing
         pop     esi
+        pop     ecx
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawRelDescriptor endp
 
 
@@ -194,7 +190,6 @@ RawRelDescriptor endp
 ;Note: Multiple calls with the same value will nearly always return the same
 ;selector depending on how many selectors have been allocated with this routine.
 ;
-MAXREAL2PROT equ 128
 
 RawReal2ProtSel proc    near
         ;
@@ -202,15 +197,16 @@ RawReal2ProtSel proc    near
         push    ecx
         push    edx
         push    esi
-        push    edi
         push    ds
-        mov     ax,DpmiEmuDS            ;make our data addresable.
+        mov     ax,DpmiEmuDS
         mov     ds,eax
-        movzx   ebx,bx          ;Get the segment value.
-        shl     ebx,4           ;convert to linear.
+        assume ds:_cwDPMIEMU
+        movzx   ebx,bx
+        shl     ebx,4           ;convert segment to linear.
         mov     esi,offset Real2ProtList        ;point to list of selectors.
         mov     ecx,MAXREAL2PROT
-ldt3_0: cmp     w[esi],0                ;end of the list?
+ldt3_0:
+        cmp     w[esi],0        ;free entry?
         jz      ldt3_New
         push    ebx
         push    ecx
@@ -224,40 +220,26 @@ ldt3_0: cmp     w[esi],0                ;end of the list?
         cmp     edx,ebx         ;same base?
         jz      ldt3_GotOne
         add     esi,2
-        dec     ecx
-        jnz     ldt3_0
+        loop    ldt3_0
 ;
 ;Have to allocate a new descriptor.
 ;
 ldt3_New:
-        push    ecx
         mov     cx,1
         call    RawGetDescriptors       ;get a descriptor.
-        pop     ecx
         jc      ldt3_9
-        push    eax
         push    ebx
-        push    ecx
         mov     dx,bx
         shr     ebx,16
         mov     cx,bx
-        mov     bx,ax
+        mov     ebx,eax
         call    RawSetSelBase
-        pop     ecx
-        pop     ebx
-        pop     eax
-        push    eax
-        push    ebx
-        push    ecx
         mov     dx,-1
         xor     cx,cx
-        mov     bx,ax
         call    RawSetSelLimit
-        pop     ecx
         pop     ebx
-        pop     eax
-        or      ecx,ecx         ;did we reach the end of the list?
-        jz      ldt3_Done
+        cmp     esi,offset Real2ProtList + sizeof Real2ProtList
+        jae     ldt3_Done
         mov     [esi],ax
         jmp     ldt3_Done
 ;
@@ -272,16 +254,36 @@ ldt3_Done:
         clc
 ldt3_9:
         pop     ds
-        pop     edi
+        assume ds:nothing
         pop     esi
         pop     edx
         pop     ecx
         pop     ebx
         ret
-	align 2
-Real2ProtList   dw MAXREAL2PROT dup (0)
 RawReal2ProtSel endp
 
+;--- generic check of selector in BX
+
+checkdesc proc
+        mov     ax,KernalDS
+        mov     ds,eax
+        assume ds:GROUP16
+        mov     ax,KernalZero
+        mov     es,eax
+        test    bl,4
+        stc
+        jz      done
+        cmp     bx, GDT_Entries*8
+        jb      done
+        movzx   esi,bx          ;Get the selector.
+        and     esi,not 7       ;lose RPL & TI.
+        add     esi,MDTLinear   ;offset into descriptor table.
+        cmp     byte ptr es:[esi+5],1 ;allocated descriptor?
+done:
+        ret
+checkdesc endp
+
+        assume ds:nothing
 
 ;-------------------------------------------------------------------------------
 ;
@@ -299,26 +301,21 @@ RawSetSelType   proc    near
         push    esi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
-        assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,eax
-        movzx   esi,bx          ;Get the selector.
-        and     si,0fff8h               ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
-        mov     BYTE PTR es:[esi+5],cl
+        call    checkdesc
+        jc      done
+        mov     es:[esi+5],cl
         and     ch,11110000b
         and     BYTE PTR es:[esi+6],00001111b
-        or      BYTE PTR es:[esi+6],ch
+        or      es:[esi+6],ch
         ;
         clc
+done:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     esi
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawSetSelType   endp
 
 
@@ -338,14 +335,8 @@ RawSetSelLimit  proc    near
         push    esi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
-        assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,eax
-        movzx   esi,bx          ;Get the selector.
-        and     si,0ffffh-7             ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
+        call    checkdesc
+        jc      done
         shl     ecx,16
         mov     cx,dx
         xor     al,al
@@ -353,20 +344,22 @@ RawSetSelLimit  proc    near
         jc      ldt5_2
         shr     ecx,12          ; div by 4096
         or      al,80h          ; set g bit
-ldt5_2: mov     es:[esi],cx             ;store low word of limit.
+ldt5_2:
+        mov     es:[esi+0],cx   ;store low word of limit.
         shr     ecx,16
         or      cl,al
         and     BYTE PTR es:[esi+6],01110000b   ;lose limit & G bit.
         or      es:[esi+6],cl           ;store high bits of limit and G bit.
         ;
         clc
+done:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     esi
         pop     ecx
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawSetSelLimit  endp
 
 
@@ -385,24 +378,18 @@ RawSetSelBase   proc    near
         push    esi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addressable.
-        mov     ds,eax
-        assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT addressable.
-        mov     es,eax
-        movzx   esi,bx          ;Get the selector.
-        and     si,0ffffh-7             ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
-        mov     es:[esi+4],cl           ;base mid.
-        mov     es:[esi+7],ch           ;base high.
-        mov     es:[esi+2],dx           ;base low.
-        clc
+        call    checkdesc
+        jc      done
+        mov     es:[esi+2],dx   ;base low.
+        mov     es:[esi+4],cl   ;base mid.
+        mov     es:[esi+7],ch   ;base high.
+done:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     esi
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawSetSelBase   endp
 
 
@@ -424,24 +411,18 @@ RawGetSelBase   proc    near
         push    esi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
-        assume ds:GROUP16
-        mov     ax,KernalZero   ;make LDT addresable.
-        mov     es,eax
-        movzx   esi,bx          ;Get the selector.
-        and     si,0fff8h               ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
-        mov     cl,es:[esi+4]           ;base mid.
-        mov     ch,es:[esi+7]           ;base high.
-        mov     dx,es:[esi+2]           ;base low.
-        clc
+        call    checkdesc
+        jc      done
+        mov     dx,es:[esi+2]   ;base low.
+        mov     cl,es:[esi+4]   ;base mid.
+        mov     ch,es:[esi+7]   ;base high.
+done:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     esi
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawGetSelBase   endp
 
 
@@ -461,38 +442,29 @@ RawBPutDescriptor proc near
         push    edi
         push    ds
         push    es
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
+        call    checkdesc
+        jc      done
         assume ds:GROUP16
-        movzx   esi,bx          ;Get the selector.
-        and     si,0fff8h               ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
-        test    BYTE PTR RawSystemFlags,1
+        test    BYTE PTR SystemFlags,1
         jz      ldt8_Use32
         movzx   edi,di
 ldt8_Use32:
-        mov     ax,KernalZero   ;make LDT addresable.
-        mov     ds,eax
-        push    esi
+        xchg    esi,edi
+        pop     ds      ;source in DS:[ESI] now
         push    ds
-        push    edi
-        push    es
-        pop     ds
-        pop     esi
-        pop     es
-        pop     edi
         cld
         movsd
         movsd
         ;
         clc
+done:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     edi
         pop     esi
         pop     eax
         ret
-        assume ds:_cwDPMIEMU
 RawBPutDescriptor endp
 
 
@@ -511,24 +483,27 @@ RawBGetDescriptor proc near
         push    esi
         push    edi
         push    ds
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
+        push    es
+        call    checkdesc
+        jc      done
         assume ds:GROUP16
-        movzx   esi,bx          ;Get the selector.
-        and     si,0fff8h               ;lose RPL & TI.
-        add     esi,MDTLinear   ;offset into descriptor table.
-        test    BYTE PTR RawSystemFlags,1
+        test    BYTE PTR SystemFlags,1
         jz      ldt9_Use32
         movzx   edi,di
 ldt9_Use32:
-        mov     ax,KernalZero   ;make LDT addresable.
+        pop     es
+        push    es
+        mov     ax,KernalZero
         mov     ds,eax
         cld
         movsd
         movsd
         ;
         clc
+done:
+        pop     es
         pop     ds
+        assume ds:nothing
         pop     edi
         pop     esi
         pop     eax

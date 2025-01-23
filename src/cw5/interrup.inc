@@ -15,7 +15,7 @@ ISEXCEPTION	equ 10000h	;cw uses RF in eflags to internally indicate exception
 
 	align 4
 ;
-DpmiEmuSystemFlags dd 0
+DpmiEmuSystemFlags dw 0,0
 ;
 ; do NOT change order of these variables (you can add at the end), MED 01/08/96
 ExceptionCode   dd 0
@@ -396,41 +396,38 @@ med2a:
         jnz     inter9_Setting
 inter9_Restoreing:
         pushad
-        movzx   cx,bl
+        mov     ecx,ebx
         sub     bl,al                   ; now BL=Callback# (1Ch->16, 23h->17, 24h->18)
-        movzx   bx,bl
+;        movzx   bx,bl
         mov     ax,size CallBackStruc
         mul     bx
         mov     bx,ax
         add     bx,offset CallBackTable
         test    [bx].CallBackStruc.CallBackFlags,1      ;this one in use?
         jz      inter9_DoneHardware     ;not likely.
-        push    es
         mov     ax,KernalZero
         mov     es,eax
         mov     [bx].CallBackStruc.CallBackFlags,0      ;Mark this one as un-used.
-        push    cx
+        push    ecx
         mov     dx,w[bx].CallBackStruc.CallBackReal+0   ;get original real mode vector.
         mov     cx,w[bx].CallBackStruc.CallBackReal+2
-        pop     bx
+        pop     ebx
         shl     bx,2
         mov     es:[bx+0],dx
         mov     es:[bx+2],cx
-        pop     es
         jmp     inter9_DoneHardware
 inter9_Setting:
         pushad
-        movzx   cx,bl
+        mov     ecx,ebx
         sub     bl,al
-        movzx   bx,bl
+;        movzx   bx,bl
         mov     ax,size CallBackStruc
         mul     bx
-        mov     dx,bx
+        mov     edx,ebx   ;save callback#
         mov     bx,ax
         add     bx,offset CallBackTable
         test    [bx].CallBackStruc.CallBackFlags,1      ;this one in use?
         jnz     inter9_DoneHardware
-        push    es
         mov     ax,KernalZero
         mov     es,eax
         mov     [bx].CallBackStruc.CallBackNum,cl       ;set interupt number.
@@ -439,17 +436,16 @@ inter9_Setting:
         mul     dx
         mov     si,offset ICallBackList
         add     si,ax           ;index list of calls.
-        push    bx
+        push    ebx
         mov     bx,cx
         shl     bx,2
         mov     dx,es:[bx+0]
         mov     cx,es:[bx+2]
         mov     es:[bx+0],si
         mov     WORD PTR es:[bx+2],GROUP16
-        pop     bx
+        pop     ebx
         mov     w[bx].CallBackStruc.CallBackReal+0,dx   ;store original real mode vector.
         mov     w[bx].CallBackStruc.CallBackReal+2,cx
-        pop     es
 inter9_DoneHardware:
         popad
 inter9_NotHardware:
@@ -457,7 +453,8 @@ inter9_NotHardware:
         mov     ds,eax
         assume ds:_cwDPMIEMU
         movzx   ebx,bl
-        imul    ebx,6
+        shl     ebx,1           ;*2
+        lea     ebx,[ebx*2+ebx] ;*6
         add     ebx,offset InterruptTable
         mov     [ebx+0],edx             ;set offset.
         mov     [ebx+4],cx              ;set segment selector.
@@ -468,6 +465,7 @@ inter9_NotHardware:
 @@:
         pop     es
         pop     ds
+        assume ds:nothing
         pop     edx
         pop     ecx
         pop     ebx
@@ -531,18 +529,14 @@ RawSetEVector   proc    near
         ;
         push    ds
         push    es
-        push    fs
-        push    gs
         push    ebx
         push    ecx
         push    edx
-        push    esi
-        push    edi
-        push    ebp
         push    eax                     ; push last so is easily accessible for changing
 
         mov     ax,DpmiEmuDS
         mov     ds,eax
+        assume ds:_cwDPMIEMU
         movzx   eax,bl
         mov     ebx,eax
         shl     ebx,1           ;*2
@@ -578,16 +572,12 @@ inter11_Normal:
         mov     [ebx+4],cx              ;set segment selector.
 inter11_GotVect:
         pop     eax
-        pop     ebp
-        pop     edi
-        pop     esi
         pop     edx
         pop     ecx
         pop     ebx
-        pop     gs
-        pop     fs
         pop     es
         pop     ds
+        assume ds:nothing
         ret
 RawSetEVector   endp
 
@@ -603,87 +593,73 @@ RawSetEVector   endp
 ;
 ;On Exit:-
 ;
-;Carry set on error, else,
-;
+;Carry set on error - no regs modified
+;else
 ;CX:DX  - Real mode address allocated.
 ;
-RAWGetCallBack  proc near
+RawGetCallBack  proc near
         ;
         push    eax
         push    ebx
         push    esi
-        push    edi
-        push    ebp
         push    ds
-        push    es
-        mov     eax,ds
-        push    eax
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        pop     eax
         ;
 ;;MED 02/16/96
         mov     ebx,offset CallBackTable+((size CallBackStruc)*(16+3))
-        mov     ecx,MaxCallBacks-(16+3)
-        mov     edx,16+3
-;        mov     ebx,offset CallBackTable+((size CallBackStruc)*(16+4))
-;        mov     ecx,MaxCallBacks-(16+4)
-;        mov     edx,16+4
+        mov     eax,16+3  ;eax=callback#
 
 inter12_0:
         test    CallBackStruc.CallBackFlags[ebx],1              ;this one in use?
         jz      inter12_1
         add     ebx,size CallBackStruc
-        inc     edx
-        dec     ecx
+        inc     eax
+        cmp     eax,MaxCallBacks
         jnz     inter12_0
+        stc
         jmp     inter12_9
         ;
 inter12_1:
         pushad
-        xor     eax,eax
         mov     cx,1
+        xor     eax,eax   ;alloc descriptor
         int     31h
         mov     w[ebx].CallBackStruc.CallBackStackSel,ax
         popad
         jc      inter12_9
         pushad
         mov     bx,w[ebx].CallBackStruc.CallBackStackSel
-        mov     eax,8
         xor     ecx,ecx
         or      edx,-1
+        mov     ax,8      ;set limit
         int     31h
         popad
         ;
         mov     d[ebx].CallBackStruc.CallBackProt+0,esi ;store protected mode code address.
-        mov     w[ebx].CallBackStruc.CallBackProt+4,ax
-        mov     d[ebx].CallBackStruc.CallBackRegs+0,edi ;store register table address.
+        pop     esi
+        push    esi
+        mov     w[ebx].CallBackStruc.CallBackProt+4,si  ;store org DS
+        mov     d[ebx].CallBackStruc.CallBackRegs+0,edi ;store register table address ES:EDI.
         mov     w[ebx].CallBackStruc.CallBackRegs+4,es
-        mov     ax,CallBackSize
+        mov     dx,CallBackSize
         mul     dx
         mov     esi,offset CallBackList
-        movzx   eax,ax
         add     esi,eax         ;index list of calls.
         mov     [ebx].CallBackStruc.CallBackOff,si      ;store call back address.
         mov     [ebx].CallBackStruc.CallBackFlags,1     ;flag this entry in use.
         mov     cx,GROUP16      ;get real mode code seg.
         mov     dx,si           ;get real mode offset.
         clc
-        jmp     inter12_10
-        ;
 inter12_9:
-        stc
-inter12_10:
-        pop     es
         pop     ds
-        pop     ebp
-        pop     edi
+        assume ds:nothing
         pop     esi
         pop     ebx
         pop     eax
         ret
-RAWGetCallBack endp
+RawGetCallBack endp
 
 
 ;-------------------------------------------------------------------------------
@@ -694,13 +670,10 @@ RAWGetCallBack endp
 ;
 ;CX:DX  - Real mode call back address.
 ;
-RAWRelCallBack proc near
+RawRelCallBack proc near
         ;
         pushad
         push    ds
-        push    es
-        push    fs
-        push    gs
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -726,13 +699,10 @@ inter13_1:
         stc
         ;
 inter13_2:
-        pop     gs
-        pop     fs
-        pop     es
         pop     ds
         popad
         ret
-RAWRelCallBack endp
+RawRelCallBack endp
 
 
 ;-------------------------------------------------------------------------------
@@ -1151,9 +1121,9 @@ KRNSTKFRM ends
         ;
         ;Get new stack address.
         ;
-        push    eax
-        push    ebx
         push    ds
+        push    ebx
+        push    eax
         mov     ax,KernalDS             ;make our data addresable.
         mov     ds,eax
         assume ds:GROUP16
@@ -1207,9 +1177,9 @@ inter16_Use0:
         mov     [esp].KRNSTKFRM._esp,ebx
         mov     eax,KernalSS
         mov     [esp].KRNSTKFRM._ss,eax
-        pop     ds
-        pop     ebx
         pop     eax
+        pop     ebx
+        pop     ds
         ;
         ;Pass control to interupt dispatcher.
         ;
@@ -1412,7 +1382,7 @@ IntDispatch     endp
 INTNN386FR struc
 	dd 8 dup (?)	;pushad
     dw 10 dup (?)	;10*2
-    dd 4 dup (?)    ;push ds - push gs
+    dd 2 dup (?)    ;push ds - push es
 newfl dd ?          ;sub esp,4+4
 xxx   dd ?
 retaddr dd ?        ;return address
@@ -1429,6 +1399,8 @@ _cs		dd ?
 _fl		dd ?
 IRET32 ends
 
+        assume ds:nothing
+
 IntNN386        proc    far
 if INTNN386SIZE eq 4
         sub     esp,4+4+2
@@ -1437,14 +1409,11 @@ else
 endif
         push    ds
         push    es
-        push    fs
-        push    gs
-        sub     esp,10*2
+;        push    fs
+;        push    gs
+        sub     esp,10*2    ; room for a (dword aligned) RealRegsStruc
         pushad
         ;
-        mov     ax,DpmiEmuDS            ;make our data addresable.
-        mov     ds,eax           ;/
-        assume ds:_cwDPMIEMU
         mov     ebp,esp
         test    BYTE PTR DpmiEmuSystemFlags,1
         jz      inter18_Use32Bit19
@@ -1474,7 +1443,6 @@ endif
         ;busy if it isn't already marked.
         ;
         mov     ebx,edx
-        push    ds
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -1491,12 +1459,9 @@ endif
         or      CallBackStruc.CallBackFlags[ebx],128    ;mark it as busy.
         mov     [ebp].INTNN386FR.xxx,ebx
 inter18_c2:
-        pop     ds
-        assume ds:_cwDPMIEMU
         ;
         ;Now pass control to the INT simulator.
         ;
-
         mov     eax,[ebp].INTNN386FR.newfl
         and     ah,11111000b   ; clear TF, IF & DF
         push    eax
@@ -1508,14 +1473,8 @@ inter18_c2:
         ;
         cmp     [ebp].INTNN386FR.xxx,0
         jz      inter18_NoCall
-        push    ds
         mov     esi,[ebp].INTNN386FR.xxx
-        mov     ax,KernalDS
-        mov     ds,eax
-        assume ds:GROUP16
         and     CallBackStruc.CallBackFlags[esi],255-128
-        pop     ds
-        assume ds:_cwDPMIEMU
 inter18_NoCall:
         ;
         ;Update the flags.
@@ -1531,8 +1490,8 @@ inter18_NoCall:
         mov     [ebp+sizeof INTNN386FR].IRET16._fl,ax
         popad
         add     sp,10*2
-        pop     gs
-        pop     fs
+;        pop     gs
+;        pop     fs
         pop     es
         pop     ds
         add     sp,4+4+4
@@ -1545,13 +1504,15 @@ inter18_Use32Bit:
         mov     w[ebp+sizeof INTNN386FR].IRET32._fl,ax
         popad
         add     esp,10*2
-        pop     gs
-        pop     fs
+;        pop     gs
+;        pop     fs
         pop     es
         pop     ds
+        assume ds:nothing
         add     esp,4+4+4
         iretd                   ;Switch back to calling program.
 IntNN386        endp
+
 
 
 ;-------------------------------------------------------------------------------
@@ -1595,7 +1556,7 @@ endif
         pop     eax
         add     esp,4           ;skip return address
         ;
-        push    ds
+        push    ds              ;push regs so to create an EXCFRX struct
         push    es
         push    fs
         push    gs
@@ -1610,14 +1571,12 @@ endif
         mov     ds,eax           ;/
         test    BYTE PTR DpmiEmuSystemFlags,1
         jz      inter19_Use32Bit16
-        movzx   eax,w[esp+(4+4+4+4)+(4+4+4+4+4+4+4)+(2+2)]
-        mov     ExceptionEFL,eax
+        movzx   eax,[esp].EXCFR16._fl
         jmp     inter19_Use16Bit16
 inter19_Use32Bit16:
-        mov     eax,[esp+(4+4+4+4)+(4+4+4+4+4+4+4)+(4+4)]
-        mov     ExceptionEFL,eax
-        ;
+        mov     eax,[esp].EXCFR32._fl
 inter19_Use16Bit16:
+        mov     ExceptionEFL,eax
         ;Retrieve register values and get outa here.
         ;
         mov     ax,DpmiEmuDS            ;make sure our data is addresable.
@@ -1709,7 +1668,7 @@ nextsreg:
 ;Copy register details into the transfer buffer.
 ;
         push    ds
-        mov     ax,MainDS
+        mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
         movzx   edi,TransferReal
@@ -1731,8 +1690,8 @@ nextsreg:
 
         mov     edi,offset ExceptionIntBuffer
         mov     RealRegsStruc.Real_DS[edi],ax
-        mov     w RealRegsStruc.Real_EDX[edi],0
-        mov     w RealRegsStruc.Real_EAX[edi],0900h
+        mov     RealRegsStruc.Real_DX[edi],0
+        mov     RealRegsStruc.Real_AX[edi],0900h
         mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    EmuRawSimulateInt
@@ -1750,11 +1709,11 @@ if 0 ; _cwInit most likely doesn't exist anymore
         push    ax
         retw
 else
-        mov     ax,MainDS
+        mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
         jmp [TerminationHandler]
 endif
-        assume ds:_cwDPMIEMU
+        assume ds:nothing
 
 ExcepNN386      endp

@@ -14,33 +14,45 @@
 
 ASM=jwasm.exe
 
-ALL	: Build Build\cw32.exe Build\cwstub.exe
+!ifndef DEBUG
+DEBUG=0
+!endif
 
-Build:
-	@mkdir Build
+!if $(DEBUG)
+AOPTD=-D_DEBUG -Sg
+OUTD=Debug
+DBGINC=dprint16.inc dprint32.inc
+!else
+OUTD=Build
+!endif
 
-Build\cwstub.exe: Build\cw32.exe
-	@copy Build\cw32.exe Build\cwstub.exe >NUL
-	@..\..\bin\cwc /q /m2 /l85 Build\cwstub.exe
+ALL	: $(OUTD) $(OUTD)\cw32.exe $(OUTD)\cwstub.exe
+
+$(OUTD):
+	@mkdir $(OUTD)
+
+$(OUTD)\cwstub.exe: $(OUTD)\cw32.exe
+	@copy $(OUTD)\cw32.exe $(OUTD)\cwstub.exe >NUL
+	@..\..\bin\cwc /q /m2 /l85 $(OUTD)\cwstub.exe
 
 # to link use wl32 or MS link;
 # jwlink ( and OW wlink ) have problems to identify CW32's stack segment
 
-Build\cw32.exe: Build\cw32.obj
-	@cd Build
+$(OUTD)\cw32.exe: $(OUTD)\cw32.obj
+	@cd $(OUTD)
 	@WL32 /q/ex/32/m/cs/non cw32.obj
 #	@\msvc\bin\link /nologo/non/map/noi cw32.obj;
 #	@jwlink format dos f cw32.obj op q,m
 	@cd ..
 
-Build\cw32.obj: cw32.asm rawvcpi1.inc rawvcpi2.inc interrup.inc ldt.inc memory.inc api.inc \
+$(OUTD)\cw32.obj: cw32.asm rawvcpi1.inc rawvcpi2.inc interrup.inc ldt.inc memory.inc api.inc \
 		int10h.inc int21h.inc int33h.inc decode_c.inc exceptn.inc equates.inc \
-		..\strucs.inc ..\cw.inc loadle.inc load3p.inc
-	@$(ASM) /c /Cp /nologo /DKRNLDBG /I.. /FlBuild\ -FoBuild\ cw32.asm
+		..\strucs.inc ..\cw.inc loadle.inc load3p.inc $(DBGINC)
+	@$(ASM) /c /Cp $(AOPTD) /nologo /DKRNLDBG /I.. /Fl$(OUTD)\ -Fo$(OUTD)\ cw32.asm
 
 clean:
-	@del Build\cw32.exe
-	@del Build\cwstub.exe
-	@del Build\cw32.obj
-	@del Build\cw32.lst
-	@del Build\cw32.map
+	@del $(OUTD)\cw32.exe
+	@del $(OUTD)\cwstub.exe
+	@del $(OUTD)\cw32.obj
+	@del $(OUTD)\cw32.lst
+	@del $(OUTD)\cw32.map
