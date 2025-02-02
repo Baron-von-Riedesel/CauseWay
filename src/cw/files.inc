@@ -142,7 +142,8 @@ ReadFile	proc	near
 ;EDI	- Position.
 ;
 	xor	edx,edx
-@@0:	pushm	bx,ecx,edx,edi
+@@0:
+	pushm	bx,ecx,edx,edi
 	cmp	ecx,65535		;size of chunks to load.
 	jc	@@2
 	mov	ecx,65535		;as close to 64k as can get.
@@ -181,7 +182,8 @@ WriteFile	proc	near
 ;ESI	- Position.
 ;
 	xor	edx,edx
-@@0:	pushm	bx,ecx,edx,esi
+@@0:
+	pushm	bx,ecx,edx,esi
 	cmp	ecx,65535		;size of chunks to load.
 	jc	@@2
 	mov	ecx,65535		;as close to 64k as can get.
@@ -231,7 +233,8 @@ CloseFile	proc	near
 	mov	ah,3eh		;close file function.
 	int	21h
 	ret
-@@9:	popm	ax,ebx,ecx
+@@9:
+	popm	ax,ebx,ecx
 	stc
 	ret
 CloseFile	endp
@@ -346,7 +349,8 @@ ReadLine	proc	near
 	clc
 	ret
 	;
-@@SoftEOF:	pushm	bx,cx,edi
+@@SoftEOF:
+	pushm	bx,cx,edi
 	xor	cx,cx
 	mov	dx,cx
 	mov	ax,4202h		;move to the end of the file.
@@ -391,7 +395,8 @@ ReadBufferByte	proc	near
 	popm	eax,ebx,ecx,edx,esi,edi,ebp
 	jc	@@9
 	;
-@@0:	cmp	FileBufferCount,0	;still zero?
+@@0:
+	cmp	FileBufferCount,0	;still zero?
 	jz	@@8
 	inc	ax		;getting a byte then.
 	pushm	esi,edi
@@ -401,7 +406,9 @@ ReadBufferByte	proc	near
 	dec	FileBufferCount
 	popm	esi,edi
 	;
-@@8:	clc
-@@9:	ret
+@@8:
+	clc
+@@9:
+	ret
 ReadBufferByte	endp
 

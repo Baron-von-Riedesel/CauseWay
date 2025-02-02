@@ -1191,10 +1191,19 @@ cwcLoad	equ	0fffbh
 ;       For far calls, SS:SP & Flags are filled in by the extender.
 ;
 RealRegsStruc struc
+union
 Real_EDI	dd ?	;EDI
+Real_DI		dw ?
+ends
+union
 Real_ESI	dd ?	;ESI
+Real_SI		dw ?
+ends
+union
 Real_EBP	dd ?	;EBP
-	dd ?	;Reserved.
+Real_BP		dw ?
+ends
+			dd ?	;Reserved.
 union
 Real_EBX	dd ?	;EBX
 Real_BX		dw ?

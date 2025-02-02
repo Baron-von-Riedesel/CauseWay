@@ -10,7 +10,7 @@ _edx    dd ?
 _ecx    dd ?
 _ebx    dd ?
 _eax    dd ?
-_gs     dd ?    ; segment _Excep is now 32bit!
+_gs     dd ?    ; Exception handler is now in a 32bit code segment
 _fs     dd ?
 _es     dd ?
 _ds     dd ?
@@ -393,7 +393,7 @@ if TRAPINT00
 ;-------------------------------------------------------------------------
 ;
 ;Handle a divide by zero.
-;this code is needed only if a host won't recognize an divide error as an exception.
+;this code is needed only if a host won't recognize a divide error as an exception.
 ;
 Int00Handler    proc    near
         push    ds
@@ -724,8 +724,10 @@ exc20_Use32_2:
 exc20_Use0_2::
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
+
+;--- this is NOT really a safe to use address!
         mov     ss,StackSegment
-        mov     esp,offset _cwStackEnd-256
+        mov     esp,offset _cwStackEnd-512
         push    ds
         push    ds
         push    ds
@@ -822,6 +824,7 @@ DebugDisplay    proc    near
         push    ds
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
+        @dprintf -1,<"DebugDisplay enter",10>
         cmp     UserTermFlag,0  ; see if user termination routine
         je      dd2             ; no
 
@@ -1509,10 +1512,11 @@ exc22_r0:
         cmp     BYTE PTR es:[edi],Res_SEL
         jnz     exc22_r1
 exc22_r1_0:
+ifdef SRDPMISTATE
         mov     ax,fs:[EPSP_Struc.EPSP_DPMIMem]
         cmp     WORD PTR es:[esi],ax
         jz      exc22_r1
-
+endif
         ;
 exc22_SEL:
         pushad
@@ -1582,6 +1586,7 @@ exc22_s0:
         mov     eax,fs:[EPSP_Struc.EPSP_INTMem]
         cmp     es:[esi],eax
         jz      exc22_s1
+ifdef SRDPMISTATE
         cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmi
         pushad
@@ -1590,8 +1595,8 @@ exc22_s0:
         cmp     es:[esi],edx
         popad
         jz      exc22_s1
-
 exc22_nodpmi:
+endif
         cmp     ebx,es:[esi]            ;Fits this block?
         jnz     exc22_s1
         pop     esi
@@ -1736,6 +1741,7 @@ exc22_m0:
         mov     eax,fs:[EPSP_Struc.EPSP_INTMem]
         cmp     es:[esi],eax
         jz      exc22_m1
+ifdef SRDPMISTATE
         cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmimem
         pushad
@@ -1744,9 +1750,9 @@ exc22_m0:
         cmp     es:[esi],edx
         popad
         jz      exc22_m1
-
         ;
 exc22_nodpmimem:
+endif
         ;Check if this is an MCB block.
         ;
         push    edi
@@ -1841,6 +1847,7 @@ exc22_mcb1:
         sub     eax,MCBLEN
         cmp     esi,eax
         jz      exc22_mcb2
+ifdef SRDPMISTATE
         cmp     fs:[EPSP_Struc.EPSP_DPMIMem],0
         jz      exc22_nodpmimemhere
         pushad
@@ -1850,8 +1857,8 @@ exc22_mcb1:
         cmp     esi,edx
         popad
         jz      exc22_mcb2
-
 exc22_nodpmimemhere:
+endif
         pushad
         mov     edi,offset DebugHeader
         mov     eax,esi
@@ -2296,13 +2303,13 @@ exc22_cb1:
         ;
         ;Print mouse event target details.
         ;
-        push    ds
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
+;        push    ds
+;        mov     ds,apiDSeg16
+;        assume ds:GROUP16
         mov     eax,MouseETarget+0
         mov     ebx,MouseETarget+4
-        pop     ds
-        assume ds:GROUP32
+;        pop     ds
+;        assume ds:GROUP32
         mov     ecx,eax
         or      ecx,ebx
         jz      exc22_r8
@@ -2383,6 +2390,7 @@ exc22_9:
 ;Now exit with the error number as the DOS "errorlevel".
 ;
 cw2_NoError:
+        @dprintf -1,<"DebugDisplay exit",10>
         pop     ds
         assume ds:nothing
         ret

@@ -1,42 +1,5 @@
+
 ;------------------------------------------------------------------------------
-;
-;Some equates to make stacked register access simpler.
-;--- it's for a) DPMI API ( file api.inc, proc cwAPIpatch )
-;---          b) DOS API ( file int21h.inc, proc Int21h )
-;
-Int_EDI	equ	0
-Int_DI	equ	0
-Int_ESI	equ	4
-Int_SI	equ	4
-Int_EBP	equ	8
-Int_BP	equ	8
-Int_ESP	equ	12  ;not used
-Int_SP	equ	12  ;not used
-Int_EBX	equ	16
-Int_BX	equ	16
-Int_BL	equ	16
-Int_BH	equ	17
-Int_EDX	equ	20
-Int_DX	equ	20
-Int_DL	equ	20
-Int_DH	equ	21
-Int_ECX	equ	24
-Int_CX	equ	24
-Int_CL	equ	24
-Int_CH	equ	25
-Int_EAX	equ	28
-Int_AX	equ	28
-Int_AL	equ	28
-Int_AH	equ	29
-Int_GS	equ	32
-Int_FS	equ	36
-Int_ES	equ	40
-Int_DS	equ	44
-Int_Off	equ	48  ;E/IP
-Int_Seg16	equ	50  ;CS
-Int_Seg32	equ	52
-Int_Flags16	equ	52  ;E/FL
-Int_Flags32	equ	56
 
 ;; MED 02/16/96
 MaxCallBacks	equ	32+3	;maximum number of call back table entries.
@@ -96,8 +59,8 @@ MainCS0			equ	KernalCS0
 MainPL3toPL0	equ	KernalPL3toPL0
 ;
 DpmiEmuCS		equ	090h+3	;DPMI emulator code seg.
-DpmiEmuCS0		equ	098h	;DPMI emulator code seg at PL0.
-DpmiEmuDS		equ	0a0h+3	;DPMI emulator data seg.
+DpmiEmuDS		equ	098h+3	;DPMI emulator data seg.
+DpmiEmuCS0		equ	0A0h	;DPMI emulator code seg at PL0.
 DpmiEmuPL3toPL0	equ	0a8h+3	;call gate
 ;
 GDTData			equ	0b0h+3	; GDT selector r/w

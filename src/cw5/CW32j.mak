@@ -3,6 +3,8 @@
 # CW32.EXE: uncompressed
 # CWSTUB.EXE: compressed
 
+AOPT=-DNOEXPORTS -DDEFLOWMEM=256
+
 ALL	: Build Build\cw32.exe Build\cwstub.exe
 
 Build:
@@ -14,7 +16,7 @@ Build\cwstub.exe: Build\cw32.exe
 
 Build\cw32.exe: cw32.asm rawvcpi1.inc rawvcpi2.inc interrup.inc ldt.inc memory.inc api.inc \
 		int10h.inc int21h.inc int33h.inc decode_c.inc exceptn.inc ..\strucs.inc ..\cw.inc loadle.inc load3p.inc
-	@jwasm -Cp -mz -nologo -DKRNLDBG -I.. -FlBuild\ -FoBuild\ cw32.asm
+	@jwasm -Cp -mz $(AOPT) -nologo -DKRNLDBG -I.. -FlBuild\ -FoBuild\ cw32.asm
 
 clean:
 	@del Build\cw32.exe

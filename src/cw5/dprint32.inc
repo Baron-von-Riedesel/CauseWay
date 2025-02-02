@@ -10,7 +10,8 @@
 ;--- convert long to string;
 ;--- outb is assumed to be stack-located.
 
-@dprintf macro fmt,a1,a2,a3,a4
+@dprintf macro cond,fmt,a1,a2,a3,a4
+if DBGOPT and cond
   for x,<a4,a3,a2,a1>
    ifnb <x>
 	push x
@@ -18,7 +19,12 @@
   endm
 %	call dprintf32&dpsuffix
 	db fmt,0
+endif
 endm
+
+ifdef LLOUT
+	include vioout.inc
+endif
 
 %ltob32&dpsuffix PROC uses edi
 
@@ -60,7 +66,7 @@ endm
 
 %dprintf32&dpsuffix PROC
 
-local size_:word
+local size_:dword
 local flag:byte
 local longarg:byte
 local fill:byte
@@ -69,6 +75,7 @@ local szTmp[12]:byte
 fmt equ <[ebp+4]>
 
 	pushad
+	pushfd
 	lea edi,[ebp+4+4]
 @@L335:
 	mov esi,fmt
@@ -84,6 +91,7 @@ done:
 	sub edi,4
 	mov ss:[edi],esi ;store new EIP
 	mov ax,[ebp]     ;get old value of EBP
+	popfd
 	mov ebp,esp
 	mov [ebp+2*4],eax;now EBP will be restored by popad
 	mov [ebp+8*4],edi;finally store new SP
@@ -93,13 +101,13 @@ done:
 
 formatitem:
 	push @@L335
-	xor dx,dx
+	xor edx,edx
 	mov [longarg],dl
 	mov bl,1
 	mov cl,' '
 	cmp BYTE PTR cs:[esi],'-'
 	jne @F
-	dec bx
+	dec ebx
 	inc esi
 @@:
 	mov [flag],bl
@@ -109,18 +117,18 @@ formatitem:
 	inc esi
 @@:
 	mov [fill],cl
-	mov bx,dx
+	mov ebx,edx
 
 	.while byte ptr cs:[esi] >= '0' && byte ptr cs:[esi] <= '9'
 		lodsb cs:[esi]
 		sub al,'0'
-		cbw
-		imul cx,bx,10		;cx = bx * 10
-		add ax,cx
-		mov bx,ax
+		movzx eax,al
+		shl ebx,1           ;ebx*2
+		lea ebx,[ebx*4+ebx]	;ebx*10
+		add ebx,eax
 	.endw
 
-	mov [size_],bx
+	mov [size_],ebx
 	cmp BYTE PTR cs:[esi],'l'
 	jne @F
 	mov [longarg],1
@@ -193,18 +201,18 @@ handle_s:
 
 print_string:	;display string at ds:si
 	mov eax,esi
-	mov bx,size_
+	mov ebx,size_
 	.while byte ptr [esi]
 		inc esi
 	.endw
 	sub esi,eax
 	xchg eax,esi
-	sub bx,ax
+	sub ebx,eax
 	.if flag == 1
-		.while sword ptr bx > 0
+		.while sdword ptr ebx > 0
 			mov al,[fill]
 			call print_char
-			dec bx
+			dec ebx
 		.endw
 	.endif
 
@@ -213,10 +221,10 @@ print_string:	;display string at ds:si
 		call print_char
 	.endw
 
-	.while sword ptr bx > 0
+	.while sdword ptr ebx > 0
 		mov al,[fill]
 		call print_char
-		dec bx
+		dec ebx
 	.endw
 	retn
 print_char:
@@ -226,14 +234,19 @@ print_char:
 	call @F
 	mov al,10
 @@:
+ifdef LLOUT
+%	call VioPutChr32&dpsuffix
+else
 	push ebx
-	xor bx,bx
+	xor ebx,ebx
 	mov ah,0Eh
 	int 10h
 	pop ebx
+endif
 	retn
 
 fmt equ <>
 
 %dprintf32&dpsuffix ENDP
 
+	align 4

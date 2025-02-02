@@ -56,7 +56,8 @@ ReadCommand	proc	near
 	mov	b[edi+1],0	;terminate the tail.
 	inc	esi		;skip length.
 	;
-@@0:	mov	al,[esi]		;need to skip leading spaces.
+@@0:
+	mov	al,[esi]		;need to skip leading spaces.
 	inc	esi		;/
 	or	al,al		;/
 	jz	@@9		;/
@@ -64,14 +65,16 @@ ReadCommand	proc	near
 	jz	@@0		;/
 	dec	esi		;/
 	;
-@@1:	cmp	b[esi],'/'	;option switch?
+@@1:
+	cmp	b[esi],'/'	;option switch?
 	jz	@@Option		;/
 	cmp	b[esi],'-'	;/
 	jz	@@Option		;/
 	cmp	b[esi],'+'	;/
 	jz	@@Option		;/
 	;
-@@2:	xor	ebx,ebx		;/
+@@2:
+	xor	ebx,ebx		;/
 	mov	bl,OptionCounter	;Get file entry number.
 	inc	OptionCounter	;/
 	shl	ebx,2		;/
@@ -80,7 +83,8 @@ ReadCommand	proc	near
 	mov	[ebx],edi		;update table entry.
 	;
 	xor	cl,cl
-@@3:	cmp	b[esi],0		;end of name?
+@@3:
+	cmp	b[esi],0		;end of name?
 	jz	@@4		;/
 	cmp	b[esi],' '	;/
 	jz	@@4		;/
@@ -91,7 +95,8 @@ ReadCommand	proc	near
 	mov	cl,1		;flag SOMETHING found.
 	jmp	@@3		;keep fetching them.
 	;
-@@4:	mov	b[edi],0		;Terminate the name.
+@@4:
+	mov	b[edi],0		;Terminate the name.
 	inc	edi		;/
 	mov	OptionPointer,edi	;Update table pointer.
 	;

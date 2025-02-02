@@ -24,7 +24,7 @@ OutAddr df ?
 decode_c_handle dw ?
 ;
         align 4
-decode_c_buffer RealRegsStruc <?>
+decode_c_buffer RealRegsStruc <>
 ;
         align 4
 decode_c_head   decode_c_struc <>
@@ -108,7 +108,7 @@ dec1_error:
         stc
         ;
 dec1_exit:
-        pushf
+        pushfd
         push    eax
         push    ecx
         mov     ax,4200h
@@ -117,7 +117,7 @@ dec1_exit:
         int     21h
         pop     ecx
         pop     eax
-        popf
+        popfd
         pop     ds
         pop     ebp
         pop     edi

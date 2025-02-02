@@ -94,39 +94,6 @@ OfsHigh	dw ?
 GATE ends
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-v86CallStruc		struc
-v86CallEDI		dd ?
-v86CallESI		dd ?
-v86CallEBP		dd ?
-		dd ?
-v86CallEBX		dd ?
-v86CallEDX		dd ?
-v86CallECX		dd ?
-v86CallEAX		dd ?
-v86CallFlags		dw ?
-v86CallES		dw ?
-v86CallDS		dw ?
-v86CallFS		dw ?
-v86CallGS		dw ?
-union
-v86CallCSIP		dd ?
-struct
-v86CallIP		dw ?
-v86CallCS		dw ?
-ends
-ends
-union
-v86CallSSSP		dd ?
-struct
-v86CallSP		dw ?
-v86CallSS		dw ?
-ends
-ends
-v86CallStruc		ends
-;
-
-
-;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 TSSFields	struc
 ;
 ;Task segment structure.

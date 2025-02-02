@@ -1,4 +1,11 @@
 
+ifndef SPANISH
+SPANISH equ 0
+endif
+ifndef ENGLISH
+ENGLISH equ not SPANISH
+endif
+
 if SELECTTEXT eq 1
 ErrorM00        db 'CauseWay error '
 ErrorM00n       db '00 : $'

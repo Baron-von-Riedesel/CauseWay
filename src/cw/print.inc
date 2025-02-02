@@ -11,7 +11,8 @@ StringPrint	proc	near
 ;
 	pushm	eax,ebx,ecx,edx,esi,edi,ebp
 	mov	esi,edx
-@@0:	mov	al,[esi]
+@@0:
+	mov	al,[esi]
 	inc	esi
 	or	al,al
 	jz	@@9
@@ -21,7 +22,8 @@ StringPrint	proc	near
 	int	21h
 	pop	esi
 	jmp	@@0
-@@9:	popm	eax,ebx,ecx,edx,esi,edi,ebp
+@@9:
+	popm	eax,ebx,ecx,edx,esi,edi,ebp
 	ret
 StringPrint	endp
 

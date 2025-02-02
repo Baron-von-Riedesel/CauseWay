@@ -9,7 +9,7 @@ OldInt10h       df 0
 Int10hStaticSel dw ?
 Int10hUltraFont dw ?
 	align 4
-Int10Buffer     RealRegsStruc <?>
+Int10Buffer     RealRegsStruc <>
 _DATA32 ends
 ;
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -88,9 +88,9 @@ Int10h  proc    far
         jz      int103_SetFont1
         cmp     ax,1130h                ;Get font details?
         jz      int103_GetFont
-        cmp     ah,13h          ;write teletype string?
+        cmp     ah,13h                  ;write teletype string?
         jz      int103_WriteString
-        cmp     ah,1bh          ;state info?
+        cmp     ah,1bh                  ;state info?
         jz      int103_VideoState
         cmp     ax,1c00h
         jz      int103_StateSize
@@ -104,17 +104,18 @@ Int10h  proc    far
         jz      int103_UltraGetPal
         cmp     ax,0cd10h               ;Ultra set font?
         jz      int103_UltraSetFont
-        jmp     int103_NotOurs
+int103_NotOurs:
+        ;Not a function recognised by us so pass control to previous handler.
+        ;
+        jmp     FWORD PTR cs:[OldInt10h]                ;pass it onto previous handler.
         ;
 int103_GetFont:
-        ;Get font details?
+        ;Get font details? returns ptr in es:ebp
         ;
         push    eax
         push    ebx
-        push    esi
         push    edi
         push    ds
-        push    fs
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg32
         assume es:GROUP32
@@ -126,22 +127,20 @@ int103_GetFont:
         mov     ax,0002h
         int     31h
         jc      int103_9
-        movzx   ebp,w es:[edi].RealRegsStruc.Real_EBP
-        mov     edx,es:[edi].RealRegsStruc.Real_EDX
-        mov     ecx,es:[edi].RealRegsStruc.Real_ECX
+        movzx   ebp,es:[edi].RealRegsStruc.Real_BP
+        mov     dl,b es:[edi].RealRegsStruc.Real_DX
+        mov     cx,es:[edi].RealRegsStruc.Real_CX
         mov     es,eax
         assume es:nothing
 int103_9:
-        pop     fs
         pop     ds
         pop     edi
-        pop     esi
         pop     ebx
         pop     eax
         jmp     int103_Done
         ;
 int103_UltraSetFont:
-        ;UltraVision set font.
+        ;UltraVision set font. DS:ESI->8-byte font name
         ;
         push    ebx
         push    ecx
@@ -167,43 +166,34 @@ int103_Use32Bit503:
 int103_Use32Bit504:
         pop     eax
 
-        push    ax
-        push    bx
-        push    cx
-        push    dx
         push    ds
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         mov     fs,PSPSegment
-        xor     edi,edi
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         pop     ds
         assume ds:nothing
-        mov     ecx,8
-        cld
-        rep     movsb           ;copy into transfer buffer.
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax
 
-        push    ax
-        push    bx
-        push    cx
-        push    dx
+        xor     edi,edi
+        cld
+        movsd                   ;copy 8 bytes into transfer buffer.
+        movsd
+
+        push    eax
+        push    ecx
+        push    edx
         movzx   ax,bh
         mul     cx
         movzx   ecx,ax
         mov     esi,ebp         ;source buffer.
         push    es
         pop     ds
-        mov     edi,8
+        mov     edi,8           ;offset 8 in transfer buffer
         cld
         rep     movsb           ;copy into transfer buffer.
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax
+        pop     edx
+        pop     ecx
+        pop     eax
 
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg32
@@ -212,8 +202,8 @@ int103_Use32Bit504:
         mov     es:[edi].RealRegsStruc.Real_EBX,ebx
         mov     es:[edi].RealRegsStruc.Real_ECX,ecx
         mov     es:[edi].RealRegsStruc.Real_EDX,edx
-        mov     w es:[edi].RealRegsStruc.Real_ESI,0
-        mov     w es:[edi].RealRegsStruc.Real_EBP,8
+        mov     es:[edi].RealRegsStruc.Real_SI,0
+        mov     es:[edi].RealRegsStruc.Real_BP,8
         mov     ax,fs:[EPSP_Struc.EPSP_TransReal]
         mov     es:[edi].RealRegsStruc.Real_DS,ax
         mov     es:[edi].RealRegsStruc.Real_ES,ax
@@ -417,7 +407,7 @@ int103_ok100:
         jmp     int103_Done
         ;
 int103_SetFont1:
-        ;Load user font into character generator ram.
+        ;Load user font into character generator ram. ES:EBP
         ;
         push    eax
         push    ebx
@@ -437,10 +427,10 @@ int103_SetFont1:
         movzx   ebp,bp
 int103_Use32Bit500:
         pop     eax
-        push    ax
-        push    bx
-        push    cx
-        push    dx
+
+        push    eax
+        push    ecx
+        push    edx
         movzx   ax,bh
         mul     cx
         movzx   ecx,ax
@@ -455,10 +445,10 @@ int103_Use32Bit500:
         assume ds:nothing
         cld
         rep     movsb           ;copy into transfer buffer.
-        pop     dx
-        pop     cx
-        pop     bx
-        pop     ax
+        pop     edx
+        pop     ecx
+        pop     eax
+
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg32
         assume es:GROUP32
@@ -608,7 +598,6 @@ int103_SetColours:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
@@ -630,13 +619,13 @@ int103_Use32Bit52:
         pop     ds
         assume ds:nothing
         cld
-        push    cx
+        push    ecx
         movzx   ecx,cx
         mov     eax,ecx
         add     ecx,ecx
         add     ecx,eax         ;3 bytes per entry.
         rep     movsb           ;copy into transfer buffer.
-        pop     cx
+        pop     ecx
         mov     edi,offset Int10Buffer
         mov     es,cs:apiDSeg32
         assume es:GROUP32
@@ -653,7 +642,6 @@ int103_Use32Bit52:
         pop     es
         assume es:nothing
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -663,7 +651,7 @@ int103_Use32Bit52:
         jmp     int103_Done
         ;
 int103_GetColours:
-        ;ES:DX - Buffer for list of RGB values.
+        ;ES:EDX - Buffer for list of RGB values.
         ;CX    - Number of values.
         ;
         push    eax
@@ -672,7 +660,6 @@ int103_GetColours:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
@@ -719,7 +706,6 @@ int103_Use32Bit53:
         pop     fs
         pop     es
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -838,7 +824,7 @@ int103_ss3:
         jmp     int103_Done
         ;
 int103_StateSave:
-        ;Save state function.
+        ;Save state function. ES:EBX
         ;
         push    eax
         push    ebx
@@ -846,10 +832,10 @@ int103_StateSave:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
+
         push    eax
         mov     eax,es
         lsl     eax,eax
@@ -858,9 +844,9 @@ int103_StateSave:
         movzx   ebx,bx
 int103_Use32Bit58:
         pop     eax
+
         push    eax
         push    ebx
-        push    ecx
         push    es
         ;
         mov     edi,offset Int10Buffer
@@ -877,21 +863,20 @@ int103_Use32Bit58:
         mov     es:[edi].RealRegsStruc.Real_ES,ax
         mov     bl,10h
         Sys     IntXX
+        ;
         pop     es
-        assume es:nothing
-        pop     ecx
         pop     ebx
         pop     eax
+        assume es:nothing
         ;
         push    eax
         push    ebx
-        push    es
         mov     ax,1c00h
         int     10h             ;Get buffer size.
-        movzx   ecx,bx
-        pop     es
+        movzx   ecx,bx          ;# of 64-byte blocks
         pop     ebx
         pop     eax
+
         shl     ecx,6           ;*64
         mov     edi,ebx         ;destination buffer.
         xor     esi,esi
@@ -902,7 +887,6 @@ int103_Use32Bit58:
         pop     fs
         pop     es
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -912,7 +896,7 @@ int103_Use32Bit58:
         jmp     int103_Done
         ;
 int103_StateRestore:
-        ;Restore state function.
+        ;Restore state function. ES:EBX
         ;
         push    eax
         push    ebx
@@ -920,10 +904,10 @@ int103_StateRestore:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
+
         push    eax
         mov     eax,es
         lsl     eax,eax
@@ -937,15 +921,15 @@ int103_Use32Bit59:
         push    ebx
         push    ecx
         push    es
+
         push    eax
         push    ebx
-        push    es
         mov     ax,1c00h
         int     10h             ;Get buffer size.
-        movzx   ecx,bx
-        pop     es
+        movzx   ecx,bx          ;# of 64-byte blocks
         pop     ebx
         pop     eax
+
         shl     ecx,6           ;*64
         mov     esi,ebx         ;source buffer.
         push    es
@@ -977,9 +961,7 @@ int103_Use32Bit59:
         ;
         pop     fs
         pop     es
-        assume es:nothing
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -987,64 +969,30 @@ int103_Use32Bit59:
         pop     ebx
         pop     eax
         jmp     int103_Done
+        assume es:nothing
         ;
 int103_Done:
         ;Now update stacked flags.
         ;
         push    eax
-        push    ebx
-        pushf
-        pop     ax                      ;get new flags.
-;        push    ds
-;        mov     ds,cs:apiDSeg16
-;        assume ds:GROUP16
-;        test    BYTE PTR SystemFlags,1
-        test    BYTE PTR apiSystemFlags,1
-;        assume ds:nothing
-;        pop     ds
-        jz      int103_Use32Bit8
-        mov     bx,sp
-        mov     bx,ss:[bx+(4+4)+(2+2)]          ;get original flags.
-        jmp     int103_Use16Bit8
-int103_Use32Bit8:
-        mov     bx,ss:[esp+(4+4)+(4+4)]         ;get original flags.
-int103_Use16Bit8:
-        and     bx,0000011000000000b            ;retain IF & DF.
-        and     ah,11111001b                    ;lose IF & DF.
-        or      ax,bx                           ;get old IF.
-;        push    ds
-;        mov     ds,cs:apiDSeg16
-;        assume ds:GROUP16
-;        test    BYTE PTR SystemFlags,1
-        test    BYTE PTR apiSystemFlags,1
-;        assume ds:nothing
-;        pop     ds
-        jz      int103_Use32Bit9
-        mov     bx,sp
-        mov     ss:[bx+(4+4)+(2+2)],ax          ;modify stack flags.
-        jmp     int103_Use16Bit9
-int103_Use32Bit9:
-        mov     ss:[esp+(4+4)+(4+4)],ax         ;modify stack flags.
-int103_Use16Bit9:
-        pop     ebx
+        pushfd
         pop     eax
-;        push    ds
-;        mov     ds,cs:apiDSeg16
-;        assume ds:GROUP16
-;        test    BYTE PTR SystemFlags,1
+        and     ah,11111001b                    ;lose IF & DF.
         test    BYTE PTR apiSystemFlags,1
-;        assume ds:nothing
-;        pop     ds
-        jz      int103_Use32Bit10
+        jz      int103_Use32Bit8
+        push    ebp
+        movzx   ebp,sp
+        and     [ebp+2*4].IRET16._fl,0000011000000000b  ;retain IF & DF.
+        or      [ebp+2*4].IRET16._fl,ax
+        pop     ebp
+        pop     eax
         iret
-        ;
-int103_Use32Bit10:
+int103_Use32Bit8:
+        and     w [esp+1*4].IRET32._fl,0000011000000000b;retain IF & DF.
+        or      w [esp+1*4].IRET32._fl,ax
+        pop     eax
         iretd
         ;
-int103_NotOurs:
-        ;Not a function recognised by us so pass control to previous handler.
-        ;
-        jmp     FWORD PTR cs:[OldInt10h]                ;pass it onto previous handler.
 Int10h  endp
 ;
 

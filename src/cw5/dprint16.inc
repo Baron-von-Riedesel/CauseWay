@@ -7,7 +7,19 @@
 ;--- convert long to string;
 ;--- outb is assumed to be stack-located.
 
-@dprintf macro fmt,a1,a2,a3,a4
+ifndef DBGOPT
+DBGOPT equ -1
+endif
+
+DOPT_DOSMEM   equ 1b
+DOPT_MEM      equ 10b
+DOPT_SEL      equ 100b
+DOPT_EXEC     equ 1000b
+DOPT_PHYSMEM  equ 10000b
+DOPT_STACK    equ 100000b
+
+@dprintf macro cond,fmt,a1,a2,a3,a4
+if DBGOPT and cond
   for x,<a4,a3,a2,a1>
    ifnb <x>
 	push x
@@ -15,7 +27,13 @@
   endm
 	call dprintf16
 	db fmt,0
+endif
 endm
+
+ifdef LLOUT
+_B000H equ 4+3          ;specific descriptor in dpmi mode for segment 0B000h
+	include vioout.inc
+endif
 
 ltob16 PROC uses edi edx
 
@@ -108,18 +126,16 @@ formatitem:
 	inc si
 @@:
 	mov [fill],cl
-	mov bx,dx
 
 	.while byte ptr cs:[si] >= '0' && byte ptr cs:[si] <= '9'
 		lodsb cs:[si]
 		sub al,'0'
 		cbw
-		imul cx,bx,10		;cx = bx * 10
-		add ax,cx
-		mov bx,ax
+		imul dx,dx,10		;dx*10
+		add dx,ax
 	.endw
 
-	mov [size_],bx
+	mov [size_],dx
 	cmp BYTE PTR cs:[si],'l'
 	jne @F
 	mov [longarg],1
@@ -234,11 +250,15 @@ print_char:
 	call @F
 	mov al,10
 @@:
+ifdef LLOUT
+	call VioPutChr16
+else
 	push bx
 	xor bx,bx
 	mov ah,0Eh
 	int 10h
 	pop bx
+endif
 	retn
 
 fmt equ <>

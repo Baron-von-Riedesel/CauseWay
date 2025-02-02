@@ -3,8 +3,10 @@
 
 MAXREAL2PROT equ 128
 
+_cwDPMIEMU$1 segment
 	align 2
 Real2ProtList   dw MAXREAL2PROT dup (0)
+_cwDPMIEMU$1 ends
 
 ;-------------------------------------------------------------------------------
 ;
@@ -31,9 +33,10 @@ RawGetDescriptors proc near
         mov     ax,KernalZero
         mov     es,eax
         mov     edi,MDTLinear+4 ;point to descriptor map.
+        add     edi,GDT_Entries
         movzx   edx,cx
-        mov     ecx,8192
-        mov     al,0
+        mov     ecx,8192-GDT_Entries
+        mov     al,DT_FREE
         cld
         dec     edx
         jnz     ldt1_0
@@ -43,7 +46,7 @@ RawGetDescriptors proc near
         repne   scasb           ;find a zero.
         jnz     ldt1_err
         dec     edi
-        mov     al,1
+        mov     al,DT_LDTDESC
         mov     es:[edi],al
         jmp     ldt1_1
         ;
@@ -65,7 +68,7 @@ ldt1_0:
         push    edi
         mov     ecx,edx
         inc     ecx
-        mov     al,1
+        mov     al,DT_LDTDESC
         rep     stosb           ;mark all entries as used.
         pop     edi
 ldt1_1:
@@ -87,6 +90,7 @@ ldt1_2:
         or      ax,111b         ;RPL=3, TI=1
         jmp     ldt1_9
 ldt1_err:
+;       mov     ax,????
         stc
 ldt1_9:
         pop     es
@@ -95,6 +99,7 @@ ldt1_9:
         pop     edi
         pop     edx
         pop     ecx
+        @dprintf DOPT_SEL,<"RawGetDescriptors(cx=%X)=%X",10>,ecx,eax
         ret
 RawGetDescriptors endp
 
@@ -119,17 +124,15 @@ RawRelDescriptor proc near
         assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,eax
-
+        @dprintf DOPT_SEL,<"RawRelDescriptor: bx=%X",10>,ebx
         test    bl,4            ;LDT selector?
         jz      error
         movzx   esi,bx          ;Get selector to use.
         shr     esi,3           ;/8 for descriptor number.
-        cmp     esi,GDT_Entries
-        jc      error
         add     esi,MDTLinear+4
-        cmp     BYTE PTR es:[esi],0  ;entry allocated?
-        jz      error
-        mov     BYTE PTR es:[esi],0  ;mark this entry as free.
+        cmp     BYTE PTR es:[esi],DT_LDTDESC  ;descriptor allocated as LDT descriptor?
+        jnz     error
+        mov     BYTE PTR es:[esi],DT_FREE     ;mark this entry as free.
         movzx   esi,bx
         and     esi,not 7
         add     esi,MDTLinear
@@ -200,27 +203,27 @@ RawReal2ProtSel proc    near
         push    ds
         mov     ax,DpmiEmuDS
         mov     ds,eax
-        assume ds:_cwDPMIEMU
+        assume ds:DPMIGRP
         movzx   ebx,bx
         shl     ebx,4           ;convert segment to linear.
         mov     esi,offset Real2ProtList        ;point to list of selectors.
-        mov     ecx,MAXREAL2PROT
 ldt3_0:
         cmp     w[esi],0        ;free entry?
         jz      ldt3_New
         push    ebx
-        push    ecx
         mov     bx,[esi]
         call    RawGetSelBase
+        pop     ebx
+;       jc      @F              ;selector may have become invalid!
+        jc      ldt3_New        ;just reuse the slot if selector is invalid
         shl     ecx,16
         mov     cx,dx
-        mov     edx,ecx
-        pop     ecx
-        pop     ebx
-        cmp     edx,ebx         ;same base?
+        cmp     ecx,ebx         ;same base?
         jz      ldt3_GotOne
+;@@:
         add     esi,2
-        loop    ldt3_0
+        cmp     esi,offset Real2ProtList + sizeof Real2ProtList
+        jb      ldt3_0
 ;
 ;Have to allocate a new descriptor.
 ;
@@ -273,12 +276,12 @@ checkdesc proc
         test    bl,4
         stc
         jz      done
-        cmp     bx, GDT_Entries*8
+        cmp     bx,GDT_Entries*8
         jb      done
         movzx   esi,bx          ;Get the selector.
         and     esi,not 7       ;lose RPL & TI.
         add     esi,MDTLinear   ;offset into descriptor table.
-        cmp     byte ptr es:[esi+5],1 ;allocated descriptor?
+        cmp     byte ptr es:[esi+5],1 ;a free descriptor has 0 here
 done:
         ret
 checkdesc endp

@@ -18,9 +18,9 @@
    - if DOS memory blocks needed by CW itself couldn't be allocated in an UMB,
      they're now located in space used by segments that were moved to extended
      memory. This should avoid scattering of DOS memory.
-   - _cwInit segment moved from last segment to just behind _cwRaw. This allows
-     to put _cwMain, _cwRaw and _cwInit in a group, thus reducing segment register
-     moves.
+   - _cwInit segment moved from last segment to just behind _cwRaw. This
+     allows to put _cwMain, _cwRaw and _cwInit in a group, thus reducing
+     segment register moves.
    - fixed: handling exceptions in raw/vcpi mode (interrup.asm) did finally
      jump to InitError(), which is located in _cwInit and hence not present
      when the application runs.
@@ -29,4 +29,10 @@
    - fixed: unhandled DPMI functions were routed to real-mode in raw/vcpi mode.
    - DPMI function 306h (return raw mode switch addresses) implemented.
    - trace log writes (macro @dprintf) added.
-   - fixed: DPMI emulator func 0001 (release descriptor) always returned with NC.
+   - fixed: DPMI emulator func 0001 (release descriptor) always returned
+     with NC.
+   - fixed: all DPMI descriptor functions got some validity checks so they
+     should fail for an invalid selector argument in BX.
+   - fixed: no swapfile-related DOS access if indos flag is set.
+   - default value for LOWMEM is now 256kB; previously the value entered was
+     added to a minimum of 32 kB.

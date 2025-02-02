@@ -6,7 +6,6 @@
 	.model small
 	.stack 400h
 	.386
-;	option oldstructs
 
 	include general.inc
 	include ..\strucs.inc

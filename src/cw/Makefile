@@ -10,7 +10,7 @@ DEBUG=0
 !endif
 
 #all: Build\cw.exe Build\cwmake.exe
-all: Build\cw.exe Build\cwj.exe
+all: Build\cw.exe Build\cwj.exe Build\cwmake.exe
 
 !if $(DEBUG)
 AOPTD = /D_DEBUG
@@ -24,13 +24,13 @@ Build:
 Build\cw.exe: Build\cw.obj
 	@wl32 /q/m/ds Build\cw.obj;
 
-Build\cw.obj: cw.asm
+Build\cw.obj: cw.asm general.inc
 	@ml /c /DCWAPP /nologo $(AOPTD) /FlBuild\ /FoBuild\ cw.asm
 
 Build\cwmake.exe: Build\cwmake.obj
 	@wl32 /q/ex/m/cs/non Build\cwmake.obj,,Build\cwmake.map
 
-Build\cwmake.obj: cwmake.asm
+Build\cwmake.obj: cwmake.asm general.inc
 	@ml /c /nologo $(AOPTD) /FlBuild\ /FoBuild\ cwmake.asm
 
 Build\cwj.exe: Build\cwj.obj

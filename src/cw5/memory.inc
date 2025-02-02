@@ -37,7 +37,7 @@ RawSwitchStack endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Get memory using RAW/VCPI.
+;Get memory using RAW/VCPI. The worker behind int 31h, ax=501h
 ;
 ;On Entry:-
 ;
@@ -52,6 +52,7 @@ RawSwitchStack endp
 ;
 RawGetMemory    proc    near
         ;
+        @dprintf DOPT_MEM or DOPT_STACK,<"RawGetMemory enter, bx:cx=%04X:%04X, ss:esp=%X:%lX",10>,ebx,ecx,ss,esp
         push    eax
         push    edx
         push    ebp
@@ -72,7 +73,7 @@ RawGetMemory    proc    near
         mov     bx,cx
         add     ebx,4095        ;round up to next 4k.
         shr     ebx,12
-        or      ebx,ebx
+;        or      ebx,ebx
         jz      mem1_error
 mem1_start:
         mov     edi,LinearBase  ;Get starting point.
@@ -83,7 +84,7 @@ mem1_start:
         shl     edi,2           ;dword per entry.
         add     edi,1024*4096*PDEMAPDET      ;point to page details.
         ;
-        ;Look for a big enough block of free memory.
+        ;Look for a big enough block of free address space.
         ;
         xor     eax,eax         ;value to look for.
         cld
@@ -134,7 +135,7 @@ mem1_l0:
         mov     edx,ecx
 
         ;
-        ;Scan specified number of entries to see if their all free.
+        ;Scan specified number of entries to see if they're all free.
         ;
 mem1_l1:
         push    ecx
@@ -262,6 +263,7 @@ RawGetMemory    endp
 ;
 RawResizeMemory    proc    near
         ;
+        @dprintf DOPT_MEM or DOPT_STACK,<"RawResizeMemory enter, bx:cx=%04X:%04X, ss:esp=%X:%lX",10>,ebx,ecx,ss,esp
         push    eax
         push    edx
         push    ebp
@@ -522,6 +524,7 @@ RawResizeMemory    endp
 ;
 RawRelMemory    proc    near
         ;
+        @dprintf DOPT_MEM or DOPT_STACK,<"RawRelMemory enter, si:di=%X:%X, ss:esp=%X:%lX",10>,esi,edi,ss,esp
         pushad
         push    ds
         push    es
@@ -703,6 +706,7 @@ RawDiscardPages endp
 ;BX:CX  Linear address that can be used to access the physical memory.
 ;
 RawMapPhys2Lin  proc    near
+        @dprintf DOPT_MEM,<"RawMapPhys2Lin enter",10>
         push    ds
         push    es
         push    eax
@@ -876,25 +880,26 @@ RawMapPhys2Lin  endp
 ;Un-Do a physical to linear address mapping.
 ;
 RawUnMapPhys2Lin proc near
+        @dprintf DOPT_MEM,<"RawUnMapPhys2Lin enter",10>
         clc
         ret
 RawUnMapPhys2Lin endp
 
 
 ;-------------------------------------------------------------------------------
+;--- int 31h, ax=600h - lock linear region BX:CX, size SI:DI
+
 RawLockMemory   proc    near
         ;
+        @dprintf DOPT_STACK,<"RawLockMemory enter, bx:cx=%X:%X, ss:esp=%X:%lX",10>,ebx,ecx,ss,esp
         push    eax
         push    ebx
         push    ecx
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
-        push    fs
-        push    gs
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -1027,12 +1032,9 @@ mem7_1:
         add     [RawStackPos],RawStackDif
         popfd
 
-        pop     gs
-        pop     fs
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -1044,19 +1046,18 @@ RawLockMemory   endp
 
 
 ;-------------------------------------------------------------------------------
+;--- int 31h, ax=601h - unlock linear region BX:CX, size SI:DI
 RawUnLockMemory proc near
         ;
+        @dprintf DOPT_STACK,<"RawUnLockMemory enter, bx:cx=%X:%X, ss:esp=%X:%lX",10>,ebx,ecx,ss,esp
         push    eax
         push    ebx
         push    ecx
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
-        push    fs
-        push    gs
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -1106,12 +1107,9 @@ mem8_1:
         add     [RawStackPos],RawStackDif
         popfd
 
-        pop     gs
-        pop     fs
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -1126,8 +1124,10 @@ RawUnLockMemory endp
 RawGetMemoryMax proc near
 ;
 ;Work out biggest memory block remaining.
+;out: ebx=max memory
 ;
         ;
+        @dprintf DOPT_MEM or DOPT_STACK,<"RawGetMemoryMax enter, ss:esp=%X:%lX",10>,ss,esp
         push    eax
         push    ecx
         push    edx
@@ -1331,7 +1331,7 @@ RawGetMemoryMax endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Extend the linear memory map by allocateing physical memory if available or
+;Extend linear address space by allocating physical memory if available or
 ;virtual memory if not, or even a combination of the two.
 ;
 ;On Entry:
@@ -1342,6 +1342,7 @@ RawGetMemoryMax endp
 ;
 ;Carry set on error else memory map extended.
 ;modified [LinearLimit], [TotalPages]
+;This function may call int 21h, ah=36h - no check if indos flag != 0
 ;
 ExtendLinearMemory proc near
         pushad
@@ -1373,7 +1374,7 @@ ExtendLinearMemory proc near
         ;
         ;Try extending using physical memory first.
         ;
-mem10_f0:
+mem10_f0:                               ;<----
         mov     eax,LinearLimit         ;get new entry number.
         shr     eax,12                  ;page number.
         mov     LinearEntry,eax
@@ -1420,21 +1421,21 @@ mem10_f1:
         inc     FreePages
 ;       dec     medAllocPages
         inc     TotalPages
-        add     LinearLimit,4096        ;bump up the end of the memory map.
-        dec     ebp                     ;update the counter.
-        jnz     mem10_f0                ;keep looking.
+        add     LinearLimit,4096;bump up the end of the memory map.
+        dec     ebp             ;update the counter.
+        jnz     mem10_f0        ;---->
         clc
-        jmp     mem10_Exit              ;All physical so exit.
+        jmp     mem10_Exit      ;All physical so exit.
         ;
 mem10_Virtual:
         ;Virtual memory will be needed so see if we can provide any.
         ;
-        cmp     VMMHandle,0             ;Virtual memory active?
+        cmp     VMMHandle,0     ;Virtual memory active?
         jz      mem10_error
         ;
         ;Find out how much disk space is left for swap file to grow into.
         ;
-        mov     dl,VMMName              ;get drive letter for this media.
+        mov     dl,VMMName      ;get drive letter for this media.
         sub     dl,'A'          ;make it real.
         inc     dl              ;adjust for current type select.
         mov     ah,36h          ;get free space.
@@ -1447,8 +1448,8 @@ mem10_Virtual:
         mul     bx              ;Get bytes available.
         shl     edx,16
         mov     dx,ax           ;make 32 bit.
-        and     edx,not 65535
-        add     edx,SwapFileLength      ;add existing size.
+        and     edx,not 65535   ;round down to 64kb
+        add     edx,SwapFileLength ;add existing size.
         mov     eax,LinearLimit
         sub     eax,LinearBase  ;get current real memory.
         sub     edx,eax
@@ -1463,7 +1464,7 @@ mem10_Virtual:
         ;Enough page's for minimum requirement?
         ;
         cmp     edx,16          ;un-locked pages < 16?
-        jc      mem10_error             ;force minimum of 16.
+        jc      mem10_error     ;force minimum of 16.
         sub     edx,16
         ;
         ;Work out how many new page/det tables are required.
@@ -1487,13 +1488,13 @@ mem10_Virtual:
 mem10_OK:
         ;Allocate new page tables.
         ;
-        mov     esi,PageDirLinear       ;get page directory address.
+        mov     esi,PageDirLinear ;get page directory address.
         mov     edx,LinearLimit
         shr     edx,12
 mem10_v2:
         mov     eax,edx         ;get new entry number.
         shr     eax,10          ;/1024 for page dir entry.
-        test    DWORD PTR es:[esi+eax*4],1      ;this page present?
+        test    DWORD PTR es:[esi+eax*4],1 ;this page present?
         jnz     mem10_v3
         ;
         ;get DET page.
@@ -1505,13 +1506,13 @@ mem10_v2:
         mov     ebx,ecx
         pop     edx
         pop     ecx
-        jc      mem10_error             ;not enough physical memory to support virtual memory.
+        jc      mem10_error     ;not enough physical memory to support virtual memory.
         push    ecx
         push    edx
         mov     LinearEntry,edx ;set logical page address.
         mov     edx,eax         ;get physical address again.
         mov     ecx,ebx
-        call    MapPhysical             ;use this to add a new page table.
+        call    MapPhysical     ;use this to add a new page table.
         pop     edx
         pop     ecx
         ;
@@ -1524,13 +1525,13 @@ mem10_v2:
         mov     ebx,ecx
         pop     edx
         pop     ecx
-        jc      mem10_error             ;not enough physical memory to support virtual memory.
+        jc      mem10_error     ;not enough physical memory to support virtual memory.
         push    ecx
         push    edx
         mov     LinearEntry,edx ;set logical page address.
         mov     edx,eax         ;get physical address again.
         mov     ecx,ebx
-        call    MapPhysical             ;use this to add a new page table.
+        call    MapPhysical     ;use this to add a new page table.
         pop     edx
         pop     ecx
 mem10_v3:
@@ -1544,14 +1545,13 @@ mem10_DoneTables:
         mov     eax,LinearLimit
         mov     ecx,ebp
 mem10_v4:
-        call    RawClearPageLock        ;clear page locking for this entry.
+        call    RawClearPageLock ;clear page locking for this entry.
         push    eax
         shr     eax,12
         mov     DWORD PTR es:[1024*4096*PDEMAPDET+eax*4],0
         pop     eax
         add     eax,4096
-        dec     ecx
-        jnz     mem10_v4
+        loop    mem10_v4
         ;
         ;Extend the swap file.
         ;
@@ -1567,10 +1567,9 @@ mem10_v4:
         push    ecx
         mov     dx,cx
         shr     ecx,16
-        mov     bx,VMMHandle            ;get swap file handle.
+        mov     bx,VMMHandle    ;get swap file handle.
         mov     ax,4200h
         mov     edi,offset PageInt
-        push    edi
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
@@ -1579,23 +1578,16 @@ mem10_v4:
         mov     bl,21h
         push    ds
         pop     es
-        call    EmuRawSimulateInt       ;move to right place.
-        pop     edi
+        call    RawSimulateInt  ;move to right place.
         mov     ah,40h
-        mov     bx,VMMHandle            ;get swap file handle.
-        mov     cx,0
-        push    edi
-        mov     edi,offset PageInt
+        mov     bx,VMMHandle    ;get swap file handle.
+        mov     cx,0            ;write 0 bytes
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
         mov     RealRegsStruc.Real_EDX[edi],edx
-;        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        push    ds
-        pop     es
-        call    EmuRawSimulateInt       ;move to right place.
-        pop     edi
+        call    RawSimulateInt  ;move to right place.
         pop     ecx
         test    RealRegsStruc.Real_Flags[edi],1
         jnz     mem10_Disk_Error
@@ -1605,18 +1597,12 @@ mem10_v4:
         xor     dx,dx
         mov     ax,4201h
         mov     bx,VMMHandle
-        push    edi
-        mov     edi,offset PageInt
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
         mov     RealRegsStruc.Real_EDX[edi],edx
-;        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        push    ds
-        pop     es
-        call    EmuRawSimulateInt       ;move to right place.
-        pop     edi
+        call    RawSimulateInt  ;move to right place.
         test    RealRegsStruc.Real_Flags[edi],1
         jnz     mem10_Disk_Error
         mov     edx,RealRegsStruc.Real_EDX[edi]
@@ -1780,9 +1766,14 @@ mem11_NoLocking:
         test    ebx,1 shl 11
         jz      mem11_NoRead
         ;
-        mov     esi,BreakAddress
-        mov     al,es:[esi]
-        mov     BYTE PTR es:[esi],0
+        mov     esi,SDAaddress
+
+;--- added for v5.0: no DOS access if indos flag is set
+        cmp     es:[esi].SDA.bInDos,0
+        jnz     mem11_NoRead
+
+        mov     al,es:[esi].SDA.bBreak
+        mov     es:[esi].SDA.bBreak,0
         push    eax
         ;
         mov     ecx,LinearEntry ;get page number.
@@ -1802,7 +1793,7 @@ mem11_NoLocking:
         push    es
         push    ds
         pop     es
-        call    EmuRawSimulateInt       ;move to right place.
+        call    RawSimulateInt          ;move to right place.
         mov     edi,offset PageInt
         mov     ax,VMMHandle
         mov     RealRegsStruc.Real_EBX[edi],eax
@@ -1813,11 +1804,11 @@ mem11_NoLocking:
         mov     RealRegsStruc.Real_CX[edi],4096
 ;        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt       ;read it from disk.
+        call    RawSimulateInt          ;read it from disk.
         pop     es
-        mov     esi,BreakAddress
+        mov     esi,SDAaddress
         pop     eax
-        mov     es:[esi],al
+        mov     es:[esi].SDA.bBreak,al
         test    RealRegsStruc.Real_Flags[edi],1
         jz      mem11_ok
 ;--- probably should STC here?        
@@ -2011,10 +2002,15 @@ mem12_GotPage:
         ;
         ;Flush this page to disk.
         ;
+        mov     esi,SDAaddress
+
+;--- v5.0: no DOS access if indos flag is set
+        cmp     fs:[esi].SDA.bInDos,0
+        jnz     mem12_8
+
         push    edi
-        mov     esi,BreakAddress
-        mov     al,fs:[esi]
-        mov     BYTE PTR fs:[esi],0
+        mov     al,fs:[esi].SDA.bBreak
+        mov     fs:[esi].SDA.bBreak,0
         push    eax
         ;
         sub     edi,PTMAPADDR   ;get page table entry number.
@@ -2050,7 +2046,7 @@ mem12_GotPage:
         mov     bl,21h
         push    ds
         pop     es
-        call    EmuRawSimulateInt       ;move to right place.
+        call    RawSimulateInt          ;move to right place.
         ;
         test    RealRegsStruc.Real_Flags[edi],1
         stc
@@ -2072,7 +2068,7 @@ mem12_GotPage:
         mov     RealRegsStruc.Real_CX[edi],4096
 ;        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt       ;write it to disk.
+        call    RawSimulateInt          ;write it to disk.
         test    RealRegsStruc.Real_Flags[edi],1
         stc
         jnz     mem12_error_anyway
@@ -2082,9 +2078,10 @@ mem12_GotPage:
 mem12_force_error:
         stc
 mem12_error_anyway:
-        mov     esi,BreakAddress
+        mov     esi,SDAaddress
         pop     eax
-        mov     fs:[esi],al
+        mov     fs:[esi].SDA.bBreak,al
+mem12_error_indos:
         ;
         pop     edi
         jc      mem12_8
@@ -2390,10 +2387,10 @@ VirtualFault    endp
 ;DPMI ax=0100h: Allocate a block of DOS memory & provide a selector to access it with.
 ;
 RawGetDOSMemory proc near
+        @dprintf DOPT_MEM,<"RawGetDOSMemory enter",10>
         push    ecx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         mov     ax,KernalDS
@@ -2412,7 +2409,7 @@ mem19_0:
         mov     RealRegsStruc.Real_EBX[edi],ebx ;memory size.
         mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt       ;allocate it.
+        call    RawSimulateInt  ;allocate it.
         pop     ecx
         mov     eax,RealRegsStruc.Real_EAX[edi] ;get result.
         mov     ebx,RealRegsStruc.Real_EBX[edi]
@@ -2498,7 +2495,7 @@ mem19_8:
         mov     es:RealRegsStruc.Real_ES[edi],bx       ;segment.
         mov     es:RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt       ;release it.
+        call    RawSimulateInt   ;release it.
         ;
 mem19_9:
         stc
@@ -2506,7 +2503,6 @@ mem19_10:
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     ecx
@@ -2518,16 +2514,13 @@ RawGetDOSMemory endp
 ;
 ;DPMI ax=0102h: Re-size a block of DOS memory.
 ;
-RawResDOSMemory proc near
+RawResizeDOSMemory proc near
         push    ecx
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
-        push    fs
-        push    gs
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -2564,7 +2557,7 @@ mem20_Shrink:
         mov     RealRegsStruc.Real_ES[edi],ax
         mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt
+        call    RawSimulateInt
         mov     eax,RealRegsStruc.Real_EAX[edi]
         mov     ebx,RealRegsStruc.Real_EBX[edi]
         test    RealRegsStruc.Real_Flags[edi],1
@@ -2677,23 +2670,21 @@ mem20_Expand:
 mem20_9:
         stc
 mem20_10:
-        pop     gs
-        pop     fs
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
         pop     ecx
         ret
-RawResDOSMemory endp
+RawResizeDOSMemory endp
 
 
 ;-------------------------------------------------------------------------------
 ;
 ;DPMI ax=0101h: Release a block of DOS memory.
+;     dx=selector
 ;
 RawRelDOSMemory proc near
 
@@ -2737,7 +2728,6 @@ mem21_z3:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         mov     ax,KernalDS
@@ -2784,7 +2774,7 @@ mem21_0:
         mov     RealRegsStruc.Real_ES[edi],ax   ;block to release.
         mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
-        call    EmuRawSimulateInt       ;release it.
+        call    RawSimulateInt  ;release it.
         mov     eax,RealRegsStruc.Real_EAX[edi]
         test    RealRegsStruc.Real_Flags[edi],1
         clc
@@ -2794,7 +2784,6 @@ mem21_noc:
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx

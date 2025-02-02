@@ -419,17 +419,20 @@ endif
 	mov	edi,offset EXEFileName
 	cld
 	xor	al,al
-@@0:	movsb
+@@0:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@1
 	mov	al,1
-@@1:	cmp	b[esi-1],0
+@@1:
+	cmp	b[esi-1],0
 	jnz	@@0
 	or	al,al
 	jnz	@@2
 	mov	b[edi-1],'.'
 	mov	esi,offset EXEextension
-@@4:	movsb
+@@4:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@4
 	;
@@ -437,11 +440,13 @@ endif
 	;
 	mov	esi,offset EXEFileName
 	mov	edi,offset MapFileName
-@@3:	movsb
+@@3:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@3
 	mov	esi,offset MAPextension
-@@5:	movsb
+@@5:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@5
 	;
@@ -629,7 +634,8 @@ medexe2:
 	call	PostMortem
 	jmp	@@InfoDump
 	;
-@@update:	cmp	OptionTable+'U',0	;Update?
+@@update:
+	cmp	OptionTable+'U',0	;Update?
 	jz	@@fastload
 	call	NewCauseWay
 	jmp	@@InfoDump
@@ -911,7 +917,8 @@ medexe3:
 	push	ds
 	pop	es
 	cld
-@@00:	stosd
+@@00:
+	stosd
 	add	eax,4
 	dec	ecx
 	jnz	@@00
@@ -953,7 +960,8 @@ medexe3:
 ;
 ; for (;h>0;...
 ;
-@@hloop:	or	edx,edx		; h>0
+@@hloop:
+	or	edx,edx		; h>0
 	je	@@sortend
 ;
 ; for(i=h+1...
@@ -975,7 +983,8 @@ medexe3:
 ;
 ; while(j>h && a[j-h]>v){
 ;
-@@whileloop:	cmp	ebx,edx		; j>h
+@@whileloop:
+	cmp	ebx,edx		; j>h
 	jbe	@@whilefail
 	;
 	mov	eax,ebx
@@ -1039,7 +1048,8 @@ medexe3:
 ;
 	mov	ecx,d[RealHeader.NewRelocs]
 	mov	edi,RelocMem+4
-@@01:	mov	esi,[edi]
+@@01:
+	mov	esi,[edi]
 	movsd
 	dec	ecx
 	jnz	@@01
@@ -1220,7 +1230,8 @@ medexe4:
 	mov	esi,ObjectList	;Point to the segment list.
 	mov	ebp,[esi]		;Get number of entries.
 	add	esi,4
-@@0:	mov	edx,esi		;Point to segment defintion.
+@@0:
+	mov	edx,esi		;Point to segment defintion.
 	mov	ecx,4+4
 	call	LEWriteFile		;Write this entry.
 	mov	ErrorNumber,38
@@ -1251,7 +1262,8 @@ medexe4:
 	mov	esi,ObjectList	;Point to object definitions.
 	mov	ebp,[esi]		;Get number of entries.
 	add	esi,4		;Point to real data.
-@@2:	mov	ecx,_Seg_.Seg_Length[esi]	;Get segments length.
+@@2:
+	mov	ecx,_Seg_.Seg_Length[esi]	;Get segments length.
 	mov	edx,[esi]._Seg_.Seg_Memory	;point to segments image.
 	call	LEWriteFile
 	mov	ErrorNumber,38
@@ -1321,7 +1333,8 @@ Create3PHeader	proc	near
 	or	esi,esi
 	jz	@@0
 	mov	eax,[esi]
-@@0:	mov	[edi].NewHeaderStruc.NewRelocs,eax
+@@0:
+	mov	[edi].NewHeaderStruc.NewRelocs,eax
 	shl	eax,2		;4 bytes per entry.
 	add	[edi].NewHeaderStruc.NewSize,eax
 	;
@@ -1402,7 +1415,8 @@ CreateRelocations proc near
 	add	esi,[esi+6Ch]	;Point to fixup data.
 	add	esi,edx		;Move to start of this pages fixups.
 	;
-@@2:	mov	al,[esi]		;Get type byte.
+@@2:
+	mov	al,[esi]		;Get type byte.
 	mov	bl,al
 	shr	bl,4		;Get single/multiple flag.
 	mov	bh,al
@@ -1510,7 +1524,8 @@ CreateRelocations proc near
 	test	dh,4
 	jz	@@Big0
 	mov	ebx,[esi+3]		;Get target offset.
-@@Big0:	add	eax,ebx
+@@Big0:
+	add	eax,ebx
 	mov	[edi],eax
 	;
 	mov	edi,SegmentList
@@ -1568,7 +1583,8 @@ CreateRelocations proc near
 	test	dh,4
 	jz	@@sfBig0
 	mov	ebx,[esi+3]		;Get target offset.
-@@sfBig0:	add	eax,ebx
+@@sfBig0:
+	add	eax,ebx
 	pop	ebx
 	add	ebx,4
 	sub	eax,ebx
@@ -1639,7 +1655,8 @@ CreateRelocations proc near
 	test	dh,4
 	jz	@@Big1
 	mov	ebx,[esi+3]		;Get target offset.
-@@Big1:	add	eax,ebx
+@@Big1:
+	add	eax,ebx
 	mov	[edi],eax
 	;
 	mov	edi,SegmentList
@@ -1663,11 +1680,13 @@ CreateRelocations proc near
 	sub	ecx,2
 	jmp	@@3
 	;
-@@3:	inc	RelocationCount
+@@3:
+	inc	RelocationCount
 	or	ecx,ecx
 	jnz	@@2
 	;
-@@4:	inc	ebp
+@@4:
+	inc	ebp
 	inc	PageCount+4
 	dec	PageCount
 	jnz	@@1
@@ -1815,8 +1834,10 @@ Create3PFile	proc	near
 	jz	@@2
 	or	ebx,1 shl 26		;Force 32-bit.
 	jmp	@@3
-@@2:	or	ebx,1 shl 25		;Force 16-bit.
-@@3:	mov	eax,[edi]._Seg_.Seg_Length
+@@2:
+	or	ebx,1 shl 25		;Force 16-bit.
+@@3:
+	mov	eax,[edi]._Seg_.Seg_Length
 	cmp	eax,100000h		;>1M?
 	jc	@@4
 	shr	eax,12
@@ -1959,7 +1980,8 @@ LECreateFile	proc	near
 	jnc	l0
 	xor	bx,bx
 	stc
-l0:	movzx	ebx,bx
+l0:
+	movzx	ebx,bx
 	popm	eax,ecx
 	ret
 LECreateFile	endp
@@ -1982,11 +2004,13 @@ LECreateFile	endp
 LEWriteFile	proc	near
 	pushm	ecx,edx,esi
 	xor	esi,esi
-@@0:	pushm	ebx,ecx,edx,esi
+@@0:
+	pushm	ebx,ecx,edx,esi
 	cmp	ecx,65535		;size of chunks to load.
 	jc	@@1
 	mov	ecx,65535		;as close to 64k as can get.
-@@1:	mov	ah,40h
+@@1:
+	mov	ah,40h
 	int	21h		;read from the file.
 	popm	ebx,ecx,edx,esi
 	jc	@@2
@@ -1998,7 +2022,8 @@ LEWriteFile	proc	near
 	or	eax,eax		;did we write anything?
 	jz	@@2
 	jmp	@@0
-@@2:	mov	eax,esi
+@@2:
+	mov	eax,esi
 	popm	ecx,edx,esi
 	ret
 LEWriteFile	endp
@@ -2033,7 +2058,8 @@ if @Model ne 7
 endif
 	clc
 	jmp	l1
-l0:	xor	esi,esi
+l0:
+	xor	esi,esi
 	stc
 l1:	popm	eax,edx
 	ret
@@ -2108,11 +2134,13 @@ LEMalloc	endp
 LEReadFile	proc	near
 	pushm	ecx,edx,esi
 	xor	esi,esi		;reset length read.
-@@0:	pushm	ebx,ecx,edx,esi
+@@0:
+	pushm	ebx,ecx,edx,esi
 	cmp	ecx,65535		;size of chunks to load.
 	jc	@@1
 	mov	ecx,65535		;as close to 64k as can get.
-@@1:	mov	ah,3fh
+@@1:
+	mov	ah,3fh
 	int	21h		;read from the file.
 	popm	ebx,ecx,edx,esi
 	jc	@@2		;DOS error so exit NOW.
@@ -2123,7 +2151,8 @@ LEReadFile	proc	near
 	jz	@@2		;read as much as was wanted.
 	or	eax,eax		;did we read anything?
 	jnz	@@0
-@@2:	mov	eax,esi
+@@2:
+	mov	eax,esi
 	popm	ecx,edx,esi
 	ret
 LEReadFile	endp
@@ -2185,7 +2214,8 @@ LEOpenFile	proc	near
 	jnc	l0
 	xor	bx,bx
 	stc
-l0:	pop	eax
+l0:
+	pop	eax
 	movzx	ebx,bx
 	ret
 LEOpenFile	endp
@@ -2201,14 +2231,16 @@ LEOpenFile	endp
 ;
 LEPrintString	proc	near
 	pushm	eax,esi,edx
-l0:	mov	dl,[esi]
+l0:
+	mov	dl,[esi]
 	inc	esi
 	or	dl,dl
 	jz	l1
 	mov	ah,2
 	int	21h
 	jmp	l0
-l1:	popm	eax,esi,edx
+l1:
+	popm	eax,esi,edx
 	ret
 LEPrintString	endp
 
@@ -2513,7 +2545,8 @@ SetSystemConfig proc near
 	or	esi,esi
 	jz	System
 	xor	edx,edx
-@@ss0:	movzx	eax,b[esi]
+@@ss0:
+	movzx	eax,b[esi]
 	or	al,al
 	jz	@@ss1
 	cmp	al,'0'
@@ -2529,10 +2562,12 @@ SetSystemConfig proc near
 	add	edx,eax
 	inc	esi
 	jmp	@@ss0
-@@ss1:	mov	esi,offset NewHeader
+@@ss1:
+	mov	esi,offset NewHeader
 	mov	[esi].NewHeaderStruc.NewAutoStack,edx
 	;
-@@NoAutoESP:	ret
+@@NoAutoESP:
+	ret
 SetSystemConfig endp
 
 
@@ -2614,7 +2649,8 @@ medexe7:
 	mov	ax,4200h		;set absolute position.
 	int	21h
 	;
-@@Look3P:	mov	ErrorNumber,8
+@@Look3P:
+	mov	ErrorNumber,8
 	mov	bx,EXEHandle
 	mov	edx,offset NewHeader	;somewhere to put the info.
 	mov	cx,size NewHeaderStruc	;size of it.
@@ -2635,7 +2671,8 @@ medexe7:
 	test	[esi].NewHeaderStruc.NewFlags,65536
 	jz	@@its16
 	mov	edx,offset bitdualtext
-@@its16:	mov	ah,9
+@@its16:
+	mov	ah,9
 	int	21h
 	;
 	mov	esi,offset NewHeader	;somewhere to put the info.
@@ -2643,7 +2680,8 @@ medexe7:
 	test	[esi].NewHeaderStruc.NewFlags,1 shl 30
 	jnz	@@nospeed
 	mov	edx,offset CarriageReturn2
-@@NoSpeed:	mov	ah,9
+@@NoSpeed:
+	mov	ah,9
 	int	21h
 
 	;
@@ -2880,14 +2918,16 @@ endif
 	cmp	eax,ecx		;did we get right amount?
 	jnz	@@9
 	;
-@@ImageLoaded:	mov	bx,EXEHandle
+@@ImageLoaded:
+	mov	bx,EXEHandle
 	call	CloseFile
 	mov	EXEHandle,0
 	;
 	;Check if seg details needed.
 	;
 	mov	esi,d[OptionTable+128+("I"*4)]
-@@5:	lodsb
+@@5:
+	lodsb
 	or	al,al
 	jz	@@6
 	call	UpperChar
@@ -2905,7 +2945,8 @@ endif
 	movzx	ecx,[esi].NewHeaderStruc.NewSegments	;get number of segments.
 	mov	esi,SegmentList
 	xor	eax,eax
-@@0:	push	eax
+@@0:
+	push	eax
 	pushm	ecx,esi
 	mov	edi,offset LineBuffer
 	mov	ecx,4
@@ -2925,7 +2966,8 @@ endif
 	jz	@@1
 	shl	eax,12
 	or	eax,4095
-@@1:	mov	ecx,8
+@@1:
+	mov	ecx,8
 	call	Bin2Hex
 	mov	b[edi],' '
 	mov	b[edi+1],0
@@ -2950,8 +2992,10 @@ endif
 	;
 	;See if relocation details are needed.
 	;
-@@6:	mov	esi,d[OptionTable+128+("I"*4)]
-@@7:	lodsb
+@@6:
+	mov	esi,d[OptionTable+128+("I"*4)]
+@@7:
+	lodsb
 	or	al,al
 	jz	@@8
 	call	UpperChar
@@ -2969,7 +3013,8 @@ endif
 	mov	ecx,[esi].NewHeaderStruc.NewRelocs	;get number of relocations.
 	mov	esi,RelocSegment
 	xor	eax,eax
-@@2:	push	eax
+@@2:
+	push	eax
 	pushm	ecx,esi
 	mov	edi,offset LineBuffer
 	mov	ecx,4
@@ -3002,19 +3047,22 @@ endif
 	mov	ebx,offset NewHeader
 	cmp	esi,[ebx].NewHeaderStruc.NewLength	;check against image size.
 	jc	@@3
-@@RelInv:	mov	esi,offset invalidtext
+@@RelInv:
+	mov	esi,offset invalidtext
 	movsd
 	movsd
 	jmp	@@4
 	;
-@@3:	add	esi,EXESegment
+@@3:
+	add	esi,EXESegment
 	or	eax,eax
 	jz	@@Seg16
 	dec	eax
 	jz	@@Offset32
 	jmp	@@RelInv
 	;
-@@Offset32:	mov	eax,[esi]
+@@Offset32:
+	mov	eax,[esi]
 	mov	ecx,8
 	call	Bin2Hex
 	mov	d[edi],"    "
@@ -3023,7 +3071,8 @@ endif
 	jnc	@@RelInv
 	jmp	@@4
 	;
-@@Seg16:	movzx	eax,w[esi]
+@@Seg16:
+	movzx	eax,w[esi]
 	push	ax
 	mov	ecx,8
 	call	Bin2Hex
@@ -3037,7 +3086,8 @@ endif
 	movsd
 	movsd
 	;
-@@4:	mov	b[edi],0
+@@4:
+	mov	b[edi],0
 	mov	edx,offset LineBuffer
 	call	StringPrint
 	mov	edx,offset CarriageReturn
@@ -3050,8 +3100,10 @@ endif
 	dec	ecx
 	jnz	@@2
 	;
-@@8:	mov	ErrorNumber,0
-@@9:	ret
+@@8:
+	mov	ErrorNumber,0
+@@9:
+	ret
 NewExeInfo	endp
 
 
@@ -3273,7 +3325,8 @@ medexe9:
 	jz	@@NormStack
 	cmp	OptionTable+'N',0
 	jnz	@@GotStackNear
-@@NormStack:	movzx	eax,exehdr.EntrySP
+@@NormStack:
+	movzx	eax,exehdr.EntrySP
 	mov	[esi].NewHeaderStruc.NewEntryESP,eax	;setup ESP offset.
 @@GotStackNear: ;
 	movzx	eax,exehdr.EntryCS	;get entry CS.
@@ -3284,7 +3337,8 @@ medexe9:
 	jz	@@4
 	add	edi,16
 	inc	dx
-@@4:	mov	ebx,[edi+0]		;get segment base.
+@@4:
+	mov	ebx,[edi+0]		;get segment base.
 	shr	ebx,4		;convert to paragraph.
 	cmp	eax,ebx		;this the one we're after?
 	jz	@@5
@@ -3293,7 +3347,8 @@ medexe9:
 	loop	@@4
 	xor	dx,dx		;reset to zero.
 	mov	edi,SegmentList	;/
-@@5:	mov	[esi].NewHeaderStruc.NewEntryCS,dx	;store segment entry number.
+@@5:
+	mov	[esi].NewHeaderStruc.NewEntryCS,dx	;store segment entry number.
 	mov	ErrorNumber,20
 	cmp	w[edi+8],0
 	jnz	@@9		;entry point is not in a code segment.
@@ -3307,13 +3362,15 @@ medexe9:
 	mov	edi,SegmentList	;make segment details addressable.
 	mov	ecx,SegmentTotal	;get number of entries to check.
 	xor	dx,dx		;reset entry number.
-@@6:	cmp	w[edi+8],2		;stack segment?
+@@6:
+	cmp	w[edi+8],2		;stack segment?
 	jnz	@@6_0
 	mov	ebx,[edi+0]		;get segment base.
 	shr	ebx,4		;convert to paragraph.
 	cmp	eax,ebx		;this the one we're after?
 	jz	@@7
-@@6_0:	add	edi,16
+@@6_0:
+	add	edi,16
 	inc	dx		;update entry counter.
 	loop	@@6
 	;
@@ -3321,9 +3378,11 @@ medexe9:
 	jz	@@8
 	mov	ErrorNumber,25	;force an error.
 	jmp	@@9
-@@7:	mov	[esi].NewHeaderStruc.NewEntrySS,dx	;store segment entry number.
+@@7:
+	mov	[esi].NewHeaderStruc.NewEntrySS,dx	;store segment entry number.
 	jmp	@@10
-@@8:	mov	[esi].NewHeaderStruc.NewEntrySS,0
+@@8:
+	mov	[esi].NewHeaderStruc.NewEntrySS,0
 	;
 @@10:	;Get some memory for the relocation table.
 	;
@@ -3363,7 +3422,8 @@ medexe9:
 	;
 	movzx	ecx,exehdr.RelocNum	;number of entries.
 	mov	esi,RelocSegment	;list of relocations.
-@@1:	pushm	ecx,esi
+@@1:
+	pushm	ecx,esi
 	movzx	eax,w[esi+2]		;get segment offset.
 	shl	eax,4		;make it linear.
 	movzx	ebx,w[esi+0]		;get offset.
@@ -3420,7 +3480,8 @@ medexe9:
 	;
 	mov	ecx,SegmentTotal	;get number to do.
 	mov	esi,SegmentList	;the segment definitions.
-@@0:	pushm	ecx,esi
+@@0:
+	pushm	ecx,esi
 	mov	eax,[esi+0]		;get the base.
 	mov	d[LineBuffer],eax
 	mov	eax,[esi+4]		;get the limit.
@@ -3429,9 +3490,11 @@ medexe9:
 	cmp	eax,-1
 	jz	@@NoRoundUp
 	add	eax,4095
-@@NoRoundUp:	shr	eax,12		;lose bottom bits.
+@@NoRoundUp:
+	shr	eax,12		;lose bottom bits.
 	or	eax,1 shl 20		;Set our version of the G bit.
-@@Small:	movzx	ebx,w[esi+8]		;get segment type.
+@@Small:
+	movzx	ebx,w[esi+8]		;get segment type.
 	and	ebx,15		;allows same variety as real selectors.
 	shl	ebx,21		;put it somewhere useful.
 	or	eax,ebx
@@ -3462,7 +3525,8 @@ medexe9:
 	movzx	ecx,exehdr.RelocNum	;number of entries.
 	jecxz	@@NoReloc
 	mov	esi,RelocSegment	;the relocations.
-@@3:	pushm	ecx,esi
+@@3:
+	pushm	ecx,esi
 	mov	esi,[esi]		;get relocation offset.
 	add	esi,ExeSegment	;offset into exe image.
 	movzx	eax,w[esi]		;get value that needs relocating.
@@ -3470,12 +3534,14 @@ medexe9:
 	mov	ecx,SegmentTotal	;number of segments to scan.
 	mov	edi,SegmentList	;list of segment definitions.
 	xor	edx,edx		;reset segment number.
-@@30:	cmp	OptionTable+'N',0	;check for flat mode.
+@@30:
+	cmp	OptionTable+'N',0	;check for flat mode.
 	jz	@@NotFlat
 	mov	edx,0		;force to data referance.
 	jmp	@@31
 	;
-@@NotFlat:	mov	ebx,[edi+0]		;get current segments base.
+@@NotFlat:
+	mov	ebx,[edi+0]		;get current segments base.
 	shr	ebx,4		;round it down.
 	cmp	eax,ebx
 	jz	@@31
@@ -3486,7 +3552,8 @@ medexe9:
 	popm	ecx,esi
 	jmp	@@9
 	;
-@@31:	mov	[esi],dx		;store new segment value.
+@@31:
+	mov	[esi],dx		;store new segment value.
 	popm	ecx,esi
 	add	esi,4		;next relocation entry.
 	loop	@@3
@@ -3599,7 +3666,8 @@ ReadMapFile	proc	near
 	;
 	;Look for segment list ID string.
 	;
-@@LookID:	mov	edi,offset LineBuffer
+@@LookID:
+	mov	edi,offset LineBuffer
 	mov	bx,MapHandle
 	call	ReadLine		;read a line from the map file.
 	mov	ErrorNumber,8	;default to general IO error.
@@ -3616,21 +3684,26 @@ ReadMapFile	proc	near
 	mov	esi,offset SegHeaderText
 	mov	edi,offset LineBuffer
 	;
-@@0:	cmp	b[esi],' '		;need to skip white space.
+@@0:
+	cmp	b[esi],' '		;need to skip white space.
 	jz	@@1
 	cmp	b[esi],9
 	jnz	@@2
-@@1:	inc	esi
+@@1:
+	inc	esi
 	jmp	@@0
 	;
-@@2:	cmp	b[edi],' '		;skip white space.
+@@2:
+	cmp	b[edi],' '		;skip white space.
 	jz	@@3
 	cmp	b[esi],9
 	jnz	@@4
-@@3:	inc	edi
+@@3:
+	inc	edi
 	jmp	@@2
 	;
-@@4:	cmp	b[esi],0		;end of the header string?
+@@4:
+	cmp	b[esi],0		;end of the header string?
 	jz	@@5
 	cmp	b[edi],0		;end of the line buffer?
 	jz	@@LookID
@@ -3666,21 +3739,25 @@ ReadMapFile	proc	near
 	mov	eax,SegmentList	;get segment buffer address.
 	mov	SegCurrent,eax	;setup current pointer.
 	;
-@@LookSeg:	mov	esi,offset LineBuffer	;source data.
+@@LookSeg:
+	mov	esi,offset LineBuffer	;source data.
 	mov	edi,offset SegLayout-1	;definition of data layout.
 	mov	ebx,SegCurrent
 	mov	d[ebx+0],0		;reset linear base.
 	mov	d[ebx+4],0		;reset byte limit.
 	mov	w[ebx+8],0		;reset type.
 	;
-@@6:	cmp	b[esi],' '		;skip leading white space.
+@@6:
+	cmp	b[esi],' '		;skip leading white space.
 	jz	@@7
 	cmp	b[esi],9
 	jnz	@@8
-@@7:	inc	esi
+@@7:
+	inc	esi
 	jmp	@@6
 	;
-@@8:	inc	edi		;move to next item on the list.
+@@8:
+	inc	edi		;move to next item on the list.
 	cmp	b[edi],-1		;finished scan?
 	jz	@@NextSeg
 	cmp	b[edi],0		;ignoring this column?
@@ -3691,15 +3768,18 @@ ReadMapFile	proc	near
 	jz	@@Length
 	jmp	@@Class		;must be 3 (class) then.
 	;
-@@Ignore:	cmp	b[esi],' '		;scan till more white space.
+@@Ignore:
+	cmp	b[esi],' '		;scan till more white space.
 	jz	@@6		;check next item in the list.
 	cmp	b[esi],9
 	jz	@@6		;check next item in the list.
 	inc	esi
 	jmp	@@Ignore
 	;
-@@Start:	xor	edx,edx		;reset acumulated value.
-@@11:	movzx	eax,b[esi]		;fetch a digit.
+@@Start:
+	xor	edx,edx		;reset acumulated value.
+@@11:
+	movzx	eax,b[esi]		;fetch a digit.
 	or	al,al
 	jz	@@10		;finished geting value so store it.
 	cmp	al,' '
@@ -3713,8 +3793,10 @@ ReadMapFile	proc	near
 	add	edx,eax		;/
 	inc	esi
 	jmp	@@11		;keep reading till we run out.
-@@30:	inc	esi		;skip 'H'
-@@10:	mov	ebx,SegCurrent
+@@30:
+	inc	esi		;skip 'H'
+@@10:
+	mov	ebx,SegCurrent
 	mov	eax,edx
 	and	edx,0fffffff0h	;segment has to be paragraph aligned.
 	mov	[ebx+0],edx		;store start address.
@@ -3722,8 +3804,10 @@ ReadMapFile	proc	near
 	add	d[ebx+4],eax		;update limit base value.
 	jmp	@@6		;do next item along.
 	;
-@@Length:	xor	edx,edx		;reset accumulated value.
-@@12:	movzx	eax,b[esi]		;fetch a digit.
+@@Length:
+	xor	edx,edx		;reset accumulated value.
+@@12:
+	movzx	eax,b[esi]		;fetch a digit.
 	or	al,al
 	jz	@@13		;finished getting value so store it.
 	cmp	al,' '
@@ -3737,8 +3821,10 @@ ReadMapFile	proc	near
 	add	edx,eax		;/
 	inc	esi
 	jmp	@@12		;keep reading till we run out.
-@@31:	inc	esi		;skip 'H'
-@@13:	mov	ebx,SegCurrent
+@@31:
+	inc	esi		;skip 'H'
+@@13:
+	mov	ebx,SegCurrent
 	add	d[ebx+4],edx		;store length.
 	jmp	@@6		;do next item along.
 	;
@@ -3747,13 +3833,15 @@ ReadMapFile	proc	near
 	mov	ErrorNumber,14	;default to un-known class.
 	mov	ebp,offset SegClassList	;list of lists.
 	mov	edx,esi		;store source position.
-@@14:	cmp	ds:d[ebp],-1		;end of the list?
+@@14:
+	cmp	ds:d[ebp],-1		;end of the list?
 	jz	@@90
 	mov	ebx,ds:[ebp]		;get table pointer.
 	mov	esi,edx
 	mov	d[@@WildStart1],0
 	;
-@@15:	cmp	b[ebx],'*'		;match anything after this point?
+@@15:
+	cmp	b[ebx],'*'		;match anything after this point?
 	jnz	@@25
 	mov	d[@@WildStart1],ebx	;store sub-string start.
 	mov	d[@@WildStart2],esi
@@ -3765,20 +3853,24 @@ ReadMapFile	proc	near
 	mov	d[@@WildStart1],ebx	;store sub-string start.
 	jmp	@@15
 	;
-@@25:	cmp	b[ebx],' '		;end of sub string?
+@@25:
+	cmp	b[ebx],' '		;end of sub string?
 	jz	@@26
 	cmp	b[ebx],0
 	jnz	@@27
-@@26:	mov	d[@@WildStart1],0
+@@26:
+	mov	d[@@WildStart1],0
 	;
-@@27:	cmp	b[esi],' '		;white space?
+@@27:
+	cmp	b[esi],' '		;white space?
 	jz	@@19
 	cmp	b[esi],9		;white space?
 	jz	@@19
 	cmp	b[esi],0		;end of the line?
 	jnz	@@20
 	;
-@@19:	cmp	b[ebx],' '		;if list entry is finished then we have a match.
+@@19:
+	cmp	b[ebx],' '		;if list entry is finished then we have a match.
 	jz	@@21
 	cmp	b[ebx],0
 	jz	@@21
@@ -3786,7 +3878,8 @@ ReadMapFile	proc	near
 	jz	@@21
 	jmp	@@17		;try next class name.
 	;
-@@20:	mov	al,[esi]
+@@20:
+	mov	al,[esi]
 	call	UpperChar		;no case sensitivity.
 	xchg	ah,al
 	mov	al,[ebx]
@@ -3800,25 +3893,30 @@ ReadMapFile	proc	near
 	mov	esi,d[@@WildStart2]
 	jmp	@@15		;look again.
 	;
-@@17:	cmp	b[ebx],0		;end of this class list?
+@@17:
+	cmp	b[ebx],0		;end of this class list?
 	jz	@@18
 	cmp	b[ebx],' '		;seperator?
 	jz	@@22		;keep going till the end or a space.
 	inc	ebx
 	jmp	@@17
-@@22:	mov	esi,edx
+@@22:
+	mov	esi,edx
 	inc	ebx		;skip the space.
 	mov	d[@@WildStart1],0
 	jmp	@@15		;try new name.
 	;
-@@16:	inc	esi
+@@16:
+	inc	esi
 	inc	ebx
 	jmp	@@15		;keep comparing.
 	;
-@@18:	add	ebp,4		;next class list entry.
+@@18:
+	add	ebp,4		;next class list entry.
 	jmp	@@14
 	;
-@@21:	sub	ebp,offset SegClassList	;get class *4
+@@21:
+	sub	ebp,offset SegClassList	;get class *4
 	shr	ebp,2		;real class.
 	push	ebx
 	mov	ebx,SegCurrent
@@ -3835,7 +3933,8 @@ ReadMapFile	proc	near
 	pop	esi
 	jmp	@@6
 	;
-@@NextSeg:	mov	ebx,SegCurrent
+@@NextSeg:
+	mov	ebx,SegCurrent
 	cmp	w[ebx+8],2
 	jnz	@@NoRound
 	add	d[ebx+4],15
@@ -3893,14 +3992,16 @@ ReadMapFile	proc	near
 	or	eax,eax
 	jnz	@@GotESPSize
 	mov	eax,1024
-@@GotESPSize:	add	eax,4[esi]
+@@GotESPSize:
+	add	eax,4[esi]
 	add	eax,3
 	and	eax,0FFFFFFFCh
 	mov	4[esi],eax
 	mov	[edi].NewHeaderStruc.NewEntryESP,eax
 	mov	[edi].NewHeaderStruc.NewEntrySS,0
 	;
-@@NoFlat:	mov	eax,SegCurrent
+@@NoFlat:
+	mov	eax,SegCurrent
 	sub	eax,SegmentList
 	shr	eax,4		;/16
 	mov	SegmentTotal,eax
@@ -3918,14 +4019,16 @@ ReadMapFile	proc	near
 	mov	ebx,SegmentList	;make segment details addressable.
 	mov	ecx,SegmentTotal	;number of segments.
 	xor	edx,edx		;reset comparison value.
-@@23:	cmp	d[ebx+4],-1
+@@23:
+	cmp	d[ebx+4],-1
 	jz	@@24
 	mov	eax,[ebx+0]		;get segment base.
 	add	eax,[ebx+4]		;add in length.
 	cmp	eax,edx		;biggest yet?
 	jc	@@24
 	mov	edx,eax		;store new limit.
-@@24:	add	ebx,16
+@@24:
+	add	ebx,16
 	loop	@@23		;do all of them.
 	mov	esi,offset NewHeader
 	mov	[esi].NewHeaderStruc.NewAlloc,edx	;store it in the new header.
@@ -3939,12 +4042,14 @@ ReadMapFile	proc	near
 	mov	eax,[esi].NewHeaderStruc.NewAlloc	;get program limit.
 	mov	esi,SegmentList	;the segment details.
 	mov	ecx,SegmentTotal	;number of segments to process.
-@@G0:	cmp	w[esi+8],0		;code segment?
+@@G0:
+	cmp	w[esi+8],0		;code segment?
 	jz	@@G1		;leave code segs as they are.
 	mov	ebx,eax		;copy program limit.
 	sub	ebx,0[esi]		;minus segment base.
 	mov	4[esi],ebx		;set new limit.
-@@G1:	add	esi,16		;next segment.
+@@G1:
+	add	esi,16		;next segment.
 	loop	@@G0		;do all of them.
 	;
 @@NoGroup:	;Now make sure no 2 segments have the same base value.
@@ -3953,20 +4058,24 @@ ReadMapFile	proc	near
 	jnz	@@NoBaseChk
 	mov	esi,SegmentList	;make segment details addressable.
 	mov	ecx,SegmentTotal	;number of segments.
-@@SameBase0:	pushm	ecx,esi
+@@SameBase0:
+	pushm	ecx,esi
 	mov	eax,[esi]		;get base.
 	mov	ebp,esi
 	add	esi,16
 	dec	ecx
-@@SameBase1:	or	ecx,ecx
+@@SameBase1:
+	or	ecx,ecx
 	jz	@@SameBase2
 	js	@@SameBase2
 	cmp	eax,[esi]		;same base?
 	jz	@@SameBase3
-@@SameBase4:	add	esi,16
+@@SameBase4:
+	add	esi,16
 	dec	ecx
 	jmp	@@SameBase1
-@@SameBase2:	popm	ecx,esi
+@@SameBase2:
+	popm	ecx,esi
 	add	esi,16
 	dec	ecx
 	or	ecx,ecx
@@ -3974,7 +4083,8 @@ ReadMapFile	proc	near
 	js	@@NoBaseChk
 	jmp	@@SameBase0
 	;
-@@SameBase3:	pushm	eax,ecx,esi,ebp
+@@SameBase3:
+	pushm	eax,ecx,esi,ebp
 
 	if	0
 	mov	eax,esi		;get current pointer.
@@ -4015,7 +4125,8 @@ ReadMapFile	proc	near
 	cmp	eax,edx
 	jnc	@@SameBase5
 	mov	eax,edx
-@@SameBase5:	mov	ds:[ebp+4],eax
+@@SameBase5:
+	mov	ds:[ebp+4],eax
 	mov	[esi+4],eax
 	pop	eax
 	jmp	@@SameBase4
@@ -4024,7 +4135,8 @@ ReadMapFile	proc	near
 	xor	ax,ax
 	ret
 	;
-@@90:	mov	edx,offset CarriageReturn
+@@90:
+	mov	edx,offset CarriageReturn
 	call	StringPrint
 	mov	edx,offset LineBuffer
 	call	StringPrint		;print the offending line.
@@ -4057,10 +4169,12 @@ ASCII2Bin	proc	near
 	jnc	@@9
 	sub	al,'A'-10
 	jmp	@@8
-@@Dec:	cmp	al,'9'+1
+@@Dec:
+	cmp	al,'9'+1
 	jnc	@@9
 	sub	al,'0'
-@@8:	clc
+@@8:
+	clc
 	ret
 	;
 @@9:	stc
@@ -4136,9 +4250,11 @@ endif
 	call	OpenFile
 	jc	@@8		;don't have to have a config.
 	;
-@@ConfigOK:	mov	ConfigHandle,ax
+@@ConfigOK:
+	mov	ConfigHandle,ax
 	;
-@@Read:	mov	bx,ConfigHandle
+@@Read:
+	mov	bx,ConfigHandle
 	mov	edi,offset LineBuffer
 	call	ReadLine		;read a line.
 	mov	ErrorNumber,8	;default to io error.
