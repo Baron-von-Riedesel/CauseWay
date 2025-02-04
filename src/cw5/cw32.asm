@@ -2315,6 +2315,8 @@ cw5_InProtected:
         int     31h
 ;
 ;setup data selector.
+;D-bit isn't set - however, the segment has a 1 kB region (MouseEventStack)
+;used as stack! Segment size is well below 64 kB though, so not really a problem...
 ;
         add     bx, 8
         mov     Group32DS,bx

@@ -210,12 +210,12 @@ api86_Masks label byte
         db 0
 
 	align 4
-api88_Name        df 0    ;_Exec local variables
+api88_Name        df 0  ;_Exec local variables
 api88_Handle      dw 0
 api88_Flags       dd 0
 api88_Command     df 0
 api88_Environment dw 0
-api88_ExecAdd     dd 0
+api88_ExecAdd     dd 0  ;address binary loader (Load3P/LoadLE)
 api90_OldInt21h   df 0  ;ExecModule local variables
 	align 4
 api90_PSP         dd 0
@@ -2552,6 +2552,16 @@ cwAPI_LinearCheck endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+;--- ds:edx: filename
+;--- es:esi: cmdline
+;--- cx: environment
+;--- ebx=1 -> load for debug
+;--- _exec returns: cx:edx = cs:eip
+;---                bx:eax = ss:esp
+;---                si = PSP
+;---                di = AutoDS
+;---               ebp = segment definition memory
+
 cwAPI_ExecDebug proc near
         @dprintf DOPT_EXEC,<"cwAPI_ExecDebug enter",10>
         mov     ds,[ebp].IFRM._DS
@@ -4287,7 +4297,7 @@ _RelMemory      endp
 ;EBX    - optional third value.
 ;
 RegisterResource proc near
-        @dprintf DOPT_EXEC,<"RegisterResource enter, ax=%X, edx=%lX",10>, eax, edx
+;        @dprintf DOPT_EXEC,<"RegisterResource enter, ax=%X, edx=%lX",10>, eax, edx
         push    ds
         push    es
         push    fs
@@ -4534,7 +4544,7 @@ ReleaseResource proc near
         push    es
         push    fs
         pushad
-        @dprintf DOPT_MEM or DOPT_SEL,<"ReleaseResource enter, ax=%X, edx=%lX",10>, eax, edx
+;        @dprintf DOPT_MEM or DOPT_SEL,<"ReleaseResource enter, ax=%X, edx=%lX",10>, eax, edx
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         mov     fs,PSPSegment
@@ -5262,7 +5272,7 @@ LoadExecState   endp
 ;BX     - new PSP (zero if error).
 ;
 CreatePSP       proc    near
-        @dprintf DOPT_EXEC,<"CreatePSP enter",10>
+        @dprintf DOPT_EXEC,<"CreatePSP enter: %ls",10>,edx,ds
         mov     eax,ds
         push    ds
         push    es
@@ -5303,7 +5313,7 @@ api82_CmdlOK:
         jmp     api82_error
 api82_memOK:
         mov     edx,esi
-        mov     ecx,size EPSP_Struc
+        mov     ecx,size EPSP_Struc - 1
         Sys     SetSelDet32
         pop     ResourceTracking
         assume ds:GROUP32
@@ -6763,10 +6773,8 @@ api88_MZ:
         mov     eax,[edx].MZHeader.NewHdrPos
         or      eax,eax                             ;any "new hdr" offset?
         jz      api88_MZ2
-        mov     dx,ax
-        shr     eax,16
-        mov     cx,ax
-        mov     bx,[api88_Handle]
+        shld    ecx,eax,16
+        mov     edx,eax
         mov     ax,4200h
         int     21h
         jmp     api88_0
@@ -6774,24 +6782,19 @@ api88_MZ:
 api88_MZ2:
         ;Get MZ length and skip it.
         ;
-        mov     ax,[edx].MZHeader.NumPages ;get length in 512 byte blocks
+        movzx   eax,[edx].MZHeader.NumPages ;get length in 512 byte blocks
 
 ; MED 04/26/96
         cmp     [edx].MZHeader._Length,0
         je      medexe5                 ; not rounded if no modulo
-        dec     ax                      ;lose 1 cos its rounded up
+        dec     eax                     ;lose 1 cos its rounded up
 medexe5:
-        add     ax,ax                   ;mult by 2
-        mov     dh,0
-        mov     dl,ah
-        mov     ah,al
-        mov     al,dh                   ;mult by 256=*512
-        add     ax,apiMZHeader._Length  ;add length mod 512
-        adc     dx,0                    ;add any carry to dx
-        mov     cx,ax
-        xchg    cx,dx                   ;swap round for DOS.
+        shl     eax,9                   ;*512
+        movzx   ecx,apiMZHeader._Length ;add length mod 512
+        add     eax,ecx
+        shld    ecx,eax,16
+        mov     edx,eax
         mov     ax,4200h                ;set absolute position.
-        mov     bx,[api88_Handle]
         int     21h
         jmp     api88_0                 ;and now try with the new header position
 ;

@@ -2,10 +2,12 @@
 ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 ;
 ;CauseWay real mode startup program. Interogates target program for setup flags
-;and writes to real debugger file before passing control to the real debugger.
+;and adjusts CWD.OVL's 3P header before passing control to it. This ensures that
+;the debugger has the same "bitness" as the debuggee.
 ;
 	.model small
 	.stack 256
+	.dosseg
 	.386
 
 	include equates.inc
@@ -21,14 +23,19 @@ NoOverlayText	db 13,10,'Could not find: $'
 ;
 OptionCounter	db 0
 	align 2
-OptionTable	db 128 dup (0)
-	dw 128 dup (0)
+	.data?
+OptionTable	db 128 dup (?)
+	dw 128 dup (?)
+	.data
 OptionPointer	dw OptionText
-OptionText	db 256 dup (0)
-;
+	.data?
+OptionText	db 256 dup (?)
+	.data
 TargetFlags	dw 0
 ;
-DebugPath	db 128 dup (0)
+	.data?
+DebugPath	db 128 dup (?)
+	.data
 DebugExten	db 'ovl',0
 ;
 ExecTable	dw 0
@@ -37,9 +44,10 @@ ExecTable	dw 0
 	dw 6ch,?	;fcb2
 ;
 EXEextension	db 'EXE',0
+	.data?
 ExeFileName	db 128 dup (?)
 ;
-NewHeader	NewHeaderStruc <>
+NewHeader	NewHeaderStruc <<?>>
 ;
 
 MZHdr struct
@@ -78,6 +86,20 @@ Start	proc	near
 	mov	ah,4ah		;Re-size memory block function.
 	int	21h		;/
 
+	;clear _BSS segment
+externdef _edata:abs
+externdef _end:abs
+	mov di,_edata
+	mov cx,_end
+	sub cx,di
+	push es
+	push ds
+	pop es
+	xor al,al
+	cld
+	rep stosb
+	pop es
+
 ;--- Get an execution path for the real program.
 
 	mov	es,es:[2ch]		;Get enviroment string address.
@@ -113,9 +135,10 @@ Start	proc	near
 	mov	di,si
 	dec	di
 	jmp	@@100
-@@101:	mov	b[di],"."
+@@101:
+	mov	b[di],"."
 	inc	di
-	mov	si,offset DebugExten
+	mov	si,offset DebugExten     ;use ".OVL" as extension
 	mov	cx,4
 	push	ds
 	pop	es
@@ -134,21 +157,25 @@ Start	proc	near
 	push	ds
 	pop	es
 	xor	al,al
-@@e0:	movsb
+@@e0:
+	movsb
 	cmp	b[si-1],'.'
 	jnz	@@e1
 	cmp	b[si],'.'
 	jnz	@@e5
 	movsb
 	jmp	@@e0
-@@e5:	mov	al,1
-@@e1:	cmp	b[si-1],0
+@@e5:
+	mov	al,1
+@@e1:
+	cmp	b[si-1],0
 	jnz	@@e0
 	or	al,al
 	jnz	@@e2
 	mov	b[di-1],'.'
 	mov	si,offset EXEextension
-@@e4:	movsb
+@@e4:
+	movsb
 	cmp	b[si-1],0
 	jnz	@@e4
 	;
@@ -164,7 +191,7 @@ Start	proc	near
 	mov	ah,3fh
 	int	21h
 	jc	@@03
-	cmp	ax,sizeof exehdr	;did we read right amount?
+	cmp	ax,cx			;did we read right amount?
 	jnz	@@03
 	cmp	exehdr.Signature,'ZM'	;Normal EXE?
 	jnz	@@03
@@ -190,12 +217,11 @@ medexe2:
 	mov	ah,3fh
 	int	21h
 	jc	@@03
-	cmp	ax,size NewHeaderStruc	;did we read right amount?
+	cmp	ax,cx			;did we read right amount?
 	jnz	@@03
-	cmp	w[NewHeader],'P3'	;ID ok?
+	cmp	w NewHeader.NewID,'P3'	;ID ok?
 	jnz	@@03
-	mov	si,offset NewHeader
-	mov	eax,NewHeaderStruc.NewFlags[si]
+	mov	ax,w NewHeader.NewFlags
 	mov	TargetFlags,ax
 @@03:
 	mov	bx,Handle
@@ -205,8 +231,11 @@ medexe2:
 	int	21h
 @@04:	;
 	mov	Handle,-1
-	mov	dx,offset debugpath
-	mov	ax,3d02h		;open, read only.
+
+;--- open CWD.OVL and read 3P header
+
+	mov	dx,offset debugpath  ;file CWD.OVL
+	mov	ax,3d02h		;open, read/write
 	int	21h
 	jc	@@13
 	mov	Handle,ax		;store the handle.
@@ -216,7 +245,7 @@ medexe2:
 	mov	ah,3fh
 	int	21h
 	jc	@@13
-	cmp	ax,sizeof MZHdr		;did we read right amount?
+	cmp	ax,cx			;did we read right amount?
 	jnz	@@13
 	cmp	exehdr.Signature,'ZM'	;Normal EXE?
 	jnz	@@13
@@ -244,14 +273,20 @@ medexe3:
 	jc	@@13
 	cmp	ax,size NewHeaderStruc	;did we read right amount?
 	jnz	@@13
-	cmp	w[NewHeader],'P3'	;ID ok?
+	cmp	w NewHeader.NewID,'P3'	;ID ok?
 	jnz	@@13
-	;
+
+;--- update CWD.OVL's flags to match the debuggee's
+
 	mov	si,offset NewHeader
 	mov	ax,TargetFlags
-	and	ax,0ffffh-16384
-	and	w[NewHeaderStruc.NewFlags+si],16384
-	or	w[NewHeaderStruc.NewFlags+si],ax	;set target flags.
+	and	ax,not 4000h
+	mov cx,w NewHeader.NewFlags
+	and cx,not 4000h
+	cmp ax,cx
+	jz @@13
+	and	w NewHeader.NewFlags,4000h
+	or	w NewHeader.NewFlags,ax	;set target flags.
 	;
 	mov	bx,Handle
 	mov	dx,-(size NewHeaderStruc)
@@ -262,10 +297,11 @@ medexe3:
 	mov	dx,offset NewHeader	;somewhere to put the info.
 	mov	cx,size NewHeaderStruc		;size of it.
 	mov	ah,40h
-	int	21h		;read the header again.
+	int	21h		;write CWD.OVL's 3P header
 	jc	@@13
 	;
-@@13:	mov	bx,Handle
+@@13:
+	mov	bx,Handle
 	cmp	bx,-1
 	jz	@@14
 	mov	ah,3eh
@@ -281,7 +317,8 @@ medexe3:
 	mov	ah,9
 	int	21h
 	mov	si,offset debugpath
-@@findend:	lodsb
+@@findend:
+	lodsb
 	or	al,al
 	jnz	@@findend
 	mov	b[si-1],13
@@ -296,7 +333,8 @@ medexe3:
 	mov	bx,ax
 	mov	ah,3eh		;close it again.
 	int	21h
-	;
+
+;--- now run cwd.ovl
 	mov	ax,PspSeg
 	mov	w[ExecTable+4],ax
 	mov	w[ExecTable+8],ax
@@ -309,9 +347,10 @@ medexe3:
 	pop	es
 	int	21h
 	;
-@@exit:	mov	ax,4c00h
+@@exit:
+	mov	ax,4c00h
 	int	21h
-@@Handle	dw 0
+
 Start	endp
 
 
@@ -361,7 +400,8 @@ ReadCommand	proc	near
 	mov	es:b[di+1],0		;terminate the tail.
 	inc	si		;skip length.
 	;
-@@0:	mov	al,es:[si]		;need to skip leading spaces.
+@@0:
+	mov	al,es:[si]		;need to skip leading spaces.
 	inc	si		;/
 	or	al,al		;/
 	jz	@@9		;/
@@ -369,14 +409,16 @@ ReadCommand	proc	near
 	jz	@@0		;/
 	dec	si		;/
 	;
-@@1:	cmp	es:b[si],'/'		;option switch?
+@@1:
+	cmp	es:b[si],'/'		;option switch?
 	jz	@@Option		;/
 	cmp	es:b[si],'-'		;/
 	jz	@@Option		;/
 	cmp	es:b[si],'+'		;/
 	jz	@@Option		;/
 	;
-@@2:	mov	bl,OptionCounter	;Get file entry number.
+@@2:
+	mov	bl,OptionCounter	;Get file entry number.
 	inc	OptionCounter	;/
 	xor	bh,bh		;/
 	shl	bx,1		;/
@@ -385,7 +427,8 @@ ReadCommand	proc	near
 	mov	[bx],di		;update table entry.
 	;
 	xor	cl,cl
-@@3:	cmp	es:b[si],0		;end of name?
+@@3:
+	cmp	es:b[si],0		;end of name?
 	jz	@@4		;/
 	cmp	es:b[si],' '		;/
 	jz	@@4		;/
@@ -396,7 +439,8 @@ ReadCommand	proc	near
 	mov	cl,1		;flag SOMETHING found.
 	jmp	@@3		;keep fetching them.
 	;
-@@4:	mov	b[di],0		;Terminate the name.
+@@4:
+	mov	b[di],0		;Terminate the name.
 	inc	di		;/
 	mov	OptionPointer,di	;Update table pointer.
 	;
@@ -411,16 +455,19 @@ ReadCommand	proc	near
 	mov	w[bx],0		;reset table entry.
 	jmp	@@0
 	;
-@@Option:	mov	ah,es:[si]		;Get switch character.
+@@Option:
+	mov	ah,es:[si]		;Get switch character.
 	inc	si
-@@5:	cmp	es:b[si],0		;check for end of line.
+@@5:
+	cmp	es:b[si],0		;check for end of line.
 	jz	@@9		;/
 	cmp	es:b[si],' '		;skip spaces.
 	jnz	@@6		;/
 	inc	si		;/
 	jmp	@@5		;/
 	;
-@@6:	mov	al,es:[si]		;get the switched character.
+@@6:
+	mov	al,es:[si]		;get the switched character.
 	and	al,127
 	inc	si
 	cmp	al,61h		; 'a'
@@ -428,13 +475,15 @@ ReadCommand	proc	near
 	cmp	al,7Ah		; 'z'
 	ja	@@12
 	and	al,5Fh		;convert to upper case.
-@@12:	mov	bl,al
+@@12:
+	mov	bl,al
 	xor	bh,bh
 	add	bx,offset OptionTable	;Index into the table.
 	cmp	ah,'-'
 	jnz	@@7
 	xor	ah,ah		;Convert '-' to zero.
-@@7:	mov	[bx],ah		;Set flag accordingly.
+@@7:
+	mov	[bx],ah		;Set flag accordingly.
 	;
 	cmp	es:b[si],' '		;check for assosiated text.
 	jz	@@0
@@ -444,16 +493,19 @@ ReadCommand	proc	near
 	jz	@@900
 	cmp	es:b[si],':'		;allow colon as seperator.
 	jnz	@@8
-@@900:	inc	si		;skip colon.
+@@900:
+	inc	si		;skip colon.
 	;
-@@8:	mov	bl,al		;Get the option number again.
+@@8:
+	mov	bl,al		;Get the option number again.
 	xor	bh,bh		;/
 	shl	bx,1		; &
 	add	bx,offset OptionTable+128	;index into the table.
 	mov	di,OptionPointer	;current position in the table.
 	mov	[bx],di		;store pointer in the table.
 	;
-@@10:	cmp	es:b[si],0		;end of line?
+@@10:
+	cmp	es:b[si],0		;end of line?
 	jz	@@9
 	cmp	es:b[si],' '		;end of text?
 	jz	@@11
@@ -463,11 +515,13 @@ ReadCommand	proc	near
 	inc	di
 	jmp	@@10
 	;
-@@11:	mov	b[di],0		;terminate string.
+@@11:
+	mov	b[di],0		;terminate string.
 	inc	di
 	mov	OptionPointer,di	;store new text pointer.
 	jmp	@@0		;scan some more text.
-@@9:	mov	al,OptionCounter
+@@9:
+	mov	al,OptionCounter
 	xor	ah,ah
 	or	ax,ax		;set flags for file names.
 	mov	bx,w[OptionTable+128]	;point to first file name.

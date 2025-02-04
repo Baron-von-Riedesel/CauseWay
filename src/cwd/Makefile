@@ -10,16 +10,17 @@ Build\cwd.exe: Build\cwd.obj
 	@wl32 /q/ex/m/non/cs Build\cwd.obj,Build\cwd.exe,Build\cwd.map
 
 Build\cwd.obj: cwd.asm cmacros.inc equates.inc ..\strucs.inc
-	@ml -c -nologo -FoBuild\ -I.. cwd.asm
+	@ml -c -nologo -FlBuild\ -FoBuild\ -I.. cwd.asm
 
 Build\cwd.ovl: Build\cwd-ovl.obj
 #	@..\cwl\build\cwl.exe /MAP Build\cwd-ovl.obj,Build\cwd.ovl,Build\cwd-ovl.map
 	@wl32 /q/m/cs/non Build\cwd-ovl.obj,Build\cwd.ovl,Build\cwd-ovl.map
-	@..\..\bin\cwc Build\cwd.ovl
+#	@..\..\bin\cwc Build\cwd.ovl
 
 Build\cwd-ovl.obj: cwd-ovl.asm disas.inc generr.inc fpu.inc disaseq.inc win.inc evaluate.inc macros.inc \
 		getkeys.inc print.inc fileacc.inc ..\cw.inc ..\strucs.inc
-	@ml /c /nologo /FlBuild\ /FoBuild\ /I.. cwd-ovl.asm
+	@ml -c -nologo -FlBuild\ -Sg -FoBuild\ /I.. cwd-ovl.asm
+#	@jwasm -c -nologo -FlBuild\ -Sg -FoBuild\ /I.. cwd-ovl.asm
 
 clean:
 	@del Build\cwd.exe

@@ -6,8 +6,8 @@ _DATA32 segment
 	align 4
 
 OldInt10h       df 0
-Int10hStaticSel dw ?
-Int10hUltraFont dw ?
+Int10hStaticSel dw ?   ;used by int 10h, ah=1Bh, bx=0
+Int10hUltraFont dw ?   ;used by int 10h, ax=cd02h
 	align 4
 Int10Buffer     RealRegsStruc <>
 _DATA32 ends
@@ -224,6 +224,7 @@ int103_Use32Bit504:
         ;
 int103_UltraGetPal:
         ;UltraVision get palette.
+        ;returns tables is DS:(E)SI and DS:(E)DX
         ;
         push    eax
         push    ebx
@@ -249,7 +250,7 @@ int103_UltraGetPal:
         mov     ds,ebx
         assume ds:nothing
         movzx   edx,es:[edi].RealRegsStruc.Real_DX
-        movzx   esi,w es:[edi].RealRegsStruc.Real_ESI
+        movzx   esi,es:[edi].RealRegsStruc.Real_SI
         pop     fs
         pop     es
         assume es:nothing
@@ -319,6 +320,7 @@ int103_Use32Bit502:
         ;
 int103_VideoState:
         ;Some sort of video state table function.
+        ;bx=0000, es:edi -> 64-byte buffer to receive info
         ;
         or      bx,bx
         jnz     int103_NotOurs
@@ -327,7 +329,6 @@ int103_VideoState:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
@@ -360,13 +361,12 @@ int103_Use32Bit501:
         pop     es
         assume es:nothing
         pop     edi
-        cmp     al,1bh
+        cmp     al,1bh          ;function supported?
         jz      int103_ok100
         pop     fs
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -385,7 +385,7 @@ int103_ok100:
         cld
         rep     movsb           ;copy the results.
         pop     edi
-        movzx   edx,WORD PTR es:[edi+2]
+        movzx   edx,WORD PTR es:[edi+2]   ;state info[0]:FAR16 real-mode address for static functionality
         shl     edx,4
         mov     ecx,65535
         mov     ds,cs:apiDSeg32
@@ -398,7 +398,6 @@ int103_ok100:
         pop     es
         pop     ds
         assume ds:nothing
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -483,7 +482,6 @@ int103_SetPens:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
@@ -521,7 +519,6 @@ int103_Use32Bit50:
         pop     es
         assume es:nothing
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx
@@ -539,7 +536,6 @@ int103_GetPens:
         push    edx
         push    esi
         push    edi
-        push    ebp
         push    ds
         push    es
         push    fs
@@ -579,7 +575,6 @@ int103_Use32Bit51:
         pop     fs
         pop     es
         pop     ds
-        pop     ebp
         pop     edi
         pop     esi
         pop     edx

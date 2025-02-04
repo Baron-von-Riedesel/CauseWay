@@ -51,17 +51,20 @@ EvaluateData	proc	near
 	cmp	b[esi],'9'+1
 	jc	@@NotPC0
 	;
-@@CheckAlpha1:	cmp	b[esi],'A'
+@@CheckAlpha1:
+	cmp	b[esi],'A'
 	jc	@@CheckAlpha2
 	cmp	b[esi],'F'+1
 	jc	@@NotPC0
 	;
-@@CheckAlpha2:	cmp	b[esi],'a'
+@@CheckAlpha2:
+	cmp	b[esi],'a'
 	jc	@@IsPC
 	cmp	b[esi],'f'+1
 	jc	@@NotPC0
 	;
-@@IsPC:	mov	ecx,ProgramCounter	;Get program counter.
+@@IsPC:
+	mov	ecx,ProgramCounter	;Get program counter.
 	mov	edx,ProgramCounter+4
 	mov	b[edi],0
 	mov	[edi+1],ecx
@@ -70,7 +73,8 @@ EvaluateData	proc	near
 	add	edi,9		;move to next field.
 	jmp	@@0
 	;
-@@NotPC0:	cmp	al,'%'
+@@NotPC0:
+	cmp	al,'%'
 	jz	@@0_0
 	cmp	al,'"'
 	jz	@@0_0
@@ -98,26 +102,31 @@ EvaluateData	proc	near
 	inc	esi		;skip second shift operator.
 	jmp	@@0_1
 	;
-@@NotLeft0:	cmp	al,'>'
+@@NotLeft0:
+	cmp	al,'>'
 	jnz	@@NotRight0
 	cmp	b[esi],'>'
 	jnz	@@9	;NotRight0
 	inc	esi
 	jmp	@@0_1
 	;
-@@NotRight0:	jmp	@@0_0
-@@0_1:	mov	b[edi],al		;store this operator.
+@@NotRight0:
+	jmp	@@0_0
+@@0_1:
+	mov	b[edi],al		;store this operator.
 	mov	b[edi+1],-1		;make sure its terminated.
 	inc	edi		;step over it.
 	jmp	@@0		;keep looking.
-@@0_0:	dec	esi		;move back to last data.
+@@0_0:
+	dec	esi		;move back to last data.
 	;
 	;first decide if this is decimal,hex,binary,label or a string.
 	;
 	xor	dl,dl		;reset number flag.
 	xor	ah,ah		;default to decimal.
 	push	esi
-@@1:	lodsb
+@@1:
+	lodsb
 	call	UpperChar
 	cmp	al,'0'		;check for digits.
 	jc	@@1_0		;/
@@ -125,7 +134,8 @@ EvaluateData	proc	near
 	jnc	@@1_0		;/
 	mov	dl,1		;flag some numbers found.
 	jmp	@@1		;keep looking.
-@@1_0:	or	al,al		;end of string?
+@@1_0:
+	or	al,al		;end of string?
 	jz	@@2		;/
 	cmp	al,'%'
 	jz	@@1_3		;set flag for binary.
@@ -143,8 +153,10 @@ EvaluateData	proc	near
 	cmp	al,'F'+1		;/
 	jc	@@1_2		;go for hex.
 	;
-@@1_7:	mov	al,[esi-1]		;get '$' again.
-@@1_6:	cmp	al,"'"
+@@1_7:
+	mov	al,[esi-1]		;get '$' again.
+@@1_6:
+	cmp	al,"'"
 	jz	@@1_4		;set string.
 	cmp	al,'"'
 	jz	@@1_4		;set string.
@@ -207,17 +219,23 @@ EvaluateData	proc	near
 	jc	@@1_5
 	cmp	al,'F'+1
 	jc	@@1_2		;assume its hex at last.
-@@1_5:	cmp	al,'B'
+@@1_5:
+	cmp	al,'B'
 	jz	@@1_3		;assume its binary.
 	pop	esi
-@@1_1:	mov	ah,3		;set flag for label.
+@@1_1:
+	mov	ah,3		;set flag for label.
 	jmp	@@2
-@@1_2:	mov	ah,1		;set flag for hex.
+@@1_2:
+	mov	ah,1		;set flag for hex.
 	jmp	@@2
-@@1_3:	mov	ah,2		;set flag for binary.
+@@1_3:
+	mov	ah,2		;set flag for binary.
 	jmp	@@2
-@@1_4:	mov	ah,4		;set flag for string.
-@@2:	pop	esi
+@@1_4:
+	mov	ah,4		;set flag for string.
+@@2:
+	pop	esi
 	;
 	;now convert this number into a useful format.
 	;
@@ -239,7 +257,8 @@ EvaluateData	proc	near
 	xor	edx,edx
 	xor	ecx,ecx		;reset accumulator.
 	xor	edi,edi
-@@DecGet_0:	lodsb
+@@DecGet_0:
+	lodsb
 	or	al,al		;finished this number?
 	jz	@@DecGet_1
 	cmp	al,' '
@@ -289,8 +308,10 @@ EvaluateData	proc	near
 	jz	@@DecGet_0
 	pop	edi
 	jmp	@@13
-@@DecGet_2:	dec	esi		;move back to operator.
-@@DecGet_1:	pop	edi
+@@DecGet_2:
+	dec	esi		;move back to operator.
+@@DecGet_1:
+	pop	edi
 	mov	[edi],ecx
 	mov	[edi+4],edx
 	mov	b[edi+8],-1		;preset terminator.
@@ -307,7 +328,8 @@ EvaluateData	proc	near
 	cmp	b[esi],'$'		;$ at the start?
 	jnz	@@HexGet_0
 	inc	esi		;skip the $
-@@HexGet_0:	lodsb
+@@HexGet_0:
+	lodsb
 	call	UpperChar
 	or	al,al		;finished this number?
 	jz	@@HexGet_1
@@ -345,13 +367,16 @@ EvaluateData	proc	near
 	jc	@@9		;bad value!
 	cmp	al,'F'+1
 	jnc	@@9		;bad value.
-@@HexGet_3:	cmp	al,'A'		;number or alpha?
+@@HexGet_3:
+	cmp	al,'A'		;number or alpha?
 	jc	@@HexGet_4
 	sub	al,'A'		;make it real.
 	add	al,10		;/
 	jmp	@@HexGet_5
-@@HexGet_4:	sub	al,'0'		;make it real.
-@@HexGet_5:	cmp	bp,16+1
+@@HexGet_4:
+	sub	al,'0'		;make it real.
+@@HexGet_5:
+	cmp	bp,16+1
 	jz	@@13
 	inc	bp
 	movzx	eax,al
@@ -366,8 +391,10 @@ EvaluateData	proc	near
 	add	ecx,eax
 	adc	edx,0		;add in new value.
 	jmp	@@HexGet_0		;keep looking.
-@@HexGet_2:	dec	esi		;move back to operator.
-@@HexGet_1:	mov	[edi],ecx
+@@HexGet_2:
+	dec	esi		;move back to operator.
+@@HexGet_1:
+	mov	[edi],ecx
 	mov	[edi+4],edx
 	mov	b[edi+8],-1		;preset terminator.
 	add	edi,8		;move to next field.
@@ -383,7 +410,8 @@ EvaluateData	proc	near
 	cmp	b[esi],'%'		;% at the start
 	jnz	@@BinGet_0
 	inc	esi		;step over the %
-@@BinGet_0:	lodsb
+@@BinGet_0:
+	lodsb
 	call	UpperChar
 	or	al,al		;finished this number?
 	jz	@@BinGet_1
@@ -427,8 +455,10 @@ EvaluateData	proc	near
 	add	ecx,eax
 	adc	edx,0		;add in new value.
 	jmp	@@BinGet_0		;keep looking.
-@@BinGet_2:	dec	esi		;move back to operator.
-@@BinGet_1:	mov	[edi],ecx
+@@BinGet_2:
+	dec	esi		;move back to operator.
+@@BinGet_1:
+	mov	[edi],ecx
 	mov	[edi+4],edx
 	mov	b[edi+8],-1		;preset terminator.
 	add	edi,8		;move to next field.
@@ -446,7 +476,8 @@ EvaluateData	proc	near
 	mov	[edi+4],edx
 	mov	b[edi+8],-1
 	add	edi,8		;next entry.
-@@LabGet_0:	lodsb
+@@LabGet_0:
+	lodsb
 	or	al,al
 	jz	@@3		;end of this item.
 	cmp	al,' '
@@ -473,7 +504,8 @@ EvaluateData	proc	near
 	jz	@@LabGet_1
 	cmp	al,')'
 	jnz	@@LabGet_0
-@@LabGet_1:	dec	esi
+@@LabGet_1:
+	dec	esi
 	jmp	@@3
 @@StrGet:	;
 	;get a string value. If only one character then it will be put
@@ -496,17 +528,20 @@ EvaluateData	proc	near
 	lodsb			;get closing quote.
 	jmp	@@3
 	;
-@@StrGet_0:	lea	edi,EvaluateBuffer	;copy over itself.
+@@StrGet_0:
+	lea	edi,EvaluateBuffer	;copy over itself.
 	push	ds
 	pop	es
-@@StrGet_1:	lodsb
+@@StrGet_1:
+	lodsb
 	stosb
 	cmp	al,ah		;matching quote?
 	jz	@@StrGet_2		;end of string.
 	or	al,al
 	jz	@@10		;missing quote.
 	jmp	@@StrGet_1
-@@StrGet_2:	dec	edi
+@@StrGet_2:
+	dec	edi
 	mov	b[edi],0		;terminate it.
 	sub	edi,offset EvaluateBuffer
 	mov	ecx,edi		;set string length.
@@ -551,17 +586,20 @@ EvaluateData	proc	near
 	cmp	al,')'
 	jz	@@9
 	jmp	@@3_2
-@@3_0:	mov	b[edi],0
+@@3_0:
+	mov	b[edi],0
 	mov	d[edi+1],0
 	mov	d[edi+5],0
 	add	edi,9
 	jmp	@@3_2
-@@3_1:	mov	b[edi],0
+@@3_1:
+	mov	b[edi],0
 	mov	d[edi+1],0
 	mov	d[edi+5],0
 	mov	b[edi+9],'+'
 	add	edi,10
-@@3_2:	rep	movsb		;copy it back into the buffer.
+@@3_2:
+	rep	movsb		;copy it back into the buffer.
 	;
 	;now expand any parenthesis
 	;
@@ -773,12 +811,14 @@ EvaluateData	endp
 ;convert the number in the buffer into a real number.
 ;
 CalculateNum	proc	near
-@@ShlExpand:	lea	esi,EvaluateBuffer
+@@ShlExpand:
+	lea	esi,EvaluateBuffer
 	lea	edi,EvaluateBuffer2
 	push	ds
 	pop	es
 	xor	bx,bx		;reset expansion flag.
-@@ShlExpand_0:	cmp	b[esi],'<'
+@@ShlExpand_0:
+	cmp	b[esi],'<'
 	jz	@@ShlExpand_2		;do the addition.
 	mov	ebp,edi		;point to current value.
 	movsb			;move type byte.
@@ -788,26 +828,31 @@ CalculateNum	proc	near
 	movsd			;move the value.
 	mov	edx,[esi]		;setup the accumulator.
 	movsd
-@@ShlExpand_1:	cmp	ds:b[ebp],-1		;last value?
+@@ShlExpand_1:
+	cmp	ds:b[ebp],-1		;last value?
 	jnz	@@ShlExpand_0		;keep looking.
 	jmp	@@ShlExpand_3
-@@ShlExpand_2:	inc	esi		;move to next number.
+@@ShlExpand_2:
+	inc	esi		;move to next number.
 	cmp	b[esi],0		;check its a number.
 	jnz	@@9		;bad expresion.
 	mov	eax,ecx
 	mov	ecx,[esi+1]
 	or	ecx,ecx
 	jz	@@ShlLoop99
-@@ShlLoop:	shl	eax,1
+@@ShlLoop:
+	shl	eax,1
 	rcl	edx,1
 	jc	@@10
 	loop	@@ShlLoop
-@@ShlLoop99:	mov	ds:[ebp+1],eax
+@@ShlLoop99:
+	mov	ds:[ebp+1],eax
 	mov	ds:[ebp+5],edx		;store the result.
 	add	esi,9		;point to next entry.
 	mov	bl,1		;flag action.
 	jmp	@@ShlExpand_0		;go look for more action.
-@@ShlExpand_3:	mov	b[ResultBuffer+8],0
+@@ShlExpand_3:
+	mov	b[ResultBuffer+8],0
 	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
 	mov	ecx,edi		;/
 	inc	ecx		;include terminator.
@@ -816,12 +861,14 @@ CalculateNum	proc	near
 	rep	movsb		;copy it back into the buffer.
 	or	bl,bl		;did we expand anything?
 	jnz	@@ShlExpand		;do it again till no more work.
-@@ShrExpand:	lea	esi,EvaluateBuffer
+@@ShrExpand:
+	lea	esi,EvaluateBuffer
 	lea	edi,EvaluateBuffer2
 	push	ds
 	pop	es
 	xor	bx,bx		;reset expansion flag.
-@@ShrExpand_0:	cmp	b[esi],'>'
+@@ShrExpand_0:
+	cmp	b[esi],'>'
 	jz	@@ShrExpand_2		;do the addition.
 	mov	ebp,edi		;point to current value.
 	movsb			;move type byte.
@@ -831,25 +878,30 @@ CalculateNum	proc	near
 	movsd			;move the value.
 	mov	edx,[esi]		;setup the accumulator.
 	movsd
-@@ShrExpand_1:	cmp	ds:b[ebp],-1		;last value?
+@@ShrExpand_1:
+	cmp	ds:b[ebp],-1		;last value?
 	jnz	@@ShrExpand_0		;keep looking.
 	jmp	@@ShrExpand_3
-@@ShrExpand_2:	inc	esi		;move to next number.
+@@ShrExpand_2:
+	inc	esi		;move to next number.
 	cmp	b[esi],0		;check its a number.
 	jnz	@@9		;bad expresion.
 	mov	eax,ecx
 	mov	ecx,[esi+1]
 	or	ecx,ecx
 	jz	@@ShrLoop99
-@@ShrLoop:	shr	edx,1
+@@ShrLoop:
+	shr	edx,1
 	rcr	eax,1
 	loop	@@ShrLoop
-@@ShrLoop99:	mov	ds:[ebp+1],eax
+@@ShrLoop99:
+	mov	ds:[ebp+1],eax
 	mov	ds:[ebp+5],edx	;store the result.
 	add	esi,9		;point to next entry.
 	mov	bl,1		;flag action.
 	jmp	@@ShrExpand_0		;go look for more action.
-@@ShrExpand_3:	mov	b[ResultBuffer+8],0
+@@ShrExpand_3:
+	mov	b[ResultBuffer+8],0
 	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
 	mov	ecx,edi		;/
 	inc	ecx		;include terminator.
@@ -861,12 +913,14 @@ CalculateNum	proc	near
 	;
 	;now expand any multiplication
 	;
-@@MulExpand:	lea	esi,EvaluateBuffer
+@@MulExpand:
+	lea	esi,EvaluateBuffer
 	lea	edi,EvaluateBuffer2
 	push	ds
 	pop	es
 	xor	bl,bl		;reset expansion flag.
-@@MulExpand_0:	cmp	b[esi],'*'
+@@MulExpand_0:
+	cmp	b[esi],'*'
 	jz	@@MulExpand_2		;do the multiplication.
 	mov	ebp,edi		;point to current value.
 	movsb			;move type byte.
@@ -876,10 +930,12 @@ CalculateNum	proc	near
 	movsd			;move the value.
 	mov	edx,[esi]		;setup the accumulator.
 	movsd
-@@MulExpand_1:	cmp	ds:b[ebp],-1		;last value?
+@@MulExpand_1:
+	cmp	ds:b[ebp],-1		;last value?
 	jnz	@@MulExpand_0		;keep looking.
 	jmp	@@MulExpand_3
-@@MulExpand_2:	inc	esi		;move to next number.
+@@MulExpand_2:
+	inc	esi		;move to next number.
 	cmp	b[esi],0		;check its a number.
 	jnz	@@9		;bad expresion.
 	pushm	esi,edi,bx
@@ -899,7 +955,8 @@ CalculateNum	proc	near
 	add	esi,9		;point to next entry.
 	mov	bl,1		;flag action.
 	jmp	@@MulExpand_0		;go look for more action.
-@@MulExpand_3:	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
+@@MulExpand_3:
+	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
 	mov	ecx,edi		;/
 	inc	ecx		;include terminator.
 	lea	esi,EvaluateBuffer2
@@ -910,12 +967,14 @@ CalculateNum	proc	near
 	;
 	;expand any division
 	;
-@@DivExpand:	lea	esi,EvaluateBuffer
+@@DivExpand:
+	lea	esi,EvaluateBuffer
 	lea	edi,EvaluateBuffer2
 	push	ds
 	pop	es
 	xor	bl,bl		;reset expansion flag.
-@@DivExpand_0:	cmp	b[esi],'/'
+@@DivExpand_0:
+	cmp	b[esi],'/'
 	jz	@@DivExpand_2		;do the multiplication.
 	mov	ebp,edi		;point to current value.
 	movsb			;move type byte.
@@ -925,10 +984,12 @@ CalculateNum	proc	near
 	movsd			;move the value.
 	mov	edx,[esi]		;setup the accumulator.
 	movsd
-@@DivExpand_1:	cmp	ds:b[ebp],-1		;last value?
+@@DivExpand_1:
+	cmp	ds:b[ebp],-1		;last value?
 	jnz	@@DivExpand_0		;keep looking.
 	jmp	@@DivExpand_3
-@@DivExpand_2:	inc	esi		;move to next number.
+@@DivExpand_2:
+	inc	esi		;move to next number.
 	cmp	b[esi],0		;check its a number.
 	jnz	@@9		;bad expresion.
 	pushm	esi,edi,ebx,ebp
@@ -955,7 +1016,8 @@ CalculateNum	proc	near
 	add	esi,9		;point to next entry.
 	mov	bl,1		;flag action.
 	jmp	@@DivExpand_0		;go look for more action.
-@@DivExpand_3:	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
+@@DivExpand_3:
+	sub	edi,offset EvaluateBuffer2 ;get length of expresion.
 	mov	ecx,edi		;/
 	inc	ecx		;include terminator.
 	lea	esi,EvaluateBuffer2
@@ -966,12 +1028,14 @@ CalculateNum	proc	near
 	;
 	;now expand any addition/subtraction.
 	;
-@@AddExpand:	lea	esi,EvaluateBuffer
+@@AddExpand:
+	lea	esi,EvaluateBuffer
 	lea	edi,EvaluateBuffer2
 	push	ds
 	pop	es
 	xor	bx,bx		;reset expansion flag.
-@@AddExpand_0:	cmp	b[esi],-1		;end of the line?
+@@AddExpand_0:
+	cmp	b[esi],-1		;end of the line?
 	jz	@@AddExpand_3		;copy back to buffer.
 	cmp	b[esi],0
 	jz	@@AddExpand_5		;copy number.
@@ -991,7 +1055,8 @@ CalculateNum	proc	near
 	;
 	jmp	@@9		;dunno what this is!
 	;
-@@AddExpand_5:	mov	ebp,edi		;point to current value.
+@@AddExpand_5:
+	mov	ebp,edi		;point to current value.
 	movsb			;move type byte.
 	mov	ecx,[esi]
 	movsd			;move the value.
@@ -999,30 +1064,36 @@ CalculateNum	proc	near
 	movsd
 	jmp	@@AddExpand_0	;keep looking.
 	;
-@@AddExpand_2:	add	ecx,[esi+1]
+@@AddExpand_2:
+	add	ecx,[esi+1]
 	adc	edx,[esi+5]		;perform addition.
 	jnc	@@AddExpand_4
 	cmp	ds:d[ebp+5],0
 	jns	@@10
-@@AddExpand_4:	mov	ds:[ebp+1],ecx
+@@AddExpand_4:
+	mov	ds:[ebp+1],ecx
 	mov	ds:[ebp+5],edx	;store the result.
 	add	esi,9		;point to next entry.
 	mov	bl,1		;flag action.
 	jmp	@@AddExpand_0		;go look for more action.
 	;
-@@SubExpand_2:	sub	ecx,[esi+1]
+@@SubExpand_2:
+	sub	ecx,[esi+1]
 	sbb	edx,[esi+5]		;perform subtraction.
 	jmp	@@AddExpand_4
 	;
-@@AndExpand_2:	and	ecx,[esi+1]
+@@AndExpand_2:
+	and	ecx,[esi+1]
 	and	edx,[esi+5]		;perform addition.
 	jmp	@@AddExpand_4
 	;
-@@OrExpand_2: 	or	ecx,[esi+1]
+@@OrExpand_2:
+	or	ecx,[esi+1]
 	or	edx,[esi+5]		;perform addition.
 	jmp	@@AddExpand_4
 	;
-@@AddExpand_3:	mov	b[edi],-1
+@@AddExpand_3:
+	mov	b[edi],-1
 	mov	b[ResultBuffer+8],bh
 	or	bh,bh
 	jnz	@@9
@@ -1038,8 +1109,10 @@ CalculateNum	proc	near
 	clc
 	ret
 	;
-@@10:	mov	ax,18
-@@9:	stc
+@@10:
+	mov	ax,18
+@@9:
+	stc
 	ret
 CalculateNum	endp
 
@@ -1070,7 +1143,8 @@ MULT64	proc	near
 	mov	TempDiv+12,0
 	lea	esi,tempdiv	;point to workspace
 	mov	ecx,64
-@@MULTLP:	shr	b[esi+7],1
+@@MULTLP:
+	shr	b[esi+7],1
 	rcr	b[esi+6],1
 	rcr	b[esi+5],1
 	rcr	b[esi+4],1
@@ -1087,7 +1161,8 @@ MULT64	proc	near
 	adc	resultbuffer+8,eax	
 	mov	eax,[edi+12]
 	adc	resultbuffer+12,eax	
-@@NOADD:	mov	eax,[edi]
+@@NOADD:
+	mov	eax,[edi]
 	add	[edi],eax	;this SHOULD be JUST an ADD not ADC!
 	mov	eax,[edi+4]
 	adc	[edi+4],eax
@@ -1105,7 +1180,8 @@ DIV64	proc	near
 	mov	temp,0	;init temp
 	mov	temp+4,0	
 	mov	ecx,64	;NUMBER OF BITS!!!!!!!
-@@DIVLP:	rcl	b[esi+0],1
+@@DIVLP:
+	rcl	b[esi+0],1
 	rcl	b[esi+1],1
 	rcl	b[esi+2],1
 	rcl	b[esi+3],1
@@ -1127,7 +1203,8 @@ DIV64	proc	near
 	mov	eax,[edi+4]
 	adc	[temp+4],eax
 	stc
-@@OKAY:	cmc		;complement carry (diff if jumped from above)
+@@OKAY:
+	cmc		;complement carry (diff if jumped from above)
 	loop	@@DIVLP
 	rcl	b[esi+0],1
 	rcl	b[esi+1],1
@@ -1205,7 +1282,8 @@ GetSymbolValue	proc	near
 	;
 	jmp	@@NotReg
 	;
-@@Reg16:	push	ebx
+@@Reg16:
+	push	ebx
 	mov	bl,b[esi+2]
 	mov	b[esi+2],0
 	pushm	ebx,esi
@@ -1219,7 +1297,8 @@ GetSymbolValue	proc	near
 	xor	ecx,ecx
 	jmp	@@GotReg
 	;
-@@Reg16g:	push	ebx
+@@Reg16g:
+	push	ebx
 	mov	bl,b[esi+2]
 	mov	b[esi+2],0
 	pushm	ebx,esi
@@ -1230,7 +1309,8 @@ GetSymbolValue	proc	near
 	jc	@@NotReg
 	jmp	@@GetgReg
 	;
-@@Reg32:	push	ebx
+@@Reg32:
+	push	ebx
 	mov	bl,[esi+3]
 	mov	b[esi+3],0
 	pushm	ebx,esi
@@ -1239,19 +1319,24 @@ GetSymbolValue	proc	near
 	mov	b[esi+3],bl
 	pop	ebx
 	jc	@@NotReg
-@@GetgReg:	call	WatchRegToValue
+@@GetgReg:
+	call	WatchRegToValue
 	mov	ecx,eax
 	xor	edx,edx
 	;
-@@GotReg:	clc
+@@GotReg:
+	clc
 	ret
-@@NotReg:	mov	edi,SymbolList
-@@0:	cmp	d[edi],-1		;end of the list?
+@@NotReg:
+	mov	edi,SymbolList
+@@0:
+	cmp	d[edi],-1		;end of the list?
 	jz	@@9
 	pushm	esi,edi
 	movzx	ecx,SymbolStruc.SymbolTLen[edi]
 	add	edi,SymbolStruc.SymbolText
-@@1:	lodsb
+@@1:
+	lodsb
 	call	UpperChar
 	mov	ah,al
 	mov	al,[edi]
@@ -1284,15 +1369,18 @@ GetSymbolValue	proc	near
 	jz	@@4
 	or	al,al
 	jz	@@4
-@@3:	popm	esi,edi
+@@3:
+	popm	esi,edi
 	add	edi,SymbolStruc.SymbolNext[edi]
 	jmp	@@0
-@@4:	popm	esi,edi
+@@4:
+	popm	esi,edi
 	mov	ecx,SymbolStruc.SymbolDword[edi]
 	movzx	edx,SymbolStruc.SymbolSeg[edi]
 	clc
 	ret
-@@9:	stc
+@@9:
+	stc
 	ret
 GetSymbolValue	endp
 

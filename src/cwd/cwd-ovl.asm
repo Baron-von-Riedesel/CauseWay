@@ -8,10 +8,8 @@
 
 	.386
 	.model small
-	.stack 4096
+	.stack 1024
 	.dosseg		; ensure .data? and .stack segments are last
-
-;	option oldstructs
 	option proc:private
 
 ;
@@ -50,10 +48,14 @@ HBRK_Type	db 0	;DPMI type code to use.
 HBRK_Flags	dw 0	;padding.
 HBRK	ends
 
-	.data?
+;--- to debug 16-bit apps, hiword(esp) must be zero.
+;--- that's why DataStack is in .data, not in .data?
+
+	.data
+	public DataStack    ;just to make DataStack appear in .MAP file
 	db 2048 dup (?)
 DataStack	dd ?
-;	public DataStack
+	.data?
 
 DescriptorBuffer db 8 dup (?)
 
@@ -153,7 +155,8 @@ TargetCS2	dw ?
 TargetEIP2	dd ?
 TargetMode	dd ?
 
-DebugList	DD	DebugNulltp
+DebugList label dword
+	DD	DebugNulltp
 	DD	DebugEAXtp
 	DD	DebugTrailer
 	DD	DebugEBXtp
@@ -194,7 +197,8 @@ DebugList	DD	DebugNulltp
 	DD	DebugTrailer
 	DD	-1
 
-DebugDis2RegList dd DebugEAX,DebugEBX,DebugECX,DebugEDX,DebugESP,DebugEBP
+DebugDis2RegList label dword
+	dd DebugEAX,DebugEBX,DebugECX,DebugEDX,DebugESP,DebugEBP
 	dd DebugESI,DebugEDI,DebugEIP,DebugEFL
 
 DebugNulltp	db 13,10,0
@@ -237,7 +241,8 @@ DebugEAt	DB	'              ',0
 DebugTrailer	DB	13,10,1,30h,0
 
 	align 4
-DebugListFPU	DD	DebugNulltp
+DebugListFPU	label dword
+	DD	DebugNulltp
 	DD	DebugEAXtp
 	DD	DebugST0tp
 	DD	DebugTrailer
@@ -1258,7 +1263,7 @@ externdef _end:abs
 ;
 ;Extend programs DS limit.
 ;
-	mov	bx,ds
+	mov	ebx,ds
 	sys GetSelDet32
 	mov	ecx,-1
 	sys SetSelDet32
@@ -1270,6 +1275,7 @@ externdef _end:abs
 ;Move stack into data segment so we can use EBP without overides.
 ;
 @@longLimit:
+
 	mov	eax,ds
 	mov	ss,eax
 	mov	esp,offset DataStack
@@ -1692,17 +1698,20 @@ externdef _end:abs
 	mov	edi,offset EXEFileName
 	cld
 	xor	al,al
-@@e0:	movsb
+@@e0:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@e1
 	mov	al,1
-@@e1:	cmp	b[esi-1],0
+@@e1:
+	cmp	b[esi-1],0
 	jnz	@@e0
 	or	al,al
 	jnz	@@e2
 	mov	b[edi-1],'.'
 	mov	esi,offset EXEextension
-@@e4:	movsb
+@@e4:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@e4
 	;
@@ -1710,11 +1719,13 @@ externdef _end:abs
 	;
 	mov	esi,offset EXEFileName
 	mov	edi,offset MapFileName
-@@e3:	movsb
+@@e3:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@e3
 	mov	esi,offset MAPextension
-@@e5:	movsb
+@@e5:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@e5
 	;
@@ -1722,11 +1733,13 @@ externdef _end:abs
 	;
 	mov	esi,offset EXEFileName
 	mov	edi,offset SymFileName
-@@sn0:	movsb
+@@sn0:
+	movsb
 	cmp	b[esi-1],'.'
 	jnz	@@sn0
 	mov	esi,offset SYMExtension
-@@sn1:	movsb
+@@sn1:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@sn1
 ;
@@ -1852,14 +1865,16 @@ nextexc:
 ;
 	mov	esi,offset EXEFileName
 	mov	ch,0
-@@escan0:	lodsb
+@@escan0:
+	lodsb
 	inc	ch
 	or	al,al
 	jnz	@@escan0
 	cmp	ch,14
 	jnc	@@escanok
 	mov	ch,14
-@@escanok:	dec	ch
+@@escanok:
+	dec	ch
 	add	ch,10+1	;loading:
 	add	ch,2+1	;border etc.
 	mov	al,ch
@@ -1910,8 +1925,13 @@ nextexc:
 	jmp	System
 ;
 ;Setup initial register values.
+;CX:EDX=CS:EIP
+;BX:EAX=SS:ESP
+;SI=PSP
+;DI=AutoDS
 ;
-@@6:	mov	DebugSegs,ebp
+@@6:
+	mov	DebugSegs,ebp
 	mov	DebugCS,cx
 	mov	OldDebugCS,cx
 	mov	DebugEIP,edx
@@ -11346,7 +11366,8 @@ DisasScreen	proc	near
 	mov	bl,09h
 	sys SetVect
 @@NoInt09Rest:	;
-@@NoSwitch0:	cmp	MonoSwap,0
+@@NoSwitch0:
+	cmp	MonoSwap,0
 	jz	@@NoMono
 	mov	ebx,VideoUserState
 	mov	ax,1c01h
@@ -11404,7 +11425,8 @@ DisasScreen	proc	near
 	jnz	@@nofgrab
 	inc	FirstMono
 	jmp	@@fgrab
-@@nofgrab:	mov	edx,0b0000h
+@@nofgrab:
+	mov	edx,0b0000h
 	mov	ecx,80*25*2
 	mov	esi,VideoUserBuffer
 	mov	[esi],edx
@@ -11563,7 +11585,8 @@ DisasScreen	proc	near
 	jnz	@@NoSwitch2
 	call	MouseON
 @@NoSwitch2:	;
-@@None:	ret
+@@None:
+	ret
 DisasScreen	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -11601,7 +11624,8 @@ UserScreen	proc	near
 	mov	bl,09h
 	sys SetVect
 @@NoInt09Rest:	;
-@@NoSwitch0:	cmp	MonoSwap,0
+@@NoSwitch0:
+	cmp	MonoSwap,0
 	jz	@@NoMono
 	;
 	;Get current video memory contents.
@@ -11682,7 +11706,8 @@ UserScreen	proc	near
 	jz	@@1
 	mov	edx,0b8000h
 	mov	ecx,16384
-@@1:	mov	esi,VideoDebugBuffer
+@@1:
+	mov	esi,VideoDebugBuffer
 	mov	[esi],edx
 	mov	[esi+4],ecx
 	mov	ebx,VideoSwapSel
@@ -11759,7 +11784,8 @@ UserScreen	proc	near
 	mov	ah,5
 	mov	al,UserPage
 	int	10h
-@@None:	ret
+@@None:
+	ret
 UserScreen	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -11800,7 +11826,7 @@ Malloc	proc	near
 l2:
 	sys GetMemLinear32
 	jc	l0
-	mov	bx,ds
+	mov	ebx,ds
 	push	ecx
 	sys GetSelDet32
 	pop	ecx
@@ -11837,14 +11863,14 @@ Malloc	endp
 ReMalloc	proc	near
 	pushm	eax,ebx,ecx,edx
 	push	ecx
-	mov	bx,ds
+	mov	ebx,ds
 	sys GetSelDet32
 	jc	l0
 	add	esi,edx
 	pop	ecx
 	sys ResMemLinear32
 	jc	l0
-	mov	bx,ds
+	mov	ebx,ds
 	sys GetSelDet32
 	jc	l0
 	sub	esi,edx
@@ -11870,7 +11896,7 @@ ReMalloc	endp
 ;
 Free	proc	near
 	pushm	eax,ebx,ecx,edx,esi
-	mov	bx,ds
+	mov	ebx,ds
 	sys GetSelDet32
 	add	esi,edx
 	sys RelMemLinear32

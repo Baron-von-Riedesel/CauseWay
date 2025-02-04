@@ -2,7 +2,7 @@
 ;
 ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 ;
-	.data
+	.const
 
 
 xxh_struc	struc
@@ -2150,6 +2150,8 @@ T_5	db '5',0
 T_6	db '6',0
 T_7	db '7',0
 
+	.data
+
 ReturnCode	dw 0
 
 PointType	dd 0
@@ -2175,15 +2177,18 @@ eaSeg	db 0
 eaIndex	db 0
 eaReg	db 0
 
+	.const
 ea2DebugRegs	dd DebugEAX,DebugECX,DebugEDX,DebugEBX,DebugESP,DebugEBP,DebugESI,DebugEDI
 ea2sDebugRegs	dd DebugES,DebugCS,DebugSS,DebugDS,DebugFS,DebugGS
 
 BadAddrText	db 'Invalid address.',0
-
+	.data
 _D_Destination	dd ?,?
 _D_Source	dd ?
 
 FWait_Waiting	db 0
+
+	.const
 
 HexTable	db '0123456789ABCDEF'
 
@@ -2256,7 +2261,8 @@ Disasemble	proc	near
 	test	Use32Bit,1
 	jnz	@@BigAddr
 	mov	ecx,4
-@@BigAddr:	call	Bin2Hex
+@@BigAddr:
+	call	Bin2Hex
 	mov	es:b[edi],' '
 	inc	edi
 	mov	_D_Destination,edi
@@ -2279,17 +2285,20 @@ Disasemble	proc	near
 	add	esi,14
 	int	31h
 	jnc	@@AddrOK
-@@BadAddr:	popm	esi,edi
+@@BadAddr:
+	popm	esi,edi
 	inc	esi
 	push	esi
 	mov	esi,offset BadAddrText
-@@BadCopy:	movsb
+@@BadCopy:
+	movsb
 	cmp	b[esi-1],0
 	jnz	@@BadCopy
 	pop	esi
 	mov	ReturnCode,RetCode_INV
 	jmp	@@DisDone
-@@AddrOK:	popm	esi,edi
+@@AddrOK:
+	popm	esi,edi
 	;
 	mov	eaMode,0
 	mov	eaOffset,0
@@ -2303,13 +2312,15 @@ Disasemble	proc	near
 	mov	al,Use32Bit
 	mov	In32Bit,al
 	mov	FWait_Waiting,0
-@@OpCodeLoop:	mov	AnotherOpCode,0
+@@OpCodeLoop:
+	mov	AnotherOpCode,0
 	;
 	mov	ebp,offset InstTab
 	movzx	eax,fs:b[esi]	;Get op-code.
 	inc	esi
 	;
-@@NewTable:	mov	AnotherTable,0
+@@NewTable:
+	mov	AnotherTable,0
 	mov	PointType,0
 	mov	bx,size xxh_struc
 	mul	bx
@@ -2319,9 +2330,11 @@ Disasemble	proc	near
 	test	In32Bit,1
 	jz	@@no32
 	add	ebp,size xxh_struc	;assume 32 bit for now.
-@@no32:	push	esi
+@@no32:
+	push	esi
 	mov	esi,ds:xxh_struc.xxh_text1[ebp]	;point to first text string.
-@@0:	movsb
+@@0:
+	movsb
 	cmp	b[esi-1],0		;end of string?
 	jnz	@@0
 	dec	edi
@@ -2350,7 +2363,8 @@ Disasemble	proc	near
 	sub	ecx,_D_Source
 	mov	esi,_D_Source
 	mov	edi,_D_Destination
-@@2:	mov	al,fs:[esi]
+@@2:
+	mov	al,fs:[esi]
 	inc	esi
 	cmp	edi,_D_Destination+4
 	jnc	@@3
@@ -2360,9 +2374,11 @@ Disasemble	proc	near
 	pop	ecx
 	loop	@@2
 	mov	es:b[edi],' '
-@@3:	popm	esi,edi
+@@3:
+	popm	esi,edi
 	;
-@@DisDone:	mov	ax,ReturnCode
+@@DisDone:
+	mov	ax,ReturnCode
 	movzx	ebx,eaMode
 	mov	cx,dTargetCS
 	mov	edx,dTargetEIP
@@ -2394,9 +2410,11 @@ SymbolBin2Hex	proc	near
 	pop	esi
 	jmp	@@8
 	;
-@@9:	pop	esi
+@@9:
+	pop	esi
 	call	Bin2Hex
-@@8:	popm	eax,ebx,ecx,edx,esi,ebp
+@@8:
+	popm	eax,ebx,ecx,edx,esi,ebp
 	ret
 SymbolBin2Hex	endp
 
@@ -2407,7 +2425,8 @@ Bin2Symbol	proc	near
 	jz	@@9
 	;
 	mov	esi,SymbolList
-@@0:	cmp	d[esi],-1		;end of the list?
+@@0:
+	cmp	d[esi],-1		;end of the list?
 	jz	@@9
 	push	esi
 	cmp	SymbolStruc.SymbolType[esi],255
@@ -2418,18 +2437,21 @@ Bin2Symbol	proc	near
 	jz	@@2
 	cmp	dx,SymbolStruc.SymbolSeg[esi]
 	jnz	@@1
-@@2:	add	esi,SymbolStruc.SymbolTLen
+@@2:
+	add	esi,SymbolStruc.SymbolTLen
 	movzx	ecx,b[esi]		;get text length.
 	inc	esi
 	pop	eax
 	clc
 	ret
 	;
-@@1:	pop	esi
+@@1:
+	pop	esi
 	add	esi,SymbolStruc.SymbolNext[esi]
 	jmp	@@0
 	;
-@@9:	stc
+@@9:
+	stc
 	ret
 Bin2Symbol	endp
 
@@ -2450,7 +2472,8 @@ Bin2Hex	proc	near
 	add	edi,ecx
 	dec	edi
 	mov	edx,eax
-@@0:	mov	al,dl
+@@0:
+	mov	al,dl
 	shr	edx,4
 	and	al,15
 	xlat

@@ -15,7 +15,7 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 82
 <P>CWD will find .SYM and .MAP files only if they are present in the current directory. CWD checks first for a .SYM file, then for a .MAP file if no .SYM file is found. When using .MAP files that have many public symbols, CWD may take a long time to process all of the symbolic information, causing delayed load times. The .SYM file contains symbolic information in an optimized form and allows much quicker CWD loading.</P>
 <P>Symbols will be displayed by the debugger when they match a code routine or data variable address to improve readability of your application. The CauseWay debugger only supports symbols found in a .SYM or .MAP file. Symbols are present in a .SYM or .MAP file only if they are declared public in the module that defines the symbol. CWD supports source-level debugging of assembly language files when a SYM file is created by WL32 using the /SY option.</P>
 <P>If you are using Watcom and wish to use CWD with WLINK MAP files, a small utility called WMAPCWD is included on the distribution disk. WMAPCWD will convert WLINK MAP files to a format readable by the CauseWay CWD debugger. The utility includes the C source code in WMAPCWD.C, the executable as WMAPCWD.EXE, and a documentation text file WMAPCWD.TXT.</P>
-
+<P><b>IMPORTANT</b>: CWD.EXE may want to modify CWD.OVL, so ensure that CWD.OVL isn't write-protected.</P>
 <P><A HREF="page_83.htm">Next Page</A></P>
 <P><A HREF="page_81.htm">Previous Page</A></P>
 <P><A HREF="page_iii.htm">Go to Table of Contents</A></P>

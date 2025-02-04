@@ -781,9 +781,12 @@ VideoBox	proc	near
 @@s0:	stosw
 	pop	es
 	jmp	@@2
-@@1:	add	edi,2
-@@2:	mov	al,196		;Ä
-@@3:	call	InWindowLimits
+@@1:
+	add	edi,2
+@@2:
+	mov	al,196		;Ä
+@@3:
+	call	InWindowLimits
 	jc	@@4
 	push	es
 	mov	es,VideoBase
@@ -832,8 +835,10 @@ VideoBox	proc	near
 @@s3:	stosw
 	pop	es
 	jmp	@@8
-@@7:	add	edi,2
-@@8:	add	edi,ecx
+@@7:
+	add	edi,2
+@@8:
+	add	edi,ecx
 	add	edi,ecx
 	call	InWindowLimits
 	jc	@@9
@@ -868,9 +873,12 @@ VideoBox	proc	near
 @@s5:	stosw
 	pop	es
 	jmp	@@11
-@@10:	add	edi,2
-@@11:	mov	al,196		;Ä
-@@12:	call	InWindowLimits
+@@10:
+	add	edi,2
+@@11:
+	mov	al,196		;Ä
+@@12:
+	call	InWindowLimits
 	jc	@@13
 	push	es
 	mov	es,VideoBase
@@ -884,8 +892,10 @@ VideoBox	proc	near
 @@s6:	stosw
 	pop	es
 	jmp	@@14
-@@13:	add	edi,2
-@@14:	loop	@@12
+@@13:
+	add	edi,2
+@@14:
+	loop	@@12
 	mov	al,217		;Ù
 	call	InWindowLimits
 	jc	@@15
@@ -966,7 +976,8 @@ WindowPopup	proc	near
 	xor	edx,edx		;Max width so far.
 	xor	ecx,ecx		;This width.
 	xor	ebp,ebp		;depth.
-@@0:	lodsb
+@@0:
+	lodsb
 	cmp	al,0
 	jz	@@4
 	cmp	al,1
@@ -981,18 +992,23 @@ WindowPopup	proc	near
 	jz	@@13
 	inc	ecx
 	jmp	@@2
-@@13:	inc	esi		;skip 10
+@@13:
+	inc	esi		;skip 10
 	inc	ebp
 	cmp	ecx,edx		;biggest width?
 	jc	@@3
 	mov	edx,ecx
 	jmp	@@3
-@@1:	inc	esi
+@@1:
+	inc	esi
 	jmp	@@3
-@@2:	add	esi,_WPU_Attribs
-@@3:	jmp	@@0
+@@2:
+	add	esi,_WPU_Attribs
+@@3:
+	jmp	@@0
 	;
-@@4:	push	ebx
+@@4:
+	push	ebx
 	add	edx,2+1		;border
 	add	ebp,2+1		;border
 	mov	cl,ScreenWidth
@@ -1018,7 +1034,8 @@ WindowPopup	proc	near
 	pop	ebx
 	call	PrintWindow
 	push	ebp
-@@5:	call	GetKeys
+@@5:
+	call	GetKeys
 	jz	@@5
 	pop	ebp
 	call	CloseWindow
@@ -1235,18 +1252,22 @@ UpdateWindow	proc	near
 	test	[esi].WindowBase.WindowFlags,WindowGrab
 	jz	@@3
 	call	GrabWindow		;Grab the background.
-@@3:	test	[esi].WindowBase.WindowFlags,WindowClear
+@@3:
+	test	[esi].WindowBase.WindowFlags,WindowClear
 	jz	@@4
 	call	ClearWindow		;Clear the window.
-@@4:	test	[esi].WindowBase.WindowFlags,WindowBox
+@@4:
+	test	[esi].WindowBase.WindowFlags,WindowBox
 	jz	@@5
 	call	BoxWindow		;Box the window.
-@@5:	call	ShowWinTitle
+@@5:
+	call	ShowWinTitle
 	call	ShowWinBottom
 	test	[esi].WindowBase.WindowFlags,WindowShad
 	jz	@@8
 	call	ShadowWindow		;Shadow the window.
-@@8:	pop	esi
+@@8:
+	pop	esi
 	pushad
 	mov	ax,Message_Update
 	call	MessageWindow
@@ -1741,7 +1762,8 @@ BarWindow	proc	near
 	jnz	@@0
 @@m0:	mov	ecx,1
 	;
-@@0:	call	InWindowLimits
+@@0:
+	call	InWindowLimits
 	jc	@@200
 	;
 	push	es
@@ -1900,7 +1922,8 @@ PrintWindow	proc	near
 @@11:	test	[esi].WindowBase.WindowFlags,WindowFlash
 	jz	@@12
 	xor	ah,80h		;toggle flash bit.
-@@12:	call	InWindowLimits
+@@12:
+	call	InWindowLimits
 	jc	@@13
 	push	es
 	mov	es,VideoBase
@@ -2083,7 +2106,8 @@ ScrollWindowU	proc	near
 	dec	bp
 	jz	@@1
 @@0:	pushm	ecx,esi,edi
-@@2:	call	InWindowLimits
+@@2:
+	call	InWindowLimits
 	jc	@@3
 	pushm	ds,es
 	mov	es,VideoBase
@@ -2149,7 +2173,8 @@ ScrollWindowD	proc	near
 	dec	bp
 	jz	@@1
 @@0:	pushm	ecx,esi,edi
-@@2:	call	InWindowLimits
+@@2:
+	call	InWindowLimits
 	jc	@@3
 	pushm	ds,es
 	mov	es,VideoBase
@@ -2359,16 +2384,20 @@ ClearWindow	proc	near
 	mov	al,WindowBase.WindowFill[esi]	;and fill with 0's.
 	;
 	cld
-@@0:	pushm	ecx,edi
-@@1:	call	InWindowLimits
+@@0:
+	pushm	ecx,edi
+@@1:
+	call	InWindowLimits
 	jc	@@2
 	push	es
 	mov	es,VideoBase
 	stosw			;clear this line.
 	pop	es
 	jmp	@@3
-@@2:	add	edi,2
-@@3:	loop	@@1
+@@2:
+	add	edi,2
+@@3:
+	loop	@@1
 	popm	ecx,edi
 	add	edi,VideoWidth	;move down a line.
 	dec	bp
@@ -2418,7 +2447,8 @@ FillWindow	proc	near
 	;
 	cld
 @@0:	pushm	ecx,edi
-@@1:	call	InWindowLimits
+@@1:
+	call	InWindowLimits
 	jc	@@2
 	push	es
 	mov	es,VideoBase
@@ -2496,7 +2526,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@s0
 	mov	al,201
-@@s0:	call	InWindowLimits
+@@s0:
+	call	InWindowLimits
 	jc	@@1
 	push	es
 	mov	es,VideoBase
@@ -2508,7 +2539,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@3
 	mov	al,205
-@@3:	call	InWindowLimits
+@@3:
+	call	InWindowLimits
 	jc	@@4
 	push	es
 	mov	es,VideoBase
@@ -2521,7 +2553,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@s1
 	mov	al,187
-@@s1:	call	InWindowLimits
+@@s1:
+	call	InWindowLimits
 	jc	@@6
 	push	es
 	mov	es,VideoBase
@@ -2535,7 +2568,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@s2
 	mov	al,186
-@@s2:	call	InWindowLimits
+@@s2:
+	call	InWindowLimits
 	jc	@@7
 	push	es
 	mov	es,VideoBase
@@ -2560,7 +2594,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@s3
 	mov	al,200
-@@s3:	call	InWindowLimits
+@@s3:
+	call	InWindowLimits
 	jc	@@10
 	push	es
 	mov	es,VideoBase
@@ -2572,7 +2607,8 @@ BoxWindow	proc	near
 	cmp	b[_BW_Type],0
 	jz	@@12
 	mov	al,205
-@@12:	call	InWindowLimits
+@@12:
+	call	InWindowLimits
 	jc	@@13
 	push	es
 	mov	es,VideoBase
@@ -2589,7 +2625,8 @@ BoxWindow	proc	near
 	jz	@@s5
 	mov	al,188
 @@s5:	;
-@@s4:	call	InWindowLimits
+@@s4:
+	call	InWindowLimits
 	jc	@@15
 	push	es
 	mov	es,VideoBase
@@ -2999,7 +3036,8 @@ CalcWindowSplits proc near
 	movzx	ecx,MaximumWindows
 	mov	edi,offset WindowSplits
 	;
-@@0:	pushm	ecx,edi,ebp
+@@0:
+	pushm	ecx,edi,ebp
 	call	PointWindow
 	mov	ebp,edi
 	mov	edi,esi		;List of window structures.
@@ -3010,7 +3048,8 @@ CalcWindowSplits proc near
 	test	WindowBase.WindowFlags2[edi],WindowHidden
 	jnz	@@8
 	;
-@@1:	cmp	ds:WindowSplitStruc.WindowSplitFlags[ebp],-1	;End of the list?
+@@1:
+	cmp	ds:WindowSplitStruc.WindowSplitFlags[ebp],-1	;End of the list?
 	jz	@@8
 	mov	w[_CWS_Left],0		;Clear offsets.
 	mov	w[_CWS_Right],0
@@ -3068,7 +3107,8 @@ CalcWindowSplits proc near
 	mov	WindowSplitStruc.WindowSplitFlags[esi],0
 	add	esi,size WindowSplitStruc	;Next entry
 	;
-@@NoLeft:	mov	ax,ds:WindowSplitStruc.WindowSplitX[ebp]	;this one.
+@@NoLeft:
+	mov	ax,ds:WindowSplitStruc.WindowSplitX[ebp]	;this one.
 	add	ax,ds:WindowSplitStruc.WindowSplitW[ebp]
 	mov	bx,w[_CWS_XCoord]	;other.
 	add	bx,w[_CWS_Width]
@@ -3089,7 +3129,8 @@ CalcWindowSplits proc near
 	mov	WindowSplitStruc.WindowSplitFlags[esi],0
 	add	esi,size WindowSplitStruc	;Next entry
 	;
-@@NoRight:	mov	ax,w[_CWS_YCoord]	;Get starting Y
+@@NoRight:
+	mov	ax,w[_CWS_YCoord]	;Get starting Y
 	sub	ax,ds:WindowSplitStruc.WindowSplitY[ebp]	;Get depth of top.
 	js	@@NoTop
 	jz	@@NoTop
@@ -3106,7 +3147,8 @@ CalcWindowSplits proc near
 	mov	WindowSplitStruc.WindowSplitFlags[esi],0
 	add	esi,size WindowSplitStruc	;Next entry
 	;
-@@NoTop:	mov	ax,ds:WindowSplitStruc.WindowSplitY[ebp]	;this one.
+@@NoTop:
+	mov	ax,ds:WindowSplitStruc.WindowSplitY[ebp]	;this one.
 	add	ax,ds:WindowSplitStruc.WindowSplitD[ebp]
 	mov	bx,w[_CWS_YCoord]	;other.
 	add	bx,w[_CWS_Depth]
@@ -3129,7 +3171,8 @@ CalcWindowSplits proc near
 	mov	WindowSplitStruc.WindowSplitFlags[esi],0
 	add	esi,size WindowSplitStruc	;Next entry
 	;
-@@NoBottom:	mov	WindowSplitStruc.WindowSplitFlags[esi],-1	;Terminate table again.
+@@NoBottom:
+	mov	WindowSplitStruc.WindowSplitFlags[esi],-1	;Terminate table again.
 	mov	d[_CWS_SplitPos],esi
 	sub	d[_CWS_SplitPos],size WindowSplitStruc	;Account for loss of origional entry.
 	;
@@ -3149,10 +3192,12 @@ CalcWindowSplits proc near
 	pop	edi		;Get window pointer back.
 	jmp	@@1		;Check again in the same place.
 	;
-@@7:	add	ebp,size WindowSplitStruc	;Move to next split entry.
+@@7:
+	add	ebp,size WindowSplitStruc	;Move to next split entry.
 	jmp	@@1
 	;
-@@8:	popm	ecx,edi,ebp
+@@8:
+	popm	ecx,edi,ebp
 	inc	bp		;Move to next window entry.
 	dec	ecx
 	jnz	@@0
@@ -3183,18 +3228,22 @@ WindowAMod	proc	near
 	test	ah,0f0h		;check paper.
 	jz	@@0
 	and	ah,6fh		;lose bit 0
-@@0:	test	ah,0fh		;check pen.
+@@0:
+	test	ah,0fh		;check pen.
 	jz	@@2
 	test	ah,08h		;bright attribute?
 	jnz	@@1
 	and	ah,0fh
 	or	ah,07h		;force white pen.
 	jmp	@@2
-@@1:	or	ah,0fh		;force bright pen.
-@@2:	cmp	ah,77h		;check for white on white.
+@@1:
+	or	ah,0fh		;force bright pen.
+@@2:
+	cmp	ah,77h		;check for white on white.
 	jnz	@@9
 	and	ah,0fh		;force white on black.
-@@9:	ret
+@@9:
+	ret
 WindowAMod	endp
 
 
@@ -3280,18 +3329,21 @@ PointWindow	endp
 FreeWindow	proc	near
 	mov	esi,WindowDBase	;Make database addresable.
 	xor	bp,bp
-@@0:	test	[esi].WindowBase.WindowFlags,WindowInUse
+@@0:
+	test	[esi].WindowBase.WindowFlags,WindowInUse
 	jz	@@8
 	inc	bp
 	add	esi,size WindowBase	;move to the next entry.
 	cmp	bp,MaximumWindows
 	jc	@@0
 	jmp	@@9		;no free entry found.
-@@8:	push	bp
+@@8:
+	push	bp
 	xor	bp,bp
 	pop	bp
 	ret
-@@9:	mov	bp,-1
+@@9:
+	mov	bp,-1
 	or	bp,bp
 	ret
 FreeWindow	endp
@@ -3322,7 +3374,8 @@ WindowInput	proc	near
 	;
 	mov	b[_WI_XOff],0
 	;
-@@print:	mov	bp,w[_WI_Handle]
+@@print:
+	mov	bp,w[_WI_Handle]
 	mov	cl,b[_WI_XPos]
 	mov	ch,b[_WI_YPos]
 	call	LocateWindow
@@ -3336,7 +3389,8 @@ WindowInput	proc	near
 	add	dh,b[_WI_YPos]
 	call	SetCursorPos
 	;
-@@main:	call	GetKeys
+@@main:
+	call	GetKeys
 	mov	Keys,0
 	jz	@@1
 	mov	b[_WI_ASCII],al
@@ -3345,8 +3399,10 @@ WindowInput	proc	near
 	cmp	al,7Ah		; 'z'
 	ja	@@0
 	and	al,5Fh		;convert to upper case.
-@@0:	mov	Keys,ax
-@@1:	cmp	b[Keys+1],1		;ESC?
+@@0:
+	mov	Keys,ax
+@@1:
+	cmp	b[Keys+1],1		;ESC?
 	jz	@@9
 	;
 	cmp	b[Keys],","
@@ -3359,11 +3415,13 @@ WindowInput	proc	near
 	jc	@@2
 	cmp	b[Keys],'Z'+1
 	jc	@@Put
-@@2:	cmp	b[Keys],'0'
+@@2:
+	cmp	b[Keys],'0'
 	jc	@@3
 	cmp	b[Keys],'9'+1
 	jc	@@Put
-@@3:	cmp	b[Keys],':'
+@@3:
+	cmp	b[Keys],':'
 	jz	@@Put
 	cmp	b[Keys],'?'
 	jz	@@Put
@@ -3408,9 +3466,11 @@ WindowInput	proc	near
 	mov	b[edi+1],0
 	jmp	@@print
 	;
-@@4:	jmp	@@main
+@@4:
+	jmp	@@main
 	;
-@@Put:	movzx	edi,b[_WI_XOff]
+@@Put:
+	movzx	edi,b[_WI_XOff]
 	cmp	di,w[_WI_Width]
 	jz	@@main		;ignore it.
 	add	edi,d[_WI_Buffer]
@@ -3420,7 +3480,8 @@ WindowInput	proc	near
 	mov	b[edi+1],0
 	jmp	@@print
 	;
-@@9:	mov	dx,w[_WI_Cursor]
+@@9:
+	mov	dx,w[_WI_Cursor]
 	call	SetCursorPos
 	mov	ax,Keys
 	ret
