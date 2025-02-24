@@ -10,6 +10,7 @@ UserMask  dw ?
 INT33STAT ends
 
 _DATA32 segment
+DbgOut label byte
 	align 4
 	db 1024 dup (0)
 MouseEventStack label byte

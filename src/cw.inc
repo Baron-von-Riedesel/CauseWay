@@ -1182,6 +1182,69 @@ endif
 ;
 cwcLoad	equ	0fffbh
 
+;-------------------------------------------------------------------------------
+;
+;Check linear address of memory.
+;
+;On Entry:
+;
+;ESI    - Linear address of memory.
+;
+;On Exit:
+;
+;Carry set on invalid memory address.
+;
+;NOTES:
+;
+;
+cwLinearCheck equ 0fffch
+
+
+;-------------------------------------------------------------------------------
+;
+;Load CauseWay program for debug.
+;
+;On Entry:
+;
+;DS:EDX - File name.
+;
+;ES:ESI - Command line. First byte is length, then real data.
+;
+;CX     - Environment selector, 0 to use existing copy. 
+;
+;On Exit:
+;
+;Carry set on error and AX = error code else,
+;
+;CX:EDX - Entry CS:EIP
+;BX:EAX - Entry SS:ESP
+;SI     - PSP.
+;DI     - Auto DS.
+;EBP    - Segment definition memory.
+;
+;Error codes:
+;
+;1      - DOS file access error.
+;2      - Not recognisable file format.
+;3      - Not enough memory.
+;
+;NOTES:
+;
+;
+cwExecDebug equ   0fffdh
+
+
+;-------------------------------------------------------------------------------
+;
+;Close all open file handles.
+;
+;On Exit:
+;
+;NOTES:
+;
+;
+cwCleanUp equ     0fffeh
+
 
 ;-------------------------------------------------------------------------------
 ;

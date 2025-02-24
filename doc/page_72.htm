@@ -7,7 +7,11 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 72
 </HEAD>
 <BODY>
 <A NAME="Page_72"></A>
-<P>Notes: The user termination routine is responsible for returning to the CauseWay termination routines to allow proper shutdown of the application. The instruction must be the proper 16- or 32-bit return to match the CL register setting. For ease of use with high-level languages (specifically Watcom C and setting SS back to DGROUP), [E]SI equals the internal DOS extender stack ESP immediately prior to the 32- or 16-bit call to the termination routine. If an information dump buffer address is provided, register and other termination values are placed into it using the following format:</P>
+<P>Notes: The user termination routine is responsible for returning to the CauseWay termination routines to allow proper
+shutdown of the application. The instruction must be the proper 16- or 32-bit return to match the CL register setting.
+For ease of use with high-level languages (specifically Watcom C and setting SS back to DGROUP), [E]SI equals the internal
+DOS extender stack ESP immediately prior to the 32- or 16-bit call to the termination routine. If an information dump buffer
+address is provided, register and other termination values are placed into it using the following format:</P>
 <P>dword&nbsp;&nbsp;EBP;</P>
 <P>dword&nbsp;&nbsp;EDI;</P>
 <P>dword&nbsp;&nbsp;ESI;</P>
@@ -15,20 +19,17 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 72
 <P>dword&nbsp;&nbsp;ECX;</P>
 <P>dword&nbsp;&nbsp;EBX;</P>
 <P>dword&nbsp;&nbsp;EAX;</P>
-<P>word&nbsp;&nbsp;GS;</P>
-<P>word&nbsp;&nbsp;FS;</P>
-<P>word&nbsp;&nbsp;ES;</P>
-<P>word&nbsp;&nbsp;DS;</P>
+<P>dword&nbsp;&nbsp;GS;</P>
+<P>dword&nbsp;&nbsp;FS;</P>
+<P>dword&nbsp;&nbsp;ES;</P>
+<P>dword&nbsp;&nbsp;DS;</P>
 <P>dword&nbsp;&nbsp;EIP;</P>
-<P>word&nbsp;&nbsp;CS;</P>
-<P>word&nbsp;&nbsp;reserved1;</P>
+<P>dword&nbsp;&nbsp;CS;</P>
 <P>dword&nbsp;&nbsp;EFLAGS;</P>
 <P>dword&nbsp;&nbsp;ESP;</P>
-<P>word&nbsp;&nbsp;SS;</P>
-<P>word&nbsp;&nbsp;reserved2;</P>
+<P>dword&nbsp;&nbsp;SS;</P>
 <P>word&nbsp;&nbsp;TR;</P>
 <P>dword&nbsp;&nbsp;CR0;</P>
-<P>dword&nbsp;&nbsp;CR1;</P>
 <P>dword&nbsp;&nbsp;CR2;</P>
 <P>dword&nbsp;&nbsp;CR3;</P>
 <P>dword&nbsp;&nbsp;csAddress;</P>

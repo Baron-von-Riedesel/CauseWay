@@ -99,7 +99,7 @@ ldt1_9:
         pop     edi
         pop     edx
         pop     ecx
-        @dprintf DOPT_SEL,<"RawGetDescriptors(cx=%X)=%X",10>,ecx,eax
+        @dprintf DOPT_SEL,<"RawGetDescriptors(cx=%X)=%X [ebp=%lX]",10>,ecx,eax,ebp
         ret
 RawGetDescriptors endp
 

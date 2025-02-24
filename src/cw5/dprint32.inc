@@ -90,7 +90,7 @@ nextchar:
 done:
 	sub edi,4
 	mov ss:[edi],esi ;store new EIP
-	mov ax,[ebp]     ;get old value of EBP
+	mov eax,[ebp]    ;get old value of EBP
 	popfd
 	mov ebp,esp
 	mov [ebp+2*4],eax;now EBP will be restored by popad

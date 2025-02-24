@@ -1109,9 +1109,12 @@ int2121_3:
         rep     movsb           ;Copy environment.
         pop     edx
 ;
-;Patch INT 21h exec function to preserve the stack.
+;Patch INT 21h exec function
+;--- this should perhaps be changed - it's needed for DPMI mode only, if at all...
+;--- in raw/vcpi mode, the Int 31h API cannot be called by external code, so there's
+;--- no need to "deactivate" it.
 ;
-IFNDEF DEBUG5
+IFNDEF NOI21RMHOOK
         pushad
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
@@ -1157,7 +1160,7 @@ ENDIF
 ;
 ;Restore INT 21h patch.
 ;
-IFNDEF DEBUG5
+IFNDEF NOI21RMHOOK
         pushad
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16

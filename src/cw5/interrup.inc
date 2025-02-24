@@ -23,14 +23,14 @@ ExceptionCode   dd 0
 ExceptionFlags  dd 0    ;bit 16==1->exception
 ExceptionIndex  dd 0
 ;
-
 EXCFRX  struc
-_ebp    dd ?
 _edi    dd ?
 _esi    dd ?
+_ebp    dd ?
+        dd ?
+_ebx    dd ?
 _edx    dd ?
 _ecx    dd ?
-_ebx    dd ?
 _eax    dd ?
 _gs     dw ?,?
 _fs     dw ?,?
@@ -1068,15 +1068,9 @@ endif
         push    es
         push    fs
         push    gs
-        push    eax
-        push    ebx
-        push    ecx
-        push    edx
-        push    esi
-        push    edi
-        push    ebp
-        mov     ax,DpmiEmuDS            ;make our data addresable.
-        mov     ds,eax           ;/
+        pushad
+        mov     ax,DpmiEmuDS
+        mov     ds,eax
         test    BYTE PTR DpmiEmuSystemFlags,1
         jz      inter19_Use32Bit16
         movzx   eax,[esp].EXCFR16._fl
@@ -1087,8 +1081,8 @@ inter19_Use16Bit16:
         mov     ExceptionEFL,eax
         ;Retrieve register values and get outa here.
         ;
-        mov     ax,DpmiEmuDS            ;make sure our data is addresable.
-        mov     es,eax           ;/
+        mov     ax,DpmiEmuDS
+        mov     es,eax
         assume es:DPMIGRP
         mov     eax,ss
         mov     ds,eax
@@ -1103,7 +1097,7 @@ inter19_Use16Bit16:
         jz      inter19_Use32Bit17
         xor     eax, eax
         add     esi,2+2+2               ;skip return address/flags.
-        lodsw   [esi]                  ;copy IP, CS, FL, SP, SS
+        lodsw   [esi]                   ;copy IRET16 -> IRET32
         stosd   [edi]
         lodsw   [esi]
         stosd   [edi]
@@ -1116,7 +1110,7 @@ inter19_Use16Bit16:
         jmp     inter19_Use16Bit678
 inter19_Use32Bit17:
         add     esi,4+4+4               ;skip return address/flags.
-        movsd   [edi],[esi]            ;copy EIP, CS, EFL, ESP, SS
+        movsd   [edi],[esi]             ;copy IRET32
         movsd   [edi],[esi]
         movsd   [edi],[esi]
         movsd   [edi],[esi]
@@ -1153,25 +1147,25 @@ inter19_pl0:
         call    Bin2HexE
 
         ;
-		mov esi, offset reg8dmptab
-		mov ecx, 8
+        mov     esi, offset reg8dmptab
+        mov     ecx, 8
 nextreg:
-		mov eax, [esi+0]
-		mov eax, [eax]
-		mov edi, [esi+4]
-		call Bin2HexE
-		add esi, 2*4
-		cmp esi, offset reg4dmptab
-		jnz nextreg
-		mov ecx, 4
+        mov     eax, [esi+0]
+        mov     eax, [eax]
+        mov     edi, [esi+4]
+        call    Bin2HexE
+        add     esi, 2*4
+        cmp     esi, offset reg4dmptab
+        jnz     nextreg
+        mov     ecx, 4
 nextsreg:
-		mov eax, [esi+0]
-		mov ax, [eax]
-		mov edi, [esi+4]
-		call Bin2HexE
-		add esi, 2*4
-		cmp esi, offset endregdmptab
-		jnz nextsreg
+        mov     eax, [esi+0]
+        mov     ax, [eax]
+        mov     edi, [esi+4]
+        call    Bin2HexE
+        add     esi, 2*4
+        cmp     esi, offset endregdmptab
+        jnz     nextsreg
 ;
 ;Copy register details into the transfer buffer.
 ;
@@ -1217,14 +1211,50 @@ if 0 ; _cwInit most likely doesn't exist anymore
         push    ax
         retw
 else
-        mov     ax,KernalDS
-        mov     ds,eax
+        mov     w[esp].EXCFRX._ds,KernalDS
+        popad
+        pop gs
+        pop fs
+        pop es
+        pop ds
         assume ds:GROUP16
         jmp [TerminationHandler]
 endif
         assume ds:nothing
 
 ExcepNN386      endp
+
+;-------------------------------------------------------------------------------
+;
+;Convert number into ASCII Hex version.
+;
+;On Entry:-
+;
+;EAX    - Number to convert.
+;ECX    - Digits to do.
+;DS:EDI - Buffer to put string in.
+;
+Bin2HexE        proc    near
+        add     edi,ecx
+        push    edi
+        push    ecx
+        mov     edx,eax
+rv62_0:
+        dec     edi
+        mov     al,dl
+        shr     edx,4
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     @F
+        add     al,7
+@@:
+        mov     [edi],al
+        loop    rv62_0
+        pop     ecx
+        pop     edi
+        ret
+Bin2HexE        endp
 
 ;-------------------------------------------------------------------------------
 ;
@@ -1248,8 +1278,8 @@ RawGetVector    proc    near
         mov     ax,DpmiEmuDS
         mov     ds,eax
         movzx   ebx,bl
-        imul    ebx,6
-        add     ebx,offset InterruptTable
+        shl     ebx,1                   ;*2 (together with next line gives ebx=ebx*6)
+        lea     ebx,[ebx*2+ebx+offset InterruptTable]
         mov     edx,[ebx+0]             ;get offset.
         mov     cx,[ebx+4]              ;get segment selector.
         pop     ds

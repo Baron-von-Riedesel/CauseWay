@@ -105,7 +105,7 @@ TSREnd          dw _cwInit      ;TSR end para for Raw/VCPI mode
 ErrorNumber     dw 0
 ErrorLevel      dw 0
 	ALIGN 2
-MainExec        db 128 dup (0)
+;MainExec        db 128 dup (0)
 ;
 DtaBuffer       db 128 dup (0)
 ;
@@ -117,7 +117,10 @@ TransferReal    dw ?       ; 8k transfer buffer real-mode segment address
 ResourceTracking dd 0      ; flag 0/-1, dword size cause it's pushed/poped
 ForcedFind       dd 0,0    ; used by FindResource/ReleaseResource
 mcbAllocations   db 0      ; mcb allocations on/off
-LinearAddressCheck db 0    ; for swapfile
+LinearAddressCheck db 0    ; 1=check for valid linear address active (see int 31h, ax=fffch)
+DebugDump        db 0      ; flag to display a state dump on exit
+Pad1Flag         db 0      ; CAUSEWAY environment setting "PAD1"
+
 ;
 	align 4
 TerminationHandler label fword
@@ -128,19 +131,12 @@ TerminationHandler label fword
 ;--- called from within a 32-bit code segment.
 PF16 typedef far16 ptr
 
-UserTermRoutine16 label PF16
-UserTermRoutine DF 0       ; user termination address ( int 31h, ax=ff31h )
-UserTermDump    DF 0       ; dump location for register info ( int 31h, ax=ff31h )
 ;
 ifdef SRDPMISTATE
 DPMIStateAddr   df 0       ; DPMI address save/restore state
 DPMIStateSize   dd 0
 endif
 ;
-DebugDump       db 0       ; flag to display a state dump on exit
-UserTermFlag    DB 0       ; modified by int 31h, ax=0ff31h (set user termination proc)
-Pad1Flag        DB 0       ; CAUSEWAY environment setting "PAD1"
-
 IFDEF PERMNOEX
 NoEXECPatchFlag DB 1       ; same as CAUSEWAY=NOEX - don't hook int 21h in real-mode to trap ax=4B00h
 ELSE
@@ -174,9 +170,11 @@ DebugUserSel    DW      ?
 DebugUserCount  DW      0       ; must be initialized, nonzero value flags operation
 DebugAsciiFlag  DB      ?
 
+ifndef NOI21RMHOOK
 Int21hExecCount db 0
 	align 4
 OldInt21hExec   dd 0        ; real-mode address
+endif
 
         .386
 
@@ -189,6 +187,7 @@ endif
 ;-------------------------------------------------------------------------------
 ;--- int 21h real-mode handler, installed by int21h.inc extension
 
+ifndef NOI21RMHOOK
 Int21hExecPatch proc    near
         assume ds:nothing
         pushf
@@ -215,6 +214,7 @@ cw3_Old:
         jmp     cs:[OldInt21hExec]
 
 Int21hExecPatch endp
+endif
 
         .386p
 
@@ -322,6 +322,7 @@ ELSE
 NoVMSwitch      db 0
 ENDIF
 
+MainExec        db 128 dup (0)
 VMMDrivPath1    db 128 dup (0)  ;used by CAUSEWAY=SWAP:?:\??
 VMMDrivPath2    db 128 dup (0)  ;used by TEMP=
 VMMDrivPath3    db 128 dup (0)  ;used by TMP=
@@ -2362,8 +2363,8 @@ cw5_Use32:
         mov     [int31call], offset int31call32
         mov     [int31callcc], offset int31call32cc
 cw5_Use0:
-        mov     DWORD PTR [OldInt31+0],edx
-        mov     WORD PTR [OldInt31+4],cx
+        mov     d [OldInt31+0],edx
+        mov     w [OldInt31+4],cx
         mov     cx,Group32CS
         mov     edx,offset cwAPIpatch
         mov     bl,31h
@@ -2486,9 +2487,11 @@ endif
         mov     es:[PSP_Struc.PSP_Environment],ax           ;Setup ENV in PSP.
         mov     ax,RealENVSegment
         mov     es:[EPSP_Struc.EPSP_RealENV],ax
+ifndef NOI21RMHOOK
         mov     ax,offset Int21hExecCount
         mov     WORD PTR es:[EPSP_Struc.EPSP_ExecCount+0],ax
         mov     WORD PTR es:[EPSP_Struc.EPSP_ExecCount+2],ds
+endif
         mov     es:[EPSP_Struc.EPSP_Resource],edx           ;Clear memory fields.
         mov     es:[EPSP_Struc.EPSP_INTMem],edx
 ifdef SRDPMISTATE
@@ -2918,6 +2921,7 @@ cw10_causeway:
         jnz     cw10_skipline
         cmp     byte ptr es:[si+8],'='
         jnz     cw10_skipline
+        @dprintf DOPT_DOSMEM,<"CAUSEWAY environment variable found",10>
 
         ;Found "CAUSEWAY" so have a look at the settings.
         ;
@@ -2944,8 +2948,9 @@ cw10_3:                                 ;<---- continue scan "CAUSEWAY"
         jmp     cw10_3
         ;
 cw10_4: cmp     BYTE PTR es:[si],0      ;end of line?
-        jz      cw10_9
+        jz      cw10_1
         ;
+        push    offset cw10_3
         mov     eax,es:[si]
         cmp     eax,"MVON"              ;NOVM?
         jz      cw10_novm
@@ -2974,79 +2979,75 @@ cw10_4: cmp     BYTE PTR es:[si],0      ;end of line?
         cmp     eax,"1GIB"              ; BIG1?
         jz      cw10_big1
 ;--- just continue with next char?
+skipkw:
+        @dprintf DOPT_DOSMEM,<"unknown CAUSEWAY setting at %ls",10>,si,es
         inc     si
-        jmp     cw10_3
+        ret
         ;
 cw10_nopass:
         ; shut off passing of real mode interrupts to protected mode
-        add     si,4
-        mov     ax,es:[si]
+        mov     ax,es:[si+4]
         cmp     ax,"SS"
-        jnz     cw10_3
-        add     si,2
+        jnz     skipkw
+        add     si,4+1
         or      NoPassFlag,-1
-        jmp     cw10_3
+        ret
 
 cw10_big1:
         ; specify alternate extended memory size computation
         add     si,4
         or      Big1Flag,-1
-        jmp     cw10_3
+        ret
 
 cw10_himem:
         ;HIMEM:xxx - Set amount of physical memory to use.
         ;
-        add     si,4
-        mov     al,es:[si]
-        cmp     al,"M"
-        jnz     cw10_3
-        inc     si
-        cmp     BYTE PTR es:[si],":"
-        jnz     cw10_3
-        inc     si
+        mov     ax,es:[si+4]
+        cmp     ax,":M"
+        jnz     skipkw
+        add     si,6
         call    getnum
         cmp     edx,4096*1024
-        jnc     cw10_3
+        jnc     @F
         shl     edx,10                  ;turn K into byte's
         shr     edx,12                  ;get number of pages.
         mov     [MaxMemPhys],edx
-        jmp     cw10_3
+@@:
+        ret
         ;
 cw10_extall:
         ;Set flag to use all extended memory.
         ;
-        add     si,4
-        mov     ax,es:[si]
+        mov     ax,es:[si+4]
         cmp     ax,"LL"
-        jnz     cw10_3
-        add     si,2
+        jnz     skipkw
+        add     si,4+2
         or      ExtALLSwitch,-1
-        jmp     cw10_3
+        ret
         ;
 cw10_novm:
         ;They want to disable VM.
         ;
         add     si,4
         or      NoVMSwitch,-1
-        jmp     cw10_3
+        ret
         ;
 cw10_maxmem:
         ;MAXMEM:xxx - Set maximum linear address space size.
         ;
-        add     si,4
-        mov     ax,es:[si]
+        mov     ax,es:[si+4]
         cmp     ax,"ME"
-        jnz     cw10_3
-        add     si,2
-        cmp     BYTE PTR es:[si],":"
-        jnz     cw10_3
-        inc     si
+        jnz     skipkw
+        cmp     BYTE PTR es:[si+6],":"
+        jnz     skipkw
+        add     si,7
         call    getnum
         cmp     edx,4096                ;4096MB or more?
-        jnc     cw10_3
+        jnc     @F
         shl     edx,20                  ;turn Meg into byte's
         mov     [MaxMemLin],edx
-        jmp     cw10_3
+@@:
+        ret
 
 cw10_pre:
         ;PRE:xxx - Want to set preallocate amount
@@ -3054,36 +3055,36 @@ cw10_pre:
         add     si,4
         call    getnum
         cmp     edx,4096
-        jnc     cw10_3
-
+        jnc     @F
         shl     edx,20                  ;turn Meg into byte's
         mov     d[PreAllocSize],edx
-        jmp     cw10_3
+@@:
+        ret
 
 cw10_pad1:
         mov     Pad1Flag,1 ; accessible thru FS
         add     si,4
-        jmp     cw10_3
+        ret
 
 cw10_noex:
         mov     NoEXECPatchFlag,1 ; accessible thru FS
         add     si,4
-        jmp     cw10_3
+        ret
 
 cw10_dpmi:
         ;They want to force DPMI use if possible.
         ;
+        @dprintf DOPT_DOSMEM,<"CAUSEWAY=DPMI found",10>
         mov     IProtectedForce,1 ; accessible thru FS
         add     si,4
-        jmp     cw10_3
+        ret
         ;
 cw10_swap:
         ;They want to specify the swap drive.
         ;
-        add     si,4
-        cmp     BYTE PTR es:[si],":"
-        jnz     cw10_3
-        inc     si
+        cmp     BYTE PTR es:[si+4],":"
+        jnz     skipkw
+        add     si,4+1
         mov     di,offset VMMDrivPath1
 cw10_s0:
         mov     al,es:[si]
@@ -3101,15 +3102,14 @@ cw10_s0:
 cw10_s1:
         mov     b[di-1],0
         dec     si
-        jmp     cw10_3
+        ret
         ;
 cw10_name:
         ; Specify the swap name.
         ;
-        add     si,4
-        cmp     BYTE PTR es:[si],":"
-        jnz     cw10_3
-        inc     si
+        cmp     BYTE PTR es:[si+4],":"
+        jnz     skipkw
+        add     si,4+1
         mov     di,offset DesiredVMMName
         xor     dx,dx
 cw10_n0:
@@ -3131,19 +3131,17 @@ cw10_n0:
 cw10_n1:
         mov     b[di-1],0
         dec     si
-        jmp     cw10_3
+        ret
         ;
 cw10_lowmem:
         ;They want to specify conventional memory retention.
         ;
-        add     si,4
-        mov     ax,es:[si]
+        mov     ax,es:[si+4]
         cmp     ax,"ME"
-        jnz     cw10_3
-        add     si,2
-        cmp     BYTE PTR es:[si],":"
-        jnz     cw10_3
-        inc     si
+        jnz     skipkw
+        cmp     BYTE PTR es:[si+6],":"
+        jnz     skipkw
+        add     si,4+2+1
         call    getnum
 ifndef NOLOWMEM
         shl     edx,10-4                ;turn K into para's
@@ -3156,15 +3154,14 @@ ifndef NOLOWMEM
 cw10_lm2:
         mov     [ConvSaveSize],dx       ;set new size.
 endif
-        jmp     cw10_3
+        ret
         ;
-cw10_9:                                 ;done scanning CAUSEWAY var
-        jmp     cw10_skipline
-        ;
+;--- found TEMP
 cw10_temp:
         add     si,4
         cmp     BYTE PTR es:[si],"="
         jnz     cw10_skipline
+        @dprintf DOPT_DOSMEM,<"TEMP environment variable found, setting VMMDrivPath2",10>
         inc     si
         mov     di,offset VMMDrivPath2
 cw10_temp3:
@@ -3180,25 +3177,17 @@ cw10_temp4:
         mov     b[di-1],0
         jmp     cw10_skipline
         ;
+;--- found TMP
 cw10_tmp:
         add     si,4
+        @dprintf DOPT_DOSMEM,<"TMP environment variable found, setting VMMDrivPath3",10>
         mov     di,offset VMMDrivPath3
-cw10_tmp3:
-        mov     al,es:[si]
-        mov     [di],al
-        inc     si
-        inc     di
-        or      al,al
-        jz      cw10_tmp4
-        cmp     al," "
-        jnz     cw10_tmp3
-cw10_tmp4:
-        mov     b[di-1],0
-        jmp     cw10_skipline
+        jmp cw10_temp3
+
 GetENVStuff     endp
 
 ;-------------------------------------------------------------------------------
-;--- get name of binary from environment
+;--- get name of binary from environment - runs in real-mode
 
 GetEXECName     proc    near
 

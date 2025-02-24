@@ -3513,39 +3513,6 @@ rv60_0: mov     es:[edi],cx             ;store low word of limit.
         ret
 EMUMakeDesc     endp
 
-;-------------------------------------------------------------------------------
-;
-;Convert number into ASCII Hex version.
-;
-;On Entry:-
-;
-;EAX    - Number to convert.
-;ECX    - Digits to do.
-;DS:EDI - Buffer to put string in.
-;
-Bin2HexE        proc    near
-        add     edi,ecx
-        push    edi
-        push    ecx
-        dec     edi
-        mov     edx,eax
-rv62_0:
-        mov     al,dl
-        and     al,0Fh
-        add     al,'0'
-        cmp     al,'9'
-        jbe     @F
-        add     al,7
-@@:
-        mov     [edi],al
-        shr     edx,4
-        dec     edi
-        loop    rv62_0
-        pop     ecx
-        pop     edi
-        ret
-Bin2HexE        endp
-
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;Emulate INT 2Fh DPMI related functions.

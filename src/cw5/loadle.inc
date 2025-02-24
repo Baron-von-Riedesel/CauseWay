@@ -219,7 +219,7 @@ medclose:
         cmp     d[LEHeader.LE_ResidentNames],0
         jz      load1_NoExports
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jmp     load1_NoExports
 ENDIF
 
@@ -561,7 +561,7 @@ load1_exp4:
         jz      load1_exp_16bit
         dec     bl
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jz      load1_bad_fixup1
 ENDIF
 
@@ -577,7 +577,7 @@ load1_bad_entry:
         pop     esi
         pop     ecx
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         push    eax
         push    ebx
         push    ecx
@@ -940,14 +940,14 @@ load1_fix2:
         pop     ebx
         jz      CheckUnknown
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jnz     load1_bad_fixup3
 ENDIF
 
         jnz     load1_bad_fixup
         ;
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         test    dh,011010b              ;Check for un-known bits.
         jnz     load1_bad_fixup9
 ENDIF
@@ -977,7 +977,7 @@ CheckUnknown:
         cmp     bh,1                    ; ignore fixup ???
         je      load1_fix3
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jmp     load1_bad_fixup4
         cmp     bh,1
         jne     around
@@ -1005,7 +1005,7 @@ load1_fixup_import:
         jz      load1_fiximp0
         cmp     dl,10b                  ;name?
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jnz     load1_bad_fixup5
 ENDIF
 
@@ -1077,7 +1077,7 @@ load1_fiximp2:
         jz      load1_iSelf32Off
 
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jmp     load1_bad_fixup6
 ENDIF
 
@@ -1088,7 +1088,7 @@ load1_iSeg16:
         ;
         test    dh,4
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jnz     load1_bad_fixup7
 ENDIF
 
@@ -1213,7 +1213,7 @@ load1_Seg16:
         ;
         test    dh,4
 
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         jnz     load1_bad_fixup8
 ENDIF
 
@@ -1799,7 +1799,7 @@ load1_no_file_error:
 ;
 ;Fixup type we don't understand.
 ;
-IFDEF DEBUG4X
+IFDEF DEBUGLE
 load1_bad_fixup1:
         push    1
         jmp     load1_bad_fixupx
@@ -1858,7 +1858,7 @@ endif
 ;Corrupt file or file we don't understand.
 ;
 load1_file_error:
-IFDEF DEBUG4X
+IFDEF DEBUGLE
         @dprintf -1,<"File error type 1",10>
 ENDIF
         mov     ax,2

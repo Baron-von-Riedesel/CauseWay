@@ -93,36 +93,6 @@ IFRM ends
 ;--- macros
 
 ;*******************************************************************************
-;Put carry into return carry.
-;*******************************************************************************
-cwAPI_AL2C      macro
-        local __0, __1
-        pushfd
-        test    BYTE PTR cs:apiSystemFlags,1
-        jz      __0
-        or      b[ebp].IFRM.i16._fl,al
-        jmp     __1
-__0:
-        or      b[ebp].IFRM.i32._fl,al
-__1:
-        popfd
-endm
-
-;*******************************************************************************
-;Put carry into return carry.
-;*******************************************************************************
-cwAPI_C2C       macro
-        push    eax
-        pushfd
-        pushfd
-        pop     eax
-        and     al,1
-        cwAPI_AL2C
-        popfd
-        pop     eax
-endm
-
-;*******************************************************************************
 ;Call old int 31h handler.
 ;*******************************************************************************
 cwAPI_CallOld   macro
@@ -166,6 +136,7 @@ OldInt24        df 0
 CriticalPrompt  db 13,10,'Critical Error: Abort, Retry, Ignore, Fail? $'
 CriticalKeys    db 'aArRiIfF'
 CriticalCodes   db 2,2,1,1,0,0,3,3   ; must follow CriticalKeys!
+nullCmdl        db 0
 
 	align 4
 ;--- stack (size 1200h) used in dpmi mode only for int 31h, ax=FF01/FF02 (IntXX/FarCallReal)
@@ -183,15 +154,17 @@ api73_BlockSize      dd ?
 api74_dpmembuff      db 30h dup (?)	;DPMI meminfo struct (9 dwords, 12 bytes reserved)
 api75_OldEBX         dd 0
 api75_OldESI         dd 0
+
+api82_Command        df 0  ;CreatePSP() local vars
 api82_PSP            dw 0
-api82_Command        df 0
 api82_Name           df 0
 api82_Environment    dw 0
 api82_Flags          dd 0
-api83_Flags          dd ?
+
+api83_Flags          dd ?  ;DeletePSP() local vars
 api83_PSP            dw ?
 
-DLLNameSpace    db 256 dup (?)  ;FindModule local variables
+DllNameSpace    db 256 dup (?)  ;FindModule local variables
 MODNameSpace    db 256 dup (?)
 
 api86_ID      db 256 dup (?)    ;SearchModule local variables
@@ -227,7 +200,7 @@ Int1bRegs       RealRegsStruc <>
 MouseETarget     dd 0,0    ; mouse event target???
 ;
 apiSystemFlags  dw 0,0
-DescriptorBuffer db 8 dup (?)
+DescriptorBuffer Desc <>
 
 apiDSeg16       dd ?	;data selector GROUP16
 apiDSeg32       dd ?	;data selector GROUP32
@@ -246,7 +219,10 @@ ExecMCount      dd 0
 int31call       dd 0
 int31callcc     dd 0
 
-nullCmdl        db 0
+UserTermRoutine16 label PF16
+UserTermRoutine DF 0       ; user termination address ( int 31h, ax=ff31h )
+UserTermDump    DF 0       ; dump location for register info ( int 31h, ax=ff31h )
+UserTermFlag    DB 0       ; modified by int 31h, ax=0ff31h (set user termination proc)
 
 	align 4
 
@@ -334,7 +310,7 @@ apiExtraCallTable label byte
         dd dpmiAPI_GetCallBack
         dw 0304h
         dd dpmiAPI_RelCallBack
-        dw 0
+endapiExtraCallTable label byte
 
 _DATA32 ends
 
@@ -384,12 +360,8 @@ cwMinorVersion  db 0
 ;CW API int 31h patch.
 ;
 cwAPIpatch      proc    near
-        push    ds
-        push    es
-        push    fs
-        push    gs
-        pushad
-        mov     ebp,esp                         ;Make registers addressable.
+
+ifndef NOI21RMHOOK
 ;
 ;Check if we're allowed to interfere.
 ;
@@ -399,27 +371,18 @@ cwAPIpatch      proc    near
         cmp     Int21hExecCount,0
         pop     ds
         assume ds:nothing
-        jnz     api1_Nope
+        jnz     api1_jmpprev
+endif
+        push    ds
+        push    es
+        push    fs
+        push    gs
+        pushad
 ;
 ;Check if this is a CauseWay function.
 ;
         cmp     ah,255
-        jz      api1_Ours
-;
-;Scan the table of other relevant functions.
-;
-        mov     edi,offset apiExtraCallTable+2
-api1_extra:
-        cmp     WORD PTR cs:[edi-2],0
-        jz      api1_Nope
-        cmp     ax,WORD PTR cs:[edi-2]
-        jz      api1_GotCall
-        add     edi,4+2
-        jmp     api1_extra
-;
-;An internal funtion? so point to table entry.
-;
-api1_Ours:
+        jnz     api1_checkextra
         cmp     al,APILOWMAX
         jc      @F
         cmp     al,APIHIGHSTART
@@ -427,33 +390,54 @@ api1_Ours:
         sub     al,APIHIGHSTART - APILOWMAX
 @@:
         movzx   edi,al
-        shl     edi,2
-        add     edi,offset APICallTable
-;
-;Check if final call is still going to pass control to the old handler.
-;
-api1_GotCall:
+        lea     edi,[edi*4+offset APICallTable]
         cmp     DWORD PTR cs:[edi],0
         jz      api1_Nope
+        jmp     api1_GotCall
 ;
-;See about turning interrupts back on.
+;Scan the table of other relevant functions.
 ;
-        mov     esi,IFRM.i32._fl
-        test    BYTE PTR cs:apiSystemFlags,1
+api1_checkextra:
+        mov     edi,offset apiExtraCallTable+2
+api1_extra:
+        cmp     ax,cs:[edi-2]
+        jz      api1_GotCall
+        add     edi,4+2
+        cmp     edi,offset endapiExtraCallTable
+        jb      api1_extra
+;
+;Not an internal function or anything we want to interfere with so pass control
+;to original handler.
+;
+api1_Nope:
+        popad                       ;Restore registers.
+        lea     esp,[esp+4*4]       ;no need to restore segment registers
+api1_jmpprev:
+        jmp     cs:[OldInt31]       ;pass it onto previous handler.
+
+api1_GotCall:
+        cld                                  ;Default direction.
+        test    b cs:apiSystemFlags,1
         jz      api1_32Bit0
-        movzx   ebp,bp
-        mov     esi,IFRM.i16._fl
+        movzx   ebp,sp
+        and     b [ebp].IFRM.i16._fl,not 1   ;clear carry.
+        test    b [ebp].IFRM.i16._fl+1,2     ;Were interrupts enabled?
+        jmp     api1_cres
 api1_32Bit0:
-        and     BYTE PTR ss:[ebp+esi],not 1     ;clear carry.
-        cld                                     ;Default direction.
-        test    WORD PTR ss:[ebp+esi],1 shl 9   ;Were interrupts enabled?
+        mov     ebp,esp                      ;Make registers addressable.
+        and     b [ebp].IFRM.i32._fl,not 1   ;clear carry.
+        test    b [ebp].IFRM.i32._fl+1,2     ;Were interrupts enabled?
+api1_cres:
+;
+;turning interrupts back on?
+;
         jz      api1_NoInts
-        sti                                     ;Turn interrupts back on.
+        sti
+api1_NoInts:
 ;
 ;Call the function handler.
 ;
-api1_NoInts:
-        call    DWORD PTR cs:[edi]              ;Pass control to handler.
+        call    DWORD PTR cs:[edi]           ;Pass control to handler.
         popad
         pop     gs
         pop     fs
@@ -464,17 +448,6 @@ api1_NoInts:
         iret
 api1_32Bit1:
         iretd                       ;Return to caller.
-;
-;Not an internal function or anything we want to interfere with so pass control
-;to original handler.
-;
-api1_Nope:
-        popad                       ;Restore registers.
-        pop     gs
-        pop     fs
-        pop     es
-        pop     ds
-        jmp     cs:[OldInt31]       ;pass it onto previous handler.
 ;
 cwAPIpatch      endp
 
@@ -505,7 +478,8 @@ dpmiAPI_Lock    proc    near
         cwAPI_CallOldCC
         jnc     api2_0
         mov     [ebp].IFRM._AX,ax
-api2_0: ret
+api2_0: 
+        ret
 dpmiAPI_Lock    endp
 
 
@@ -534,7 +508,8 @@ dpmiAPI_UnLock  proc    near
         cwAPI_CallOldCC
         jnc     api3_0
         mov     [ebp].IFRM._AX,ax
-api3_0: ret
+api3_0:
+        ret
 dpmiAPI_UnLock  endp
 
 
@@ -570,7 +545,8 @@ dpmiAPI_GetCallBack proc near
         mov     ax,Res_CALLBACK
         call    RegisterResource
 ;
-api4_9: ret
+api4_9:
+        ret
 dpmiAPI_GetCallBack endp
 
 
@@ -592,7 +568,8 @@ dpmiAPI_RelCallBack proc near
         mov     ax,Res_CALLBACK
         call    ReleaseResource
 ;
-api5_9: ret
+api5_9:
+        ret
 dpmiAPI_RelCallBack endp
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -613,8 +590,8 @@ dpmiAPI_RelCallBack endp
 ; None
 ;
 cwAPI_UserErrTerm       PROC    NEAR
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
+        mov     ds,cs:apiDSeg32
+        assume ds:GROUP32
         mov     UserTermFlag,0          ; initialize flag
         mov     edx,[ebp].IFRM._DS
         lsl     eax,edx
@@ -622,25 +599,22 @@ cwAPI_UserErrTerm       PROC    NEAR
         mov     al,[ebp].IFRM._CL       ; get bitness flag
         test    al,al
         setne   al                      ; 0 if 0, 1 if nonzero
-        inc     ax                      ; 1 if 16-bit, 2 if 32-bit
+        inc     eax                     ; 1 if 16-bit, 2 if 32-bit
         mov     UserTermFlag,al
         cmp     al,1                    ; see if 16-bit
         jne     uet32                   ; no
 
-        mov     ax,[ebp].IFRM._SI
+        mov     eax,[ebp].IFRM._ESI
         mov     WORD PTR UserTermRoutine+0,ax
         mov     WORD PTR UserTermRoutine+2,dx
-        mov     ax,[ebp].IFRM._DI
-        mov     WORD PTR UserTermDump+0,ax
-        mov     eax,[ebp].IFRM._ES
-        mov     WORD PTR UserTermDump+2,ax
-        jmp     uetret
-
+        movzx   eax,[ebp].IFRM._DI
+        jmp     uetstoreesedi
 uet32:
         mov     eax,[ebp].IFRM._ESI
         mov     DWORD PTR UserTermRoutine+0,eax
         mov     WORD PTR UserTermRoutine+4,dx
         mov     eax,[ebp].IFRM._EDI
+uetstoreesedi:
         mov     DWORD PTR UserTermDump+0,eax
         mov     eax,[ebp].IFRM._ES
         mov     WORD PTR UserTermDump+4,ax
@@ -802,17 +776,22 @@ aflag:
 
 udsuccess:
         clc                             ; flag success
-        jmp     udret
-
+udret:
+        ret
 udfail:
         mov     DebugUserCount,0
-        stc                             ; flag failure
-
-udret:
-        cwAPI_C2C
-        ret
+        jmp     exit_with_carry         ; flag failure
 cwAPI_UserDump  ENDP
 
+
+exit_with_carry:
+        test    BYTE PTR cs:apiSystemFlags,1
+        jz      @F
+        or      b[ebp].IFRM.i16._fl,1
+        ret
+@@:
+        or      b[ebp].IFRM.i32._fl,1
+        ret
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -856,8 +835,6 @@ cwAPI_ID        proc    near
         mov     [ebp].IFRM._EDI,edi
         mov     [ebp].IFRM._EDX,edx
         mov     [ebp].IFRM._ECX,ecx
-        xor     al,al
-        cwAPI_AL2C
         ret
 cwAPI_ID        endp
 
@@ -875,8 +852,6 @@ cwAPI_GetPatch  proc    near
         add     edx,offset PatchTable
 ;        assume ds:GROUP32
         mov     [ebp].IFRM._EDX,edx
-        xor     al,al
-        cwAPI_AL2C
         ret
 cwAPI_GetPatch  endp
 
@@ -1083,10 +1058,8 @@ cwAPI_GetSel    proc    near
         xor     eax,eax
         xor     ebx,ebx
         call    _SetSelector
-        cwAPI_C2C
-        jc      api17_9
+        jc      exit_with_carry
         mov     [ebp].IFRM._BX,bx
-api17_9:
         ret
 cwAPI_GetSel    endp
 
@@ -1145,13 +1118,11 @@ cwAPI_RelSel    proc    near
         mov     gs,[ebp].IFRM._GS
         @dprintf DOPT_SEL,<"cwAPI_RelSel(bx=%X)",10>, ebx
         call    _RelSelector
-        cwAPI_C2C
-        jc      api19_9
+        jc      exit_with_carry
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
-api19_9:
         ret
 cwAPI_RelSel    endp
 
@@ -1167,7 +1138,7 @@ cwAPI_RelSel    endp
 cwAPI_CodeSel   proc    near
         mov     bx,[ebp].IFRM._BX
         call    _CodeSelector
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_CodeSel   endp
 
@@ -1220,8 +1191,7 @@ cwAPI_AliasSel  endp
 cwAPI_GetSelDet proc near
         mov     bx,[ebp].IFRM._BX
         call    _DetSelector
-        cwAPI_C2C
-        jc      api22_9
+        jc      exit_with_carry
 ;
         mov     ecx,eax         ;get base.
         mov     dx,cx
@@ -1233,8 +1203,6 @@ cwAPI_GetSelDet proc near
         mov     [ebp].IFRM._DX,dx
         mov     [ebp].IFRM._SI,si
         mov     [ebp].IFRM._DI,di
-;
-api22_9:
         ret
 cwAPI_GetSelDet endp
 
@@ -1255,13 +1223,9 @@ cwAPI_GetSelDet endp
 cwAPI_GetSelDet32 proc near
         mov     bx,[ebp].IFRM._BX
         call    _DetSelector
-        cwAPI_C2C
-        jc      api23_9
-;
+        jc      exit_with_carry
         mov     [ebp].IFRM._EDX,eax
         mov     [ebp].IFRM._ECX,ebx
-;
-api23_9:
         ret
 cwAPI_GetSelDet32 endp
 
@@ -1289,7 +1253,7 @@ cwAPI_SetSelDet proc near
         mov     ebx,esi
         mov     cx,[ebp].IFRM._BX
         call    _SizeSelector
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_SetSelDet endp
 
@@ -1309,7 +1273,7 @@ cwAPI_SetSelDet32 proc near
         mov     eax,[ebp].IFRM._EDX
         mov     ebx,[ebp].IFRM._ECX
         call    _SizeSelector
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_SetSelDet32 endp
 
@@ -1360,12 +1324,10 @@ gm2:
 api26_3:
         Sys     SetSelDet32
         mov     [ebp].IFRM._BX,bx
-        clc
         jmp     api26_1
 api26_0:
         call    mcbRelMemLinear32
-        stc
-        jmp     api26_1
+        jmp     exit_with_carry
         ;
 api26_2:
         mov     dx,cx
@@ -1381,10 +1343,8 @@ api26_5:
         mov     [ebp].IFRM._CX,cx
         mov     [ebp].IFRM._DX,dx
 api26_4:
-        stc
-        ;
+        jmp     exit_with_carry
 api26_1:
-        cwAPI_C2C
         ret
 cwAPI_GetMem    endp
 
@@ -1409,7 +1369,7 @@ cwAPI_GetMemSO  proc    near
         shl     ecx,16
         mov     cx,dx
         call    mcbGetMemLinear32       ;allocate some memory.
-        jc      api27_9
+        jc      exit_with_carry
         cmp     cs:mcbLastChunk,0       ;DPMI memory?
         jnz     api27_1
 ;
@@ -1442,16 +1402,12 @@ api27_1:
 api27_7:
         mov     [ebp].IFRM._SI,bx
         mov     [ebp].IFRM._DI,dx
-        clc
-        jmp     api27_9
+        ret
 ;
 api27_8:
         call    mcbRelMemLinear32
-        stc
-;
-api27_9:
-        cwAPI_C2C
-        ret
+        jmp     exit_with_carry
+
 cwAPI_GetMemSO  endp
 
 
@@ -1481,12 +1437,10 @@ cwAPI_GetMem32  proc near
         Sys     SetSelDet32
 api28_3:
         mov     [ebp].IFRM._BX,bx
-        clc
-        jmp     api28_1
+        ret
 api28_0:
         call    mcbRelMemLinear32
-        stc
-        jmp     api28_1
+        jmp     api28_err
         ;
 api28_2:
         cmp     [ebp].IFRM._ECX,-1
@@ -1496,11 +1450,9 @@ api28_2:
 api28_5:
         mov     [ebp].IFRM._ECX,ecx
 api28_4:
-        stc
-        ;
-api28_1:
-        cwAPI_C2C
-        ret
+api28_err:
+        jmp     exit_with_carry
+
 cwAPI_GetMem32  endp
 
 
@@ -1533,9 +1485,9 @@ cwAPI_ResizeMem    proc    near
         mov     edx,esi
         dec     ecx
         Sys     SetSelDet32
-api29_9:
-        cwAPI_C2C
         ret
+api29_9:
+        jmp     exit_with_carry
 cwAPI_ResizeMem    endp
 
 
@@ -1616,11 +1568,11 @@ api30_7:
         clc
 ;
 api30_9:
-        cwAPI_C2C
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
+        jc      exit_with_carry
         ret
 cwAPI_ResizeMemSO  endp
 
@@ -1652,7 +1604,7 @@ cwAPI_ResizeMem32  proc    near
         dec     ecx
         Sys     SetSelDet32
 api31_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_ResizeMem32  endp
 
@@ -1684,7 +1636,7 @@ cwAPI_RelMem    proc    near
         mov     [ebp].IFRM._GS,gs
         call    mcbRelMemLinear32       ;release the memory.
 api32_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_RelMem    endp
 
@@ -1753,7 +1705,7 @@ api33_4:
         clc
 ;
 api33_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 
 ; MED 11/18/96
@@ -1790,7 +1742,7 @@ cwAPI_GetMemLinear proc near
         mov     [ebp].IFRM._DI,di
         clc
 api34_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_GetMemLinear endp
 
@@ -1812,10 +1764,10 @@ cwAPI_GetMemLinear endp
 cwAPI_GetMemLinear32 proc near
         mov     ecx,[ebp].IFRM._ECX
         call    mcbGetMemLinear32
-        cwAPI_C2C
         jc      api35_9
         mov     [ebp].IFRM._ESI,esi
 api35_9:
+        jc      exit_with_carry
         ret
 cwAPI_GetMemLinear32 endp
 
@@ -1852,7 +1804,7 @@ cwAPI_ResizeMemLinear proc near
         mov     [ebp].IFRM._DI,di
         clc
 api36_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_ResizeMemLinear endp
 
@@ -1879,7 +1831,7 @@ cwAPI_ResizeMemLinear32 proc near
         jc      api37_9
         mov     [ebp].IFRM._ESI,esi
 api37_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_ResizeMemLinear32 endp
 
@@ -1900,7 +1852,7 @@ cwAPI_RelMemLinear proc near
         shl     esi,16
         mov     si,di
         call    mcbRelMemLinear32
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_RelMemLinear endp
 
@@ -1918,7 +1870,7 @@ cwAPI_RelMemLinear endp
 cwAPI_RelMemLinear32 proc near
         mov     esi,[ebp].IFRM._ESI
         call    mcbRelMemLinear32
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_RelMemLinear32 endp
 
@@ -1948,7 +1900,7 @@ cwAPI_GetMemNear proc near
         mov     [ebp].IFRM._ESI,esi
         clc
 api40_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_GetMemNear endp
@@ -1985,7 +1937,7 @@ cwAPI_ResizeMemNear proc near
         mov     [ebp].IFRM._ESI,esi
         clc
 api41_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_ResizeMemNear endp
@@ -2005,7 +1957,7 @@ cwAPI_RelMemNear proc near
         mov     ds,PSPSegment
         add     esi,ds:[EPSP_Struc.EPSP_NearBase]
         call    mcbRelMemLinear32
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_RelMemNear endp
@@ -2089,7 +2041,7 @@ cwAPI_LockMem   proc    near
         clc
 ;
 api45_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_LockMem   endp
 
@@ -2128,7 +2080,7 @@ cwAPI_LockMem32 proc near
         call    RegisterResource
         clc
 api46_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_LockMem32 endp
 
@@ -2160,7 +2112,7 @@ cwAPI_UnLockMem proc near
         call    ReleaseResource
         clc
 api47_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_UnLockMem endp
 
@@ -2201,7 +2153,7 @@ cwAPI_UnLockMem32 proc near
         call    ReleaseResource
         clc
 api48_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_UnLockMem32 endp
 
@@ -2244,7 +2196,7 @@ cwAPI_LockMemNear proc near
         call    RegisterResource
         clc
 api49_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_LockMemNear endp
@@ -2283,7 +2235,7 @@ cwAPI_UnLockMemNear proc near
         call    ReleaseResource
         clc
 api50_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_UnLockMemNear endp
@@ -2373,7 +2325,7 @@ api52_0:
         clc
 ;
 api52_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_ResizeMemDOS endp
 
@@ -2418,13 +2370,11 @@ api53_0:
         clc
 ;
 api53_9:
-        cwAPI_C2C
-
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
-
+        jc      exit_with_carry
         ret
 cwAPI_RelMemDOS endp
 
@@ -2462,7 +2412,7 @@ api54_0:
         mov     [ebp].IFRM._AL,al
 ;
 api54_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         @dprintf DOPT_EXEC,<"cwAPI_Exec exit",10>
         ret
 cwAPI_Exec      endp
@@ -2485,9 +2435,9 @@ cwAPI_Exec      endp
 cwAPI_cwcInfo   proc    near
         mov     bx,[ebp].IFRM._BX
         call    GetCWCInfo
-        cwAPI_C2C
         mov     [ebp].IFRM._ECX,ecx
         mov     [ebp].IFRM._EAX,eax
+        jc      exit_with_carry
         ret
 cwAPI_cwcInfo   endp
 
@@ -2516,36 +2466,38 @@ cwAPI_cwcLoad proc near
         jc      api56_9
         mov     [ebp].IFRM._ECX,ecx
 api56_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
 cwAPI_cwcLoad endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+;--- in: ESI=address to check
+;--- exit: C if address invalid (page fault)
+
 cwAPI_LinearCheck proc near
         mov     esi,[ebp].IFRM._ESI
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         ;
         mov     es,RealSegment
-        xor     eax,eax
-        mov     ax,es
+        mov     eax,es
         lsl     eax,eax
         cmp     eax,esi
         jc      api57_3
         mov     LinearAddressCheck,1
         mov     al,es:[esi]
-        cmp     LinearAddressCheck,0
-        mov     LinearAddressCheck,0
+        cmp     LinearAddressCheck,0 ;has flag been reset?
         jnz     api57_2
 api57_3:
         stc
         jmp     api57_1
 api57_2:
+        mov     LinearAddressCheck,0 ;flag still set, that is: address is valid.
         clc
 api57_1:
         ;
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_LinearCheck endp
@@ -2575,7 +2527,7 @@ cwAPI_ExecDebug proc near
         jnc     api58_0
         pop     ebp
         mov     [ebp].IFRM._AX,ax
-        jmp     api58_9
+        jmp     exit_with_carry
 ;
 api58_0:
         shl     esi,16
@@ -2593,7 +2545,6 @@ api58_0:
         clc
 ;
 api58_9:
-        cwAPI_C2C
         @dprintf DOPT_EXEC,<"cwAPI_ExecDebug exit",10>
         ret
 cwAPI_ExecDebug endp
@@ -2628,7 +2579,7 @@ cwAPI_cwLoad    proc near
         pop     ebp
         jnc     api59_0
         mov     [ebp].IFRM._AX,ax
-        jmp     api59_9
+        jmp     exit_with_carry
 ;
 api59_0:
         mov     [ebp].IFRM._CX,cx
@@ -2637,8 +2588,6 @@ api59_0:
         mov     [ebp].IFRM._EAX,eax
         mov     [ebp].IFRM._SI,si
 ;
-api59_9:
-        cwAPI_C2C
         @dprintf DOPT_EXEC,<"Done with cwAPI_cwLoad",10>
         ret
 cwAPI_cwLoad    endp
@@ -2650,7 +2599,6 @@ cwAPI_Cleanup   proc    near
         assume ds:GROUP16
         call    LoseFileHandles
         clc
-        cwAPI_C2C
         ret
         assume ds:nothing
 cwAPI_Cleanup   endp
@@ -2701,7 +2649,7 @@ api61_ok:
         cwAPI_CallOld
         jc      api61_9
         mov     ebx,eax
-api61_GotSel:
+;api61_GotSel:
         push    ebx
         mov     ecx,[api61_SelectorSize]
         mov     esi,[api61_SelectorBase]
@@ -2724,16 +2672,16 @@ api61_GotSel:
         shr     ecx,12                      ; div by 4096
         or      al,80h                      ; set g bit
 api61_3:
-        mov     w[DescriptorBuffer],cx      ;store low word of limit.
+        mov     [DescriptorBuffer.Limit],cx ;store low word of limit.
         shr     ecx,16
         or      cl,al
-        mov     b[DescriptorBuffer+6],cl    ;store high bits of limit and gran/code size bits.
-        mov     w[DescriptorBuffer+2],si    ;store low word of linear base.
+        mov     [DescriptorBuffer.Gran],cl  ;store high bits of limit and gran/code size bits.
+        mov     [DescriptorBuffer.Base_l],si
         shr     esi,16
         mov     ebx,esi
-        mov     b[DescriptorBuffer+4],bl    ;store mid byte of linear base.
-        mov     b[DescriptorBuffer+7],bh    ;store high byte of linear base.
-        mov     b[DescriptorBuffer+5],ah    ;store pp/dpl/dt/type bits.
+        mov     [DescriptorBuffer.Base_m],bl
+        mov     [DescriptorBuffer.Base_H],bh
+        mov     [DescriptorBuffer.Access],ah
         pop     ebx
         ;
         ;Write new descriptor table entry.
@@ -2849,16 +2797,16 @@ _SizeSelector   proc near
         shr     ecx,12                          ; div by 4096
         or      al,80h                          ; set g bit
 api63_2:
-        mov     w[DescriptorBuffer+0],cx        ;store low word of limit.
+        mov     [DescriptorBuffer.Limit],cx     ;store low word of limit.
         shr     ecx,16
         or      cl,al
-        and     b[DescriptorBuffer+6],01110000b ;lose limit & G bit.
-        or      b[DescriptorBuffer+6],cl        ;store high bits of limit and G bit.
-        mov     w[DescriptorBuffer+2],si        ;store low word of linear base.
+        and     [DescriptorBuffer.Gran],01110000b ;lose limit & G bit.
+        or      [DescriptorBuffer.Gran],cl      ;store high bits of limit and G bit.
+        mov     [DescriptorBuffer.Base_l],si    ;store low word of linear base.
         shr     esi,16
         mov     bx,si
-        mov     b[DescriptorBuffer+4],bl        ;store mid byte of linear base.
-        mov     b[DescriptorBuffer+7],bh        ;store high byte of linear base.
+        mov     [DescriptorBuffer.Base_m],bl    ;store mid byte of linear base.
+        mov     [DescriptorBuffer.Base_H],bh    ;store high byte of linear base.
         pop     bx
         ;
         ;Write new descriptor table entry.
@@ -2925,26 +2873,20 @@ _DetSelector    proc    near
         pop     bx
         jc      api64_9
         ;
-        xor     eax,eax
-        mov     al,DescriptorBuffer+7   ;base 31-24
-        shl     eax,8
-        mov     al,DescriptorBuffer+4   ;base 23-16
-        shl     eax,8
-        mov     al,DescriptorBuffer+3   ;base 15-8
-        shl     eax,8
-        mov     al,DescriptorBuffer+2   ;base 7-0
+        mov     ah,DescriptorBuffer.Base_H
+        mov     al,DescriptorBuffer.Base_m
+        shl     eax,16
+        mov     ax,DescriptorBuffer.Base_l
         ;
         xor     ebx,ebx
-        mov     bl,DescriptorBuffer+6   ;limit 19-16
+        mov     bl,DescriptorBuffer.Gran;limit 19-16 in bits 0-3
         and     bl,0fh
-        shl     ebx,8
-        mov     bl,DescriptorBuffer+1   ;limit 15-8
-        shl     ebx,8
-        mov     bl,DescriptorBuffer+0   ;limit 7-0
-        test    DescriptorBuffer+6,128  ;granularity
+        shl     ebx,16
+        mov     bx,DescriptorBuffer.Limit
+        test    DescriptorBuffer.Gran,80h ;page granularity?
         jz      api64_0
         shl     ebx,12
-        or      ebx,0FFFh
+        or      bx,0FFFh
 api64_0:
         clc
         jmp     api64_10
@@ -2994,12 +2936,12 @@ _CodeSelector   proc near
         and     al,11b
         shl     al,5
         or      al,DescERCode
-        and     DescriptorBuffer+5,10010000b
-        or      DescriptorBuffer+5,al   ;
-        and     DescriptorBuffer+6,255-(1 shl 6)    ;clear code size bit.
+        and     DescriptorBuffer.Access,10010000b
+        or      DescriptorBuffer.Access,al   ;
+        and     DescriptorBuffer.Gran,255-(1 shl 6)    ;clear code size bit.
         and     cl,1
         shl     cl,6
-        or      DescriptorBuffer+6,cl               ;code size bit.
+        or      DescriptorBuffer.Gran,cl               ;code size bit.
         ;
         mov     ax,000ch
         push    ds
@@ -3049,10 +2991,10 @@ _DSizeSelector  proc near
         pop     bx
         pop     cx
         ;
-        and     DescriptorBuffer+6,255-(1 shl 6)    ;clear code size bit.
+        and     DescriptorBuffer.Gran,255-(1 shl 6)    ;clear code size bit.
         and     cl,1
         shl     cl,6
-        or      DescriptorBuffer+6,cl               ;code size bit.
+        or      DescriptorBuffer.Gran,cl               ;code size bit.
         ;
         mov     ax,000ch
         push    ds
@@ -3125,7 +3067,7 @@ api68_0:
         clc
 ;
 api68_9:
-        cwAPI_C2C
+        jc      exit_with_carry
         ret
         assume ds:nothing
 cwAPI_SetMCBSize endp
@@ -4297,7 +4239,7 @@ _RelMemory      endp
 ;EBX    - optional third value.
 ;
 RegisterResource proc near
-;        @dprintf DOPT_EXEC,<"RegisterResource enter, ax=%X, edx=%lX",10>, eax, edx
+;        @dprintf DOPT_EXEC,<"RegisterResource enter, type=%X, key=%lX",10>, eax, edx
         push    ds
         push    es
         push    fs
@@ -4309,7 +4251,7 @@ RegisterResource proc near
         assume fs:_cwEnd         ; to make the assemble assume a 16-bit segment
         ;
         cmp     ResourceTracking,0
-        jz      api77_9
+        jz      api77_done
         cmp     fs:[EPSP_Struc.EPSP_Resource],0   ;allocated memory for list yet?
         jnz     api77_0
         ;
@@ -4317,12 +4259,12 @@ RegisterResource proc near
         ;
         pushad
         call    api77_GetAndInit
-        jc      api77_1
+        jc      @F
         mov     fs:[EPSP_Struc.EPSP_Resource],esi
-api77_1:
+@@:
         popad
         cmp     fs:[EPSP_Struc.EPSP_Resource],0
-        jz      api77_90
+        jz      api77_error
         ;
 api77_0:
         ;Search list for free slot.
@@ -4354,7 +4296,7 @@ api77_Extend:
         push    esi
         call    api77_GetAndInit
         pop     ecx
-        jc      api77_90
+        jc      api77_error
         mov     es:[esi+ResHead.ResHead_Prev],ecx   ;store back link address.
         mov     es:[ecx+ResHead.ResHead_Next],esi   ;store forward link address.
         jmp     api77_FreeLoop
@@ -4395,7 +4337,7 @@ api77_dosmem:
         mov     ah,Res_CHAIN
         mov     BYTE PTR es:[edi],ah
         mov     DWORD PTR es:[ecx],ebp
-        jmp     api77_9
+        jmp     api77_done
 ;
 ;Check for 3 free entries for callback.
 ;
@@ -4420,7 +4362,7 @@ api77_callback:
         add     ecx,4
         mov     BYTE PTR es:[edi],ah
         mov     DWORD PTR es:[ecx],ebx
-        jmp     api77_9
+        jmp     api77_done
 ;
 ;Check for 3 free entries for memory.
 ;
@@ -4445,7 +4387,7 @@ api77_mem:
         add     ecx,4
         mov     BYTE PTR es:[edi],ah
         mov     DWORD PTR es:[ecx],ebx
-        jmp     api77_9
+        jmp     api77_done
 ;
 ;Check for 2 free entries for lock's.
 ;
@@ -4466,7 +4408,7 @@ api77_lock:
         mov     ah,Res_CHAIN
         mov     BYTE PTR es:[edi],ah
         mov     DWORD PTR es:[ecx],ebp
-        jmp     api77_9
+        jmp     api77_done
 ;
 ;Only one free entry needed for selectors.
 ;
@@ -4481,13 +4423,13 @@ api77_sel:
         add     ecx,esi
         mov     BYTE PTR es:[edi],ah    ;Store type.
         mov     DWORD PTR es:[ecx],edx
-        jmp     api77_9
+        jmp     api77_done
         ;
-api77_90:
+api77_error:
         stc
         jmp     api77_100
         ;
-api77_9:
+api77_done:
         clc
 api77_100:
         popad
@@ -4496,6 +4438,10 @@ api77_100:
         pop     ds
         ret
         ;
+
+;--- subroutine
+;--- modifies ESI/EDI
+
 api77_GetAndInit:
         push    eax
         push    ebx
@@ -4544,7 +4490,7 @@ ReleaseResource proc near
         push    es
         push    fs
         pushad
-;        @dprintf DOPT_MEM or DOPT_SEL,<"ReleaseResource enter, ax=%X, edx=%lX",10>, eax, edx
+;        @dprintf DOPT_MEM or DOPT_SEL,<"ReleaseResource enter, type=%X, key=%lX",10>, eax, edx
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         mov     fs,PSPSegment
@@ -4977,7 +4923,7 @@ ReleaseResource endp
 ;EBX    - Optional third value.
 ;
 FindResource    proc    near
-        @dprintf DOPT_EXEC,<"FindResource enter",10>
+        @dprintf DOPT_EXEC,<"FindResource enter, type=%X, key=%lX",10>, eax, edx
         push    ds
         push    es
         push    fs
@@ -5156,22 +5102,21 @@ SaveExecState   endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-;--- called by DeletePSP
+;--- called by DeletePSP; restore state of caller
 
 LoadExecState   proc    near    uses ds es eax ebx ecx edx edi
 
         @dprintf DOPT_EXEC,<"LoadExecState enter",10>
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-;
-;Set protected mode interrupt vectors.
-;
         mov     es,PSPSegment
         mov     edi,es:[EPSP_Struc.EPSP_INTMem]
         or      edi,edi
         jz      api81_NoIntRel
         mov     es,RealSegment
-
+;
+;Set 256 protected mode interrupt vectors.
+;
         xor     ebx,ebx
 api81_SetPVect:
         Sys     GetVect
@@ -5185,11 +5130,10 @@ api81_SetPVect:
         mov     WORD PTR es:[edi+4],-1
 api81_Pdone:
         add     edi,6
-        inc     ebx
-        cmp     ebx,256
-        jb      api81_SetPVect
+        inc     bl
+        jnz     api81_SetPVect
 ;
-;Set protected mode exception vectors.
+;Set 32 protected mode exception vectors.
 ;
         xor     ebx,ebx
 api81_SetEVect:
@@ -5208,7 +5152,7 @@ api81_Edone:
         cmp     ebx,32
         jb      api81_SetEVect
 ;
-;Set real mode interrupt vectors.
+;Set 256 real mode interrupt vectors.
 ;
         xor     ebx,ebx
 api81_SetRVect:
@@ -5223,9 +5167,8 @@ api81_SetRVect:
         mov     WORD PTR es:[edi+2],-1
 api81_Rdone:
         add     edi,4
-        inc     ebx
-        cmp     ebx,256
-        jb      api81_SetRVect
+        inc     bl
+        jnz     api81_SetRVect
 api81_NoIntRel:
 ifdef SRDPMISTATE
 ;
@@ -5253,14 +5196,13 @@ endif
         assume ds:nothing
 LoadExecState   endp
 
-
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;Create a new PSP complete with command line, environment & saved state.
 ;
 ;On Entry:
 ;
-;EBX    - flags, as passed to _Exec
+;EBX    - flags, as passed to _Exec (0=normal exec,1=load for debug,2=overlay)
 ;DS:EDX - program name
 ;ES:ESI - command line.
 ;CX     - environment.
@@ -5277,7 +5219,6 @@ CreatePSP       proc    near
         push    ds
         push    es
         push    fs
-        push    gs
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         ;
@@ -5309,15 +5250,17 @@ api82_CmdlOK:
         jnc     api82_memOK
         pop     ResourceTracking
         pop     ds
+        assume ds:GROUP32
         Sys     RelMemLinear32
         jmp     api82_error
 api82_memOK:
+        assume ds:GROUP16
         mov     edx,esi
         mov     ecx,size EPSP_Struc - 1
         Sys     SetSelDet32
         pop     ResourceTracking
-        assume ds:GROUP32
         pop     ds
+        assume ds:GROUP32
 ;
 ;Register this selector as a PSP.
 ;
@@ -5335,8 +5278,8 @@ api82_memOK:
         Sys     RelSel
         Sys     RelMemLinear32
         pop     ResourceTracking
-        assume ds:GROUP32
         pop     ds
+        assume ds:GROUP32
         jmp     api82_error
         ;
 api82_memOK2:
@@ -5346,10 +5289,11 @@ api82_memOK2:
 ;
         push    ds
         mov     es,ebx
+        assume es:_cwEnd
         mov     ds,apiDSeg16
         assume ds:GROUP16
         mov     ds,PSPSegment
-        assume ds:GROUP32
+        assume ds:_cwEnd
         xor     esi,esi
         xor     edi,edi
         mov     ecx,256/4
@@ -5360,6 +5304,7 @@ api82_memOK2:
         mov     eax,ds:[EPSP_Struc.EPSP_ExecCount]
         mov     es:[EPSP_Struc.EPSP_ExecCount],eax
         pop     ds
+        assume ds:GROUP32
 ;
 ;Initialise PSP fields.
 ;
@@ -5367,7 +5312,7 @@ api82_memOK2:
         mov     fs,apiDSeg16
         assume fs:GROUP16
         mov     fs,fs:PSPSegment
-        assume fs:nothing
+        assume fs:_cwEnd
         mov     es,ebx
         xor     edx,edx
         mov     DWORD PTR es:[EPSP_Struc.EPSP_Resource],edx ;Clear memory fields.
@@ -5388,7 +5333,7 @@ endif
         mov     eax,fs:[EPSP_Struc.EPSP_mcbMaxAlloc]
         mov     es:[EPSP_Struc.EPSP_mcbMaxAlloc],eax
         mov     es:[EPSP_Struc.EPSP_mcbHead],edx
-        cmp     [api82_Flags],2                              ;cwLoad?
+        cmp     [api82_Flags],2                             ;cwLoad?
         jz      api82_NoNext
         mov     fs:[EPSP_Struc.EPSP_Next],es
 api82_NoNext:
@@ -5525,7 +5470,7 @@ api82_NoPSwitch0:
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:nothing
+        assume es:_cwEnd
         mov     es:[PSP_Struc.PSP_Environment],ax
         jmp     api82_GotEnv
 
@@ -5534,7 +5479,7 @@ api82_CopyEnv:
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:nothing
+        assume es:_cwEnd
         mov     ax,es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
         mov     es,[api82_PSP]
         mov     es:[PSP_Struc.PSP_Environment],ax
@@ -5548,7 +5493,7 @@ api82_ParentEnv:
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:nothing
+        assume es:_cwEnd
         mov     es,es:[EPSP_Struc.EPSP_Parent]     ;Get parent PSP.
         mov     es,es:[PSP_Struc.PSP_Environment]  ;Get parents environment.
 ;
@@ -5572,7 +5517,7 @@ api82_gp2:
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:nothing
+        assume es:_cwEnd
         mov     es:[PSP_Struc.PSP_Environment],bx
         mov     ecx,esi                 ;get length again.
         push    ds
@@ -5589,7 +5534,7 @@ api82_GotEnv:
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
-        assume es:nothing
+        assume es:_cwEnd
         mov     es,es:[PSP_Struc.PSP_Environment]
         xor     edi,edi
 api82_gp0:
@@ -5628,11 +5573,12 @@ api82_error:
 api82_exit:
         @dprintf DOPT_EXEC,<"CreatePSP exit",10>
         mov     bx,[api82_PSP]
-        pop     gs
         pop     fs
         pop     es
         pop     ds
         ret
+        assume es:nothing
+        assume fs:nothing
 ;
 CreatePSP       endp
 
@@ -5646,7 +5592,6 @@ DeletePSP       proc    near
         push    ds
         push    es
         push    fs
-        push    gs
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         ;
@@ -5659,7 +5604,7 @@ DeletePSP       proc    near
 ;
 ;Close all open files.
 ;
-        call    LoseFileHandles
+;        call    LoseFileHandles
 ;
 ;Restore resources.
 ;
@@ -5690,7 +5635,6 @@ api83_NoPRel:
         mov     es:[EPSP_Struc.EPSP_Next],0
 api83_NoNRel:
         @dprintf DOPT_EXEC,<"DeletePSP exit",10>
-        pop     gs
         pop     fs
         pop     es
         pop     ds
@@ -5817,7 +5761,7 @@ api84_imp3_0:
         ;
         ;Copy up to last "\"
         ;
-        mov     edi,offset DLLNameSpace
+        mov     edi,offset DllNameSpace
         mov     ebp,edi
 api84_imp3_1:
         mov     al,es:[esi]
@@ -5837,7 +5781,7 @@ api84_imp3_2:
         jne     chkmodname
         cmp     BYTE PTR es:[esi],4
         jb      chkmodname              ; name not long enough for absolute path
-        mov     edi,offset DLLNameSpace ; reset DLL path to receive module name path only
+        mov     edi,offset DllNameSpace ; reset DLL path to receive module name path only
 
         ;
         ;Check if module name has any path in it.
@@ -5891,7 +5835,7 @@ api84_4:
         push    ds
         pop     es
         mov     esi,offset MODNameSpace
-        mov     edi,offset DLLNameSpace
+        mov     edi,offset DllNameSpace
         call    SearchModule            ;look for module with right name.
         pop     es
         jnc     api84_8
@@ -5921,7 +5865,7 @@ api84_8:
 ;
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
-        mov     edx,offset DLLNameSpace
+        mov     edx,offset DllNameSpace
         Sys     cwLoad                  ;call ourselves.
 ;
 ;Go back to original PSP
@@ -7002,6 +6946,7 @@ api90_OldVect:
         assume ds:nothing
         ;
 api90_CheckKillIt:
+ifndef NOI21RMHOOK
         push    ds
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
@@ -7009,6 +6954,7 @@ api90_CheckKillIt:
         pop     ds
         assume ds:nothing
         jnz     api90_OldVect
+endif
 ;
 ;Clean things up and return to caller.
 ;
@@ -7623,6 +7569,14 @@ cwOpen  proc    near
         ;
         mov     d[TerminationHandler+0],offset cwClose
         mov     w[TerminationHandler+4],cs
+
+;--- copy MainExec to a safe place
+        mov     esi,offset MainExec
+        mov     edi,offset DllNameSpace
+        mov     es,cs:apiDSeg32
+        mov     ecx,sizeof MainExec / 4
+        rep     movsd
+
 ;
 ;Now we know the machines details, re-size the program
 ;block again to release as much memory as possible.
@@ -7673,11 +7627,15 @@ endif
 ;
 ;Run the main program.
 ;
-        mov     edx,offset MainExec     ;name to exec.
-        mov     esi,80h
+;        mov     edx,offset MainExec     ;DS:EDX -> name to exec.
+        mov     edx,offset DllNameSpace  ;DS:EDX -> name to exec.
+        mov     esi,80h                 ;ES:ESI -> cmdline
         mov     es,PSPSegment
-        xor     ecx,ecx
+        push    cs
+        pop     ds
+        xor     ecx,ecx                 ;CX = environment
         Sys     cwExec                  ;run the bugger (executes cwAPI_exec).
+        mov     ds,cs:apiDSeg16
         jnc     cw1_8
         add     ax,10-1                 ;convert error number.
         mov     ErrorNumber,ax
@@ -7705,9 +7663,14 @@ cwClose proc    near
         mov     ResourceTracking,0
         mov     mcbAllocations,0
         sti
-        mov     w[TerminationHandler+4],0
-        ;
+
+;--- clearing CS of termination handler should NOT be done before DebugDisplay;
+;--- an exception may occur when contents of CS:EIP or SS:ESP are displayed.
+
+;        mov     w[TerminationHandler+4],0
+        mov     d[TerminationHandler],offset behind_display
         call    DebugDisplay
+behind_display:
 ;
 ;Remove extension patches.
 ;

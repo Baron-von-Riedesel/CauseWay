@@ -4,17 +4,20 @@
 # to assemble use either JWasm or Masm v6+.
 
 # known defines:
-# BIGSTACK: if defined, allocs 55k (instead 9k) for stacks; see strucs.inc
-# KRNLDBG:  if defined, supports (w)deb386 kernel debugger interface
-# EARLYKDINIT: if defined, kernel debugger can debug early stage of pm init phase
-# PERMNOVM: if defined, same as CAUSEWAY environment variable setting NOVM 
-# PERMNOEX: if defined, same as CAUSEWAY environment variable setting NOEX 
-# LXWORK:   if defined, enables support for LX
-# DEBUG4X:  if defined, enables debug displays for LE loader
-# DEBUG5:   if defined, disables int 21h hook real-mode when int21, ax=4b00h is emulated
-# DEFLOWMEM:if defined, sets default for LOWMEM in kB
-# NOLOWMEM: if defined, VMM won't touch conv. memory, LOWMEM is a dummy
-# NOEXPORTS:if defined, disables the kernel exports in api.inc (seems not to be used at all)
+# BIGSTACK: if defined, allocs 55k (instead 9k) for stacks; see strucs.inc.
+# KRNLDBG:  if defined, supports (w)deb386 kernel debugger interface.
+# EARLYKDINIT: if defined, kernel debugger can debug early stage of pm init
+#           phase.
+# PERMNOVM: if defined, same as CAUSEWAY environment variable setting NOVM.
+# PERMNOEX: if defined, same as CAUSEWAY environment variable setting NOEX.
+# LXWORK:   if defined, enables support for LX.
+# DEBUGLE:  if defined, enables debug displays for LE loader.
+# DEFLOWMEM:if defined, sets default for LOWMEM in kB.
+# NOLOWMEM: if defined, VMM won't touch conv. memory, LOWMEM is a dummy.
+# NOEXPORTS:if defined, disables the kernel exports in api.inc (seems not to
+#           be used at all).
+# NOI21RMHOOK:if defined, removes code for real-mode int 21h hook;
+#           PERMNOEX and CAUSEWAY=NOEX are dummies then.
 # SRDPMISTATE: if defined, call save/restore DPMI state (barely useful at all)
 
 ASM=jwasm.exe
@@ -25,7 +28,7 @@ DEBUG=0
 !endif
 
 !if $(DEBUG)
-AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG 
+AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG
 OUTD=Debug
 DBGINC=dprint16.inc dprint32.inc vioout.inc
 !else

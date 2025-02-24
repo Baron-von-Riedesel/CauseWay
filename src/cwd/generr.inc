@@ -594,18 +594,21 @@ ebpdump:
 	int	21h
 	mov	es,RealSegment
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
-@@LookLoop:	push	esi
+@@LookLoop:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@r0:	cmp	es:b[edi],Res_SEL
+@@r0:
+	cmp	es:b[edi],Res_SEL
 	jnz	@@r1
 	mov	ax,fs:w[EPSP_Struc.EPSP_DPMIMem]
 	cmp	es:w[esi],ax
 	jz	@@r1
 	;
-@@SEL:	pushad
+@@SEL:
+	pushad
 	mov	edi,offset eDebugHeader
 	mov	eax,es:[esi]
 	mov	ecx,4
@@ -631,7 +634,8 @@ ebpdump:
 	mov	ebx,'EDOC'
 	jnz	@@dc0
 	mov	ebx,'ATAD'
-@@dc0:	mov	[edi],ebx
+@@dc0:
+	mov	[edi],ebx
 	add	edi,4
 	mov	b[edi],' '
 	inc	edi
@@ -641,7 +645,8 @@ ebpdump:
 	test	eax,00400000h
 	jz	@@Use32It
 	mov	bx,"23"
-@@Use32It:	mov	[edi],bx
+@@Use32It:
+	mov	[edi],bx
 	add	edi,2
 	mov	b[edi],' '
 	inc	edi
@@ -654,12 +659,14 @@ ebpdump:
 	mov	ebx,edx
 	pushad
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
-@@s2:	push	esi
+@@s2:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@s0:	cmp	es:b[edi],Res_MEM	;Anything here?
+@@s0:
+	cmp	es:b[edi],Res_MEM	;Anything here?
 	jnz	@@s1
 	mov	eax,fs:d[EPSP_Struc.EPSP_INTMem]
 	cmp	es:[esi],eax
@@ -679,7 +686,8 @@ ebpdump:
 	clc
 	jmp	@@s3
 	;
-@@s1:	add	esi,4
+@@s1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@s0
@@ -693,34 +701,42 @@ ebpdump:
 	cmp	fs:d[EPSP_Struc.EPSP_mcbHead],0
 	jz	@@nomcbsel
 	mov	esi,fs:d[EPSP_Struc.EPSP_mcbHead]
-@@mcbs0:	mov	edi,esi
+@@mcbs0:
+	mov	edi,esi
 	add	esi,mcbChunkLen
-@@mcbs1:	mov	eax,esi
+@@mcbs1:
+	mov	eax,esi
 	add	eax,mcbLen
 	cmp	ebx,eax
 	jnz	@@mcbs2
 	clc
 	jmp	@@s3
-@@mcbs2:	cmp	es:b[esi+mcbNext],"M"
+@@mcbs2:
+	cmp	es:b[esi+mcbNext],"M"
 	jz	@@mcbs3
 	mov	esi,es:[edi+mcbChunkNext]
 	or	esi,esi
 	jz	@@nomcbsel
 	jmp	@@mcbs0
-@@mcbs3:	movzx	eax,es:w[esi+mcbNextSize]
+@@mcbs3:
+	movzx	eax,es:w[esi+mcbNextSize]
 	add	eax,mcbLen
 	add	esi,eax
 	jmp	@@mcbs1
-@@nomcbsel:	stc
-@@s3:	popad
+@@nomcbsel:
+	stc
+@@s3:
+	popad
 	jc	@@r4
 	;
 	mov	b[edi],'Y'
 	jmp	@@r5
 	;
-@@r4:	mov	d[edi],'N'
+@@r4:
+	mov	d[edi],'N'
 	;
-@@r5:	inc	edi
+@@r5:
+	inc	edi
 	mov	b[edi],' '
 	inc	edi
 	;
@@ -741,10 +757,12 @@ ebpdump:
 	call	bin2hex_err
 	jmp	@@r20
 	;
-@@r2:	mov	d[edi],'xxxx'
+@@r2:
+	mov	d[edi],'xxxx'
 	add	edi,4
 	;
-@@r20:	mov	b[edi],13
+@@r20:
+	mov	b[edi],13
 	mov	b[edi+1],10
 	mov	b[edi+2],'$'
 	add	edi,2
@@ -757,7 +775,8 @@ ebpdump:
 	int	21h
 	popad
 	;
-@@r1:	add	esi,4
+@@r1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@r0
@@ -788,12 +807,14 @@ ebpdump:
 	;
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
 	mov	es,RealSegment
-@@mLookLoop:	push	esi
+@@mLookLoop:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@m0:	cmp	es:b[edi],Res_MEM
+@@m0:
+	cmp	es:b[edi],Res_MEM
 	jnz	@@m1
 	;
 	mov	eax,fs:d[EPSP_Struc.EPSP_INTMem]
@@ -815,7 +836,8 @@ ebpdump:
 	jz	@@MEM
 	mov	ebx,es:[esi]
 	mov	edi,fs:d[EPSP_Struc.EPSP_mcbHead]
-@@mcbmc0:	cmp	ebx,edi
+@@mcbmc0:
+	cmp	ebx,edi
 	jz	@@mcbmc1
 	mov	edi,es:[edi+mcbChunkNext]
 	or	edi,edi
@@ -830,7 +852,8 @@ ebpdump:
 	add	TotalLinearMem+4,eax
 	pop	edi
 	jmp	@@m1
-@@MEM:	pop	edi
+@@MEM:
+	pop	edi
 	pushad
 	mov	edi,offset eDebugHeader
 	mov	eax,es:[esi+4]
@@ -871,7 +894,8 @@ ebpdump:
 	pop	es
 	popad
 	;
-@@m1:	add	esi,4
+@@m1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@m0
@@ -885,9 +909,11 @@ ebpdump:
 	cmp	fs:d[EPSP_Struc.EPSP_mcbHead],0
 	jz	@@nomcbdis
 	mov	esi,fs:d[EPSP_Struc.EPSP_mcbHead]
-@@mcb0:	mov	edi,esi
+@@mcb0:
+	mov	edi,esi
 	add	esi,mcbChunkLen
-@@mcb1:	cmp	es:b[esi+mcbFreeUsed],"J"	;Free block?
+@@mcb1:
+	cmp	es:b[esi+mcbFreeUsed],"J"	;Free block?
 	jz	@@mcb2
 	mov	eax,fs:d[EPSP_Struc.EPSP_INTMem]
 	sub	eax,mcbLen
@@ -941,14 +967,16 @@ ebpdump:
 	int	21h
 	pop	es
 	popad
-@@mcb2:	cmp	es:b[esi+mcbNext],"M"	;end of the chain?
+@@mcb2:
+	cmp	es:b[esi+mcbNext],"M"	;end of the chain?
 	jz	@@mcb3
 	mov	esi,es:[edi+mcbChunkNext]
 	or	esi,esi
 	jnz	@@mcb0
 	jmp	@@nomcbdis
 	;
-@@mcb3:	movzx	eax,es:w[esi+mcbNextSize]
+@@mcb3:
+	movzx	eax,es:w[esi+mcbNextSize]
 	add	eax,mcbLen
 	add	esi,eax
 	jmp	@@mcb1
@@ -982,15 +1010,18 @@ ebpdump:
 	int	21h
 	;
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
-@@lLookLoop:	push	esi
+@@lLookLoop:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@l0:	cmp	es:b[edi],Res_LOCK
+@@l0:
+	cmp	es:b[edi],Res_LOCK
 	jnz	@@l1
 	;
-@@LOCK:	pushad
+@@LOCK:
+	pushad
 	mov	edi,offset eDebugHeader
 	mov	eax,es:[esi]
 	mov	cx,8
@@ -1016,7 +1047,8 @@ ebpdump:
 	int	21h
 	popad
 	;
-@@l1:	add	esi,4
+@@l1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@l0
@@ -1034,12 +1066,14 @@ ebpdump:
 	int	21h
 	;
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
-@@dmLookLoop:	push	esi
+@@dmLookLoop:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@dm0:	cmp	es:b[edi],Res_DOSMEM
+@@dm0:
+	cmp	es:b[edi],Res_DOSMEM
 	jnz	@@dm1
 	;
 	pushad
@@ -1077,7 +1111,8 @@ ebpdump:
 	int	21h
 	popad
 	;
-@@dm1:	add	esi,4
+@@dm1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@dm0
@@ -1099,7 +1134,8 @@ ebpdump:
 	mov	ecx,256
 	mov	esi,fs:d[EPSP_Struc.EPSP_INTMem]
 	mov	ebx,0
-@@pv0:	pushm	ebx,ecx,esi
+@@pv0:
+	pushm	ebx,ecx,esi
 	sys GetVect
 	cmp	cx,es:w[esi+4]
 	jnz	@@pv10
@@ -1135,7 +1171,8 @@ ebpdump:
 	mov	ebx,d[ERRHandle]
 	int	21h
 	;
-@@pv1:	popm	ebx,ecx,esi
+@@pv1:
+	popm	ebx,ecx,esi
 	add	esi,6
 	inc	ebx
 	loop	@@pv0
@@ -1152,7 +1189,8 @@ ebpdump:
 	mov	esi,fs:d[EPSP_Struc.EPSP_INTMem]
 	add	esi,256*6
 	mov	ebx,0
-@@pe0:	pushm	ebx,ecx,esi
+@@pe0:
+	pushm	ebx,ecx,esi
 	sys GetEVect
 	cmp	cx,es:w[esi+4]
 	jnz	@@pv100
@@ -1188,7 +1226,8 @@ ebpdump:
 	mov	ebx,d[ERRHandle]
 	int	21h
 	;
-@@pe1:	popm	ebx,ecx,esi
+@@pe1:
+	popm	ebx,ecx,esi
 	add	esi,6
 	inc	ebx
 	loop	@@pe0
@@ -1205,7 +1244,8 @@ ebpdump:
 	mov	esi,fs:d[EPSP_Struc.EPSP_INTMem]
 	add	esi,(256*6)+(32*6)
 	mov	ebx,0
-@@ri0:	pushm	ebx,ecx,esi
+@@ri0:
+	pushm	ebx,ecx,esi
 	sys GetRVect
 	cmp	cx,es:w[esi+2]
 	jnz	@@pv1000
@@ -1241,7 +1281,8 @@ ebpdump:
 	mov	ebx,d[ERRHandle]
 	int	21h
 	;
-@@ri1:	popm	ebx,ecx,esi
+@@ri1:
+	popm	ebx,ecx,esi
 	add	esi,4
 	inc	ebx
 	loop	@@ri0
@@ -1255,12 +1296,14 @@ ebpdump:
 	int	21h
 	;
 	mov	esi,fs:d[EPSP_Struc.EPSP_Resource]
-@@cbLookLoop:	push	esi
+@@cbLookLoop:
+	push	esi
 	mov	ebp,ResNum		;get number of entries.
 	mov	edi,esi
 	add	esi,ResHead+ResNum
 	add	edi,ResHead
-@@cb0:	cmp	es:b[edi],Res_CALLBACK
+@@cb0:
+	cmp	es:b[edi],Res_CALLBACK
 	jnz	@@cb1
 	;
 	pushad
@@ -1298,7 +1341,8 @@ ebpdump:
 	int	21h
 	popad
 	;
-@@cb1:	add	esi,4
+@@cb1:
+	add	esi,4
 	inc	edi
 	dec	ebp
 	jnz	@@cb0
@@ -1306,7 +1350,8 @@ ebpdump:
 	mov	esi,es:[edi+8]	;link to next list.
 	or	esi,esi
 	jnz	@@cbLookLoop
-@@r8:	popad
+@@r8:
+	popad
 	pop	es
 	pop	fs
 	;
@@ -1314,7 +1359,8 @@ ebpdump:
 	mov	ah,3eh
 	int	21h
 	;
-@@9:	ret
+@@9:
+	ret
 GenerateCWD_ERR endp
 
 
@@ -1335,7 +1381,8 @@ Bin2Hex_err	proc	near
 	add	edi,ecx
 	dec	edi
 	mov	edx,eax
-@@0:	mov	al,dl
+@@0:
+	mov	al,dl
 	shr	edx,4
 	and	al,15
 	xlat	[ebx]

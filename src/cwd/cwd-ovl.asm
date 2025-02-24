@@ -385,7 +385,7 @@ SystemFlags	dw 0	; bit 0:1=16-bit
 
 MenuHandle	dw ?
 MenuText	dd ?
-CopyRight	db ' CauseWay debugger v2.07, Public Domain ',0
+CopyRight	db ' CauseWay debugger v2.08, Public Domain ',0
 HelpHandle	dw ?
 
 HelpText	dd ?
@@ -1904,7 +1904,7 @@ nextexc:
 	mov	esi,80h
 	mov	es,PSPSegment
 	xor	cx,cx
-	mov	ax,0fffdh
+	mov	ax,cwExecDebug
 	int	31h
 	pushm	ds,ds,ds
 	popm	es,fs,gs
@@ -3037,7 +3037,7 @@ RestartALL	proc	near
 	mov	esi,80h
 	mov	es,PSPSegment
 	xor	cx,cx
-	mov	ax,0fffdh
+	mov	ax,cwExecDebug
 	int	31h
 	pushm	ds,ds,ds
 	popm	es,fs,gs
@@ -3365,14 +3365,16 @@ OpenDataWatch	proc	near
 	push	ecx
 	mov	esi,offset DataWatchList
 	mov	ecx,MaxWatches
-@@0:	test	WatchStruc.WatchFlags[esi],1	;in use?
+@@0:
+	test	WatchStruc.WatchFlags[esi],1	;in use?
 	jz	@@1
 	add	esi,size WatchStruc
 	loop	@@0
 	pop	ecx
 	jmp	@@9
 	;
-@@1:	pop	ecx
+@@1:
+	pop	ecx
 	mov	WatchStruc.WatchSeg[esi],al
 	mov	WatchStruc.WatchOff[esi],ah
 	mov	WatchStruc.WatchOffset[esi],ebx
@@ -3408,7 +3410,8 @@ OpenDataWatch	proc	near
 	cmp	al,Watch_Abs
 	jz	@@2
 	sub	al,Watch_EAX-1
-@@2:	push	esi
+@@2:
+	push	esi
 	lea	esi,[WatchOffList+eax*4]
 	mov	edi,offset WatchTitleOff
 	movsw
@@ -3460,7 +3463,8 @@ OpenDataWatch	proc	near
 	call	TitleWindow
 	mov	ax,Message_Update
 	call	MessageWindow
-@@9:	ret
+@@9:
+	ret
 OpenDataWatch	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -3470,12 +3474,14 @@ OpenDataWatch	endp
 UpdateWatches	proc	near
 	mov	ecx,MaxWatches
 	mov	esi,offset DataWatchList
-@@0:	test	WatchStruc.WatchFlags[esi],1
+@@0:
+	test	WatchStruc.WatchFlags[esi],1
 	jz	@@1
 	pushm	esi,ecx
 	call	UpdateWatch
 	popm	esi,ecx
-@@1:	add	esi,size WatchStruc
+@@1:
+	add	esi,size WatchStruc
 	loop	@@0
 	ret
 UpdateWatches	endp
@@ -3506,36 +3512,42 @@ UpdateWatch	proc	near
 	pop	esi
 	jmp	@@8
 	;
-@@bytes:	cmp	WatchStruc.WatchDisType[esi],Watch_Bytes
+@@bytes:
+	cmp	WatchStruc.WatchDisType[esi],Watch_Bytes
 	jnz	@@Text
 	push	esi
 	call	DisplayBytes
 	pop	esi
 	jmp	@@8
 	;
-@@Text:	cmp	WatchStruc.WatchDisType[esi],Watch_Text
+@@Text:
+	cmp	WatchStruc.WatchDisType[esi],Watch_Text
 	jnz	@@words
 	push	esi
 	call	DisplayText
 	pop	esi
 	jmp	@@8
 	;
-@@words:	cmp	WatchStruc.WatchDisType[esi],Watch_Words
+@@words:
+	cmp	WatchStruc.WatchDisType[esi],Watch_Words
 	jnz	@@dwords
 	push	esi
 	call	DisplayWords
 	pop	esi
 	jmp	@@8
 	;
-@@dwords:	cmp	WatchStruc.WatchDisType[esi],Watch_DWords
+@@dwords:
+	cmp	WatchStruc.WatchDisType[esi],Watch_DWords
 	jnz	@@8
 	push	esi
 	call	DisplayDWords
 	pop	esi
 	jmp	@@8
 	;
-@@8:	call	WatchCursorON
-@@9:	ret
+@@8:
+	call	WatchCursorON
+@@9:
+	ret
 UpdateWatch	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -3556,19 +3568,26 @@ GetWatchSource	proc	near
 	jz	@@SS
 	jmp	@@9		;This should never be used.
 	;
-@@Abs:	mov	ax,WatchStruc.WatchSelNum[esi]
+@@Abs:
+	mov	ax,WatchStruc.WatchSelNum[esi]
 	jmp	@@GotSel
-@@CS:	mov	ax,DebugCS
+@@CS:
+	mov	ax,DebugCS
 	jmp	@@GotSel
-@@DS:	mov	ax,DebugDS
+@@DS:
+	mov	ax,DebugDS
 	jmp	@@GotSel
-@@ES:	mov	ax,DebugES
+@@ES:
+	mov	ax,DebugES
 	jmp	@@GotSel
-@@FS:	mov	ax,DebugFS
+@@FS:
+	mov	ax,DebugFS
 	jmp	@@GotSel
-@@GS:	mov	ax,DebugGS
+@@GS:
+	mov	ax,DebugGS
 	jmp	@@GotSel
-@@SS:	mov	ax,DebugSS
+@@SS:
+	mov	ax,DebugSS
 	;
 @@GotSel:	;Get offset portion.
 	;
@@ -3612,43 +3631,62 @@ GetWatchSource	proc	near
 	jz	@@IP
 	jmp	@@9		;should never need this.
 	;
-@@oAbs:	mov	ebx,WatchStruc.WatchOffset[esi]
+@@oAbs:
+	mov	ebx,WatchStruc.WatchOffset[esi]
 	jmp	@@GotOff
-@@EAX:	mov	ebx,DebugEAX
+@@EAX:
+	mov	ebx,DebugEAX
 	jmp	@@GotOff
-@@EBX:	mov	ebx,DebugEBX
+@@EBX:
+	mov	ebx,DebugEBX
 	jmp	@@GotOff
-@@ECX:	mov	ebx,DebugECX
+@@ECX:
+	mov	ebx,DebugECX
 	jmp	@@GotOff
-@@EDX:	mov	ebx,DebugEDX
+@@EDX:
+	mov	ebx,DebugEDX
 	jmp	@@GotOff
-@@ESI:	mov	ebx,DebugESI
+@@ESI:
+	mov	ebx,DebugESI
 	jmp	@@GotOff
-@@EDI:	mov	ebx,DebugEDI
+@@EDI:
+	mov	ebx,DebugEDI
 	jmp	@@GotOff
-@@EBP:	mov	ebx,DebugEBP
+@@EBP:
+	mov	ebx,DebugEBP
 	jmp	@@GotOff
-@@ESP:	mov	ebx,DebugESP
+@@ESP:
+	mov	ebx,DebugESP
 	jmp	@@GotOff
-@@EIP:	mov	ebx,DebugEIP
+@@EIP:
+	mov	ebx,DebugEIP
 	jmp	@@GotOff
-@@AX:	movzx	ebx,w[DebugEAX]
+@@AX:
+	movzx	ebx,w[DebugEAX]
 	jmp	@@GotOff
-@@BX:	movzx	ebx,w[DebugEBX]
+@@BX:
+	movzx	ebx,w[DebugEBX]
 	jmp	@@GotOff
-@@CX:	movzx	ebx,w[DebugECX]
+@@CX:
+	movzx	ebx,w[DebugECX]
 	jmp	@@GotOff
-@@DX:	movzx	ebx,w[DebugEDX]
+@@DX:
+	movzx	ebx,w[DebugEDX]
 	jmp	@@GotOff
-@@SI:	movzx	ebx,w[DebugESI]
+@@SI:
+	movzx	ebx,w[DebugESI]
 	jmp	@@GotOff
-@@DI:	movzx	ebx,w[DebugEDI]
+@@DI:
+	movzx	ebx,w[DebugEDI]
 	jmp	@@GotOff
-@@BP:	movzx	ebx,w[DebugEBP]
+@@BP:
+	movzx	ebx,w[DebugEBP]
 	jmp	@@GotOff
-@@SP:	movzx	ebx,w[DebugESP]
+@@SP:
+	movzx	ebx,w[DebugESP]
 	jmp	@@GotOff
-@@IP:	movzx	ebx,w[DebugEIP]
+@@IP:
+	movzx	ebx,w[DebugEIP]
 	jmp	@@GotOff
 	;
 @@GotOff:	;Get linear address.
@@ -3682,7 +3720,8 @@ WatchCursorOFF	proc	near
 	mov	bp,WatchStruc.WatchHandle[esi]
 	mov	al,3
 	call	BarWindow
-@@9:	popad
+@@9:
+	popad
 	ret
 WatchCursorOFF	endp
 
@@ -3698,16 +3737,19 @@ WatchCursorON	proc	near
 	cmp	al,WatchStruc.WatchYPos[esi]
 	jnc	@@yok
 	mov	WatchStruc.WatchYPos[esi],al
-@@yok:	mov	eax,WatchStruc.WatchWidth[esi]
+@@yok:
+	mov	eax,WatchStruc.WatchWidth[esi]
 	cmp	WatchStruc.WatchDisType[esi],Watch_Text
 	jz	@@nxd
 	shl	eax,1
-@@nxd:	dec	eax
+@@nxd:
+	dec	eax
 	cmp	al,WatchStruc.WatchXPos[esi]
 	jnc	@@xok
 	mov	WatchStruc.WatchXPos[esi],al
 	;
-@@xok:	mov	cl,WatchStruc.WatchXPos[esi]
+@@xok:
+	mov	cl,WatchStruc.WatchXPos[esi]
 	mov	ch,WatchStruc.WatchYPos[esi]
 	;
 	;Frig X to match display format.
@@ -3722,29 +3764,34 @@ WatchCursorON	proc	near
 	jz	@@DWords
 	jmp	@@oops
 	;
-@@Bytes:	mov	al,cl
+@@Bytes:
+	mov	al,cl
 	shr	al,1
 	add	cl,al
 	jmp	@@oops
 	;
-@@Words:	mov	al,cl
+@@Words:
+	mov	al,cl
 	shr	al,2
 	add	cl,al
 	jmp	@@oops
 	;
-@@Dwords:	mov	al,cl
+@@Dwords:
+	mov	al,cl
 	shr	al,3
 	add	cl,al
 	jmp	@@oops
 	;
-@@oops:	test	WatchStruc.WatchFlags[esi],2
+@@oops:
+	test	WatchStruc.WatchFlags[esi],2
 	jnz	@@NA
 	add	cl,4+1
 	test	SystemFlags,1
 	jnz	@@NA
 	add	cl,4
 	;
-@@NA:	mov	WatchStruc.WatchLastX[esi],cl
+@@NA:
+	mov	WatchStruc.WatchLastX[esi],cl
 	mov	WatchStruc.WatchLastY[esi],ch
 	mov	bp,WatchStruc.WatchHandle[esi]
 	mov	al,2
@@ -3778,7 +3825,8 @@ DisplayDWords	proc	near
 	jz	@@Use32_0
 	mov	ebp,4+1
 	;
-@@Use32_0:	mov	edx,8
+@@Use32_0:
+	mov	edx,8
 	test	_DDW_Flags,2
 	jnz	@@Use32_2
 	add	edx,ebp
@@ -3787,7 +3835,8 @@ DisplayDWords	proc	near
 	cmp	eax,edx
 	jnc	@@ok
 	mov	eax,edx
-@@ok:	sub	edx,8+1
+@@ok:
+	sub	edx,8+1
 	sub	eax,edx
 	xor	edx,edx
 	mov	ecx,8+1
@@ -3800,7 +3849,8 @@ DisplayDWords	proc	near
 	;
 	mov	_DDW_YPos,0
 	mov	esi,ebx		;source address.
-@@0:	pushm	ecx,ebp
+@@0:
+	pushm	ecx,ebp
 	mov	edi,offset ABuffer
 	test	_DDW_Flags,2
 	jnz	@@1
@@ -3814,17 +3864,19 @@ DisplayDWords	proc	near
 	test	SystemFlags,1
 	jz	@@Use32_1
 	mov	ecx,4
-@@Use32_1:	call	Bin2Hex
+@@Use32_1:
+	call	Bin2Hex
 	mov	b[edi],' '
 	inc	edi
 	mov	b[edi],0
 	popm	ecx,ebp
-@@1:	pushm	esi,ecx
+@@1:
+	pushm	esi,ecx
 	;
 	;Display a word.
 	;
 	mov	ebx,-1
-	mov	ax,0fffch
+	mov	ax,cwLinearCheck   ; check linear address in ???
 	int	31h
 	jc	@@badAddr
 	add	esi,3
@@ -3835,7 +3887,8 @@ DisplayDWords	proc	near
 	mov	es,RealSegment
 	mov	ebx,es:[esi]
 	pop	es
-@@BadAddr:	mov	eax,ebx
+@@BadAddr:
+	mov	eax,ebx
 	mov	cl,8
 	call	Bin2Hex
 	mov	b[edi],' '
@@ -3883,7 +3936,8 @@ DisplayWords	proc	near
 	jz	@@Use32_0
 	mov	ebp,4+1
 	;
-@@Use32_0:	mov	edx,4
+@@Use32_0:
+	mov	edx,4
 	test	_DW_Flags,2
 	jnz	@@Use32_2
 	add	edx,ebp
@@ -3892,7 +3946,8 @@ DisplayWords	proc	near
 	cmp	eax,edx
 	jnc	@@ok
 	mov	eax,edx
-@@ok:	sub	edx,5
+@@ok:
+	sub	edx,5
 	sub	eax,edx
 	xor	edx,edx
 	mov	ecx,5
@@ -3905,7 +3960,8 @@ DisplayWords	proc	near
 	shl	eax,1
 	mov	WatchStruc.WatchWidth[esi],eax
 	mov	esi,ebx		;source address.
-@@0:	pushm	ecx,ebp
+@@0:
+	pushm	ecx,ebp
 	mov	edi,offset ABuffer
 	test	_DW_Flags,2
 	jnz	@@1
@@ -3919,12 +3975,14 @@ DisplayWords	proc	near
 	test	SystemFlags,1
 	jz	@@Use32_1
 	mov	ecx,4
-@@Use32_1:	call	Bin2Hex
+@@Use32_1:
+	call	Bin2Hex
 	mov	b[edi],' '
 	inc	edi
 	mov	b[edi],0
 	popm	ecx,ebp
-@@1:	pushm	esi,ecx
+@@1:
+	pushm	esi,ecx
 	;
 	;Display a word.
 	;
@@ -3940,7 +3998,8 @@ DisplayWords	proc	near
 	mov	es,RealSegment
 	mov	bx,es:[esi]
 	pop	es
-@@BadAddr:	mov	eax,ebx
+@@BadAddr:
+	mov	eax,ebx
 	mov	cl,4
 	call	Bin2Hex
 	mov	b[edi],' '
@@ -3988,7 +4047,8 @@ DisplayBytes	proc	near
 	jz	@@Use32_0
 	mov	ebp,4+1
 	;
-@@Use32_0:	mov	edx,2
+@@Use32_0:
+	mov	edx,2
 	test	_DB_Flags,2
 	jnz	@@Use32_2
 	add	edx,ebp
@@ -3997,7 +4057,8 @@ DisplayBytes	proc	near
 	cmp	eax,edx
 	jnc	@@ok
 	mov	eax,edx
-@@ok:	sub	edx,2+1
+@@ok:
+	sub	edx,2+1
 	sub	eax,edx
 	xor	edx,edx
 	mov	ecx,2+1
@@ -4009,7 +4070,8 @@ DisplayBytes	proc	near
 	pop	esi
 	mov	WatchStruc.WatchWidth[esi],eax
 	mov	esi,ebx		;source address.
-@@0:	pushm	ecx,ebp
+@@0:
+	pushm	ecx,ebp
 	mov	edi,offset ABuffer
 	test	_DB_Flags,2
 	jnz	@@1
@@ -4023,12 +4085,14 @@ DisplayBytes	proc	near
 	test	SystemFlags,1
 	jz	@@Use32_1
 	mov	ecx,4
-@@Use32_1:	call	Bin2Hex
+@@Use32_1:
+	call	Bin2Hex
 	mov	b[edi],' '
 	inc	edi
 	mov	b[edi],0
 	popm	ecx,ebp
-@@1:	pushm	esi,ecx
+@@1:
+	pushm	esi,ecx
 	;
 	;Display a word.
 	;
@@ -4040,7 +4104,8 @@ DisplayBytes	proc	near
 	mov	es,RealSegment
 	mov	bl,es:[esi]
 	pop	es
-@@BadAddr:	mov	eax,ebx
+@@BadAddr:
+	mov	eax,ebx
 	mov	cl,2
 	call	Bin2Hex
 	mov	b[edi],' '
@@ -4088,7 +4153,8 @@ DisplayText	proc	near
 	jz	@@Use32_0
 	mov	ebp,4+1
 	;
-@@Use32_0:	mov	edx,1
+@@Use32_0:
+	mov	edx,1
 	test	_DT_Flags,2
 	jnz	@@Use32_2
 	add	edx,ebp
@@ -4097,7 +4163,8 @@ DisplayText	proc	near
 	cmp	eax,edx
 	jnc	@@ok
 	mov	eax,edx
-@@ok:	sub	edx,1
+@@ok:
+	sub	edx,1
 	sub	eax,edx
 	xor	edx,edx
 	mov	ecx,1
@@ -4109,7 +4176,8 @@ DisplayText	proc	near
 	pop	esi
 	mov	WatchStruc.WatchWidth[esi],eax
 	mov	esi,ebx		;source address.
-@@0:	pushm	ecx,ebp
+@@0:
+	pushm	ecx,ebp
 	mov	edi,offset ABuffer
 	test	_DT_Flags,2
 	jnz	@@1
@@ -4123,12 +4191,14 @@ DisplayText	proc	near
 	test	SystemFlags,1
 	jz	@@Use32_1
 	mov	ecx,4
-@@Use32_1:	call	Bin2Hex
+@@Use32_1:
+	call	Bin2Hex
 	mov	b[edi],' '
 	inc	edi
 	mov	b[edi],0
 	popm	ecx,ebp
-@@1:	pushm	esi,ecx
+@@1:
+	pushm	esi,ecx
 	;
 	;Display a byte.
 	;
@@ -4140,11 +4210,13 @@ DisplayText	proc	near
 	mov	es,RealSegment
 	mov	bl,es:[esi]
 	pop	es
-@@BadAddr:	mov	eax,ebx
+@@BadAddr:
+	mov	eax,ebx
 	or	al,al
 	jnz	@@ok9
 	mov	al,'.'
-@@ok9:	mov	b[edi],al
+@@ok9:
+	mov	b[edi],al
 	inc	edi
 	mov	b[edi],0
 	popm	esi,ecx
@@ -4347,8 +4419,10 @@ RegsListVars	proc	near
 	mov	DisplayCS,cx
 	mov	DisplayEIP,edx
 	call	DisasFull
-@@Show:	call	RegisterDisplay	;Display current register values.
-@@None:	ret
+@@Show:
+	call	RegisterDisplay	;Display current register values.
+@@None:
+	ret
 RegsListVars	endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
@@ -4373,19 +4447,23 @@ ListVars	proc	near
 	mov	edi,SymbolList
 	xor	eax,eax		;reset longest so far.
 	xor	ebx,ebx
-@@gl0:	cmp	d[edi],-1
+@@gl0:
+	cmp	d[edi],-1
 	jz	@@gl2
 	movzx	ecx,SymbolStruc.SymbolTLen[edi]
 	cmp	ecx,eax
 	jc	@@gl1
 	mov	eax,ecx
-@@gl1:	inc	ebx
+@@gl1:
+	inc	ebx
 	add	edi,SymbolStruc.SymbolNext[edi]
 	jmp	@@gl0
-@@gl2:	cmp	ebx,15
+@@gl2:
+	cmp	ebx,15
 	jc	@@gl3
 	mov	bx,15
-@@gl3:	mov	_LV_Depth,bx
+@@gl3:
+	mov	_LV_Depth,bx
 	mov	_LV_Longest,al
 	or	al,al
 	jz	@@None

@@ -7,11 +7,33 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 4
 </HEAD>
 <BODY>
 <A NAME="Page_4"></A>
-<P><FONT SIZE=3>Assembly language programmers should link together the application object modules (OBJ files) and any support libraries using the WL32 protected mode linker. The linker automatically adds the DOS extender to the resulting executable EXE file.</P>
-<P>When running the DOS-extended application, DOS first loads the CauseWay DOS extender in conventional memory. CauseWay establishes the protected mode environment, retrieves the application from the executable file -- loading it first into extended memory, then conventional memory if extended is exhausted, then virtual (disk-based) memory if conventional is exhausted -- sets up the application for execution, and finally passes control to the application to begin operation. No additional files are required to make your application run in 386 protected mode using the CauseWay DOS extender.</P>
-<B><P>CWSTUB.EXE</B> will execute stand-alone Watcom LE-format files in the same way as <B>DOS4GW.EXE</B> does if the full file name, including extension, is listed after CWSTUB, e.g. CWSTUB RUNME.EXE. CWSTUB will override the extender bound to the application EXE, if any, with the CauseWay DOS extender version in CWSTUB.EXE.</P>
-<B><P>DEBUGGING USING WD, THE WATCOM DEBUGGER</P>
-</B><P>To debug CauseWay programs with the Watcom debugger after installing the CauseWay files, simply use the /tr=crw command line option. For example:</P>
+<B><P>LINKING THE APPLICATION</P></B>
+<P><FONT SIZE=3>To link their application, assembly language programmers have two options - they may use WL32 or Watcoms's WLINK</P>
+<UL>
+<LI>WL32: this linker supports the native CauseWay binary format (3P). The binary may be 16-bit or 32-bit. 32-bit binaries may
+use the small, tiny or zero-based flat memory model. The linker automatically adds the DOS extender to the resulting executable EXE file.
+To debug such applications, both CauseWay's CWD or Watcom's WD may be used; however, with WD no symbolic debugging is possible then.
+</LI>
+<LI>WLINK: when using this linker, only 32-bit binaries flat binaries in LE format are supported. To select the proper
+format, "system causeway" must be supplied to Wlink ( alternately, "format os2 le" may also be used, but this requires additionally
+to tell Wlink the correct stub with "op stub=cwstub.exe" ).
+For debugging, both CauseWay's CWD or Watcom's WD may be used; however, symbolic debugging is supported by WD only.
+</LI>
+</UL>
+<P>C language programmers are restricted to use WLINK as linker.</P>
+
+<P>When running the DOS-extended application, DOS first loads the CauseWay DOS extender in conventional memory.
+CauseWay establishes the protected mode environment, retrieves the application from the executable file -- loading it first
+into extended memory, then conventional memory if extended is exhausted, then virtual (disk-based) memory if conventional
+is exhausted -- sets up the application for execution, and finally passes control to the application to begin operation.
+No additional files are required to make your application run in 386 protected mode using the CauseWay DOS extender.</P>
+<B><P>CWSTUB.EXE</B> will execute stand-alone Watcom LE-format files in the same way as <B>DOS4GW.EXE</B> does if the full
+file name, including extension, is listed after CWSTUB, e.g. CWSTUB RUNME.EXE. CWSTUB will override the extender bound
+to the application EXE, if any, with the CauseWay DOS extender version in CWSTUB.EXE.</P>
+
+<B><P>DEBUGGING USING WD, THE WATCOM DEBUGGER</P></B>
+
+<P>To debug CauseWay programs with the Watcom debugger after installing the CauseWay files, simply use the /tr=cw command line option. For example:</P>
 </FONT><FONT FACE="Courier" SIZE=3><P>WD /tr=cw myprog</P>
 </FONT><FONT SIZE=3><P>This process can be automated by adding /tr#cw to your WD environment variable. Use the SET <B>WD=tr#cw</B> command.</P>
 <P>By default, CauseWay uses a Ctrl-Alt keypress to interrupt the WD debugger, rather than the Print-Screen key. This can be changed to any two, three, or four keypress value by modifying the ASCII file <B>CWHELP.CFG</B> at the <I>BreakKeys</I> line. See comments in this file for further detail. Note that a single keypress value will not work properly.</P>

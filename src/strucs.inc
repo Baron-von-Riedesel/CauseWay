@@ -7,28 +7,27 @@ ResHead_Next    dd 0
 ResHead_Handle  dd 0
 ResHead ends
 
-ResSize	equ	4096		;Size of resource block.
-;ResHead	equ	16		;Size of main header.
-ResHeadSize	equ	16		;Size of main header.
-ResNum	equ	((((4096-ResHeadSize)/5) shr 2) shl 2)	;Number of entries.
-ResCount	equ	ResNum-4		;count for free entry checking.
+ResSize     equ 4096    ;Size of resource block.
+;ResHead    equ 16      ;Size of main header.
+ResHeadSize equ 16      ;Size of main header.
+ResNum      equ ((((4096-ResHeadSize)/5) shr 2) shl 2)  ;Number of entries.
+ResCount    equ ResNum-4        ;count for free entry checking.
 
-Res_NULL	equ	0	;MUST be zero.
-Res_PSP	equ	1	;single entry.
-Res_SEL	equ	2	;single entry.
-Res_MEM	equ	3	;3 entries.
-Res_LOCK	equ	4	;2 entries.
-Res_DOSMEM	equ	5	;?
-Res_CALLBACK	equ	6	;3 entries.
-Res_NOTHING	equ	254
-Res_CHAIN	equ	255	;single entry.
+;--- resource types
+Res_NULL        equ 0   ;MUST be zero.
+Res_PSP         equ 1   ;single entry.
+Res_SEL         equ 2   ;single entry.
+Res_MEM         equ 3   ;3 entries.
+Res_LOCK        equ 4   ;2 entries.
+Res_DOSMEM      equ 5   ;?
+Res_CALLBACK    equ 6   ;3 entries.
+Res_NOTHING     equ 254
+Res_CHAIN       equ 255 ;single entry.
 
-
-
-MEM_FREE	equ	0	;Free page.
-MEM_START	equ	1	;Used page, start of block.
-MEM_END	equ	2	;Used page, end of block.
-MEM_MASK	equ	3
+MEM_FREE    equ 0   ;Free page.
+MEM_START   equ 1   ;Used page, start of block.
+MEM_END     equ 2   ;Used page, end of block.
+MEM_MASK    equ 3
 ;
 MEM_LOCK	equ	4	;Start of lock count.
 MEM_LOCK_MASK	equ	15	;4 bit lock count.
@@ -48,7 +47,7 @@ Desc		struc
 Limit		dw 0		;Offset of last byte.
 Base_l		dw 0		;Low 16 bits of 32-bit address.
 Base_m		db 0		;Bits 16-23 of base.
-Access		db 0		;Access privaledge level.
+Access		db 0		;Access priviledge level.
 Gran		db 0		;Granularity and limit.
 Base_H		db 0		;bits 24-31 of base.
 Desc		ends
