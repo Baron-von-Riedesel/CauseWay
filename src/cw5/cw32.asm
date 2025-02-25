@@ -259,7 +259,6 @@ _cwStack        ends
 ;processor and determining how we're going to get into protected mode.
 ;
 _cwInit segment para public 'init code' use16
-        assume ds:GROUP16
 
 dpmiSelBuffer   db 8 dup (0)
 
@@ -338,7 +337,6 @@ wUMB              dw 0          ;UMB used 1) for paging tables 2) for transfer b
 ;cw5_NumXMSHandles db ?
 IProtectedMode    db 0
 IProtectedForce   db 0          ;CAUSEWAY environment setting "DPMI"
-
 ;
 ;
 ;-------------------------------------------------------------------------------
@@ -347,7 +345,8 @@ Startup proc    near
 ;Make global data addresable.
 ;
         .286
-        mov     ax,GROUP16
+;        mov     ax,GROUP16
+        mov     ax,cs
         mov     ds,ax
         assume ds:GROUP16
 
@@ -409,7 +408,7 @@ chk386:
 ;
         mov     IErrorNumber,4
         call    CheckDOSVersion
-        jc      InitError
+        jc      toiniterr
 ;
 ;Get execution name from environment.
 ;
@@ -424,7 +423,7 @@ chk386:
         call    GetProtectedFlags       ;set variable ProtectedFlags
         mov     IErrorNumber,3
         cmp     ProtectedFlags,0        ;Any types available?
-        jz      InitError
+        jz      toiniterr
 ;
 ;Get CAUSEWAY environment variable settings.
 ;

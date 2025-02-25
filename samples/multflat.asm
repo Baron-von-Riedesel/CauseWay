@@ -2,6 +2,10 @@
 ;Test of mixing 32-bit and 16-bit segment references in FLAT model
 ;
 
+;--- Note (02/2025): this sample doesn't do what's expected,
+;--- no matter what assembler (Masm v6+, Masm v5.10, JWasm, Tasm ) is used.
+;--- Maybe there once existed a WL32 that handled all fixups as expected...
+
 	.386
 	.model small
 	.stack 1024

@@ -137,29 +137,18 @@ RIntHeaderLen   equ $-RIntHeader
 ;
 DebugHeader label byte
         db 13,10
-        db 'Exception: %2, '
-        db 'Error code: %4',13,10,13,10
-        db 'EAX=%8 '
-        db 'EBX=%8 '
-        db 'ECX=%8 '
-        db 'EDX=%8 '
-        db 'ESI=%8',13,10
-        db 'EDI=%8 '
-        db 'EBP=%8 '
-        db 'ESP=%8 '
-        db 'EIP=%8 '
-        db 'EFL=%8',13,10,13,10
-        db 'CS=%4-%9 '
-        db 'DS=%4-%9 '
-        db 'ES=%4-%9',13,10
-        db 'FS=%4-%9 '
-        db 'GS=%4-%9 '
-        db 'SS=%4-%9',13,10,13,10
-        db 'CR0=%8 '
-        db 'CR2=%8 '
-        db 'CR3=%8 '
-        db 'TR=%4',13,10,13,10
-        db 'Info flags=%8',13,10,13,10
+        db 'Exception: %2, Error code: %4',13,10
+        db 13,10
+        db 'EAX=%8 EBX=%8 ECX=%8 EDX=%8 ESI=%8',13,10
+        db 'EDI=%8 EBP=%8 ESP=%8 EIP=%8 EFL=%8',13,10
+        db 13,10
+        db 'CS=%4-%9 DS=%4-%9 ES=%4-%9',13,10
+        db 'FS=%4-%9 GS=%4-%9 SS=%4-%9',13,10
+        db 13,10
+        db 'CR0=%8 CR2=%8 CR3=%8 TR=%4',13,10
+        db 13,10
+        db 'Info flags=%8',13,10
+        db 13,10
         db 0
 ;
 WritingCWERR    db "Writing CW.ERR file....",13,10,13,10,'$'
@@ -217,15 +206,15 @@ TotalSelsParms label dword
 
 	align 4
 
-ErrorList       label dword
-        dd ErrorM00,ErrorM01,ErrorM02,ErrorM03,ErrorM04,ErrorM05,ErrorM06,ErrorM07
-        dd ErrorM08,ErrorM09,ErrorM10,ErrorM11,ErrorM12,ErrorM13,ErrorM14,ErrorM15
-        dd ErrorM16
+ErrorList label dword
+    dd ErrorM00,ErrorM01,ErrorM02,ErrorM03,ErrorM04,ErrorM05,ErrorM06,ErrorM07
+    dd ErrorM08,ErrorM09,ErrorM10,ErrorM11,ErrorM12,ErrorM13,ErrorM14,ErrorM15
+    dd ErrorM16
 
 intstuff label dword
-        dd offset PIntHeader, PIntHeaderLen, 256, 4
-        dd offset EIntHeader, EIntHeaderLen,  32, 4
-        dd offset RIntHeader, RIntHeaderLen, 256, 2
+    dd offset PIntHeader, PIntHeaderLen, 256, 4
+    dd offset EIntHeader, EIntHeaderLen,  32, 4
+    dd offset RIntHeader, RIntHeaderLen, 256, 2
 ;
 ;-------------1----1----0----0
 ;-------------5----0----5----0

@@ -32,18 +32,18 @@ _ebx    dd ?
 _edx    dd ?
 _ecx    dd ?
 _eax    dd ?
-_gs     dw ?,?
-_fs     dw ?,?
-_es     dw ?,?
-_ds     dw ?,?
+_gs     dd ?
+_fs     dd ?
+_es     dd ?
+_ds     dd ?
 EXCFRX  ends
 
 ExceptionRegs EXCFRX <>
 ExceptionEIP    dd ?
-ExceptionCS     dw ?,?
+ExceptionCS     dd ?
 ExceptionEFL    dd ?
 ExceptionESP    dd ?
-ExceptionSS     dw ?,?
+ExceptionSS     dd ?
 
 ExceptionTR     dw ?
 ExceptionCR0    dd ?
@@ -51,89 +51,51 @@ ExceptionCR2    dd ?
 ExceptionCR3    dd ?
 ;
 ExceptionHeader label byte
-        db 13,10,"CauseWay Error 09 : Unrecoverable internal exception, program terminated.",13,10
-        db 13,10,'Exception: '
-ExceptionINum   db '00, Error code: '
-ExceptionENum   db '0000',13,10,13,10
-        db 'EAX='
-ExceptionEAXt   db '00000000 '
-        db 'EBX='
-ExceptionEBXt   db '00000000 '
-        db 'ECX='
-ExceptionECXt   db '00000000 '
-        db 'EDX='
-ExceptionEDXt   db '00000000 '
-        db 'ESI='
-ExceptionESIt   db '00000000 '
-        db 13,10
-        db 'EDI='
-ExceptionEDIt   db '00000000 '
-        db 'EBP='
-ExceptionEBPt   db '00000000 '
-        db 'ESP='
-ExceptionESPt   db '00000000 '
-        db 'EIP='
-ExceptionEIPt   db '00000000 '
-        db 'EFL='
-ExceptionEFLt   db '00000000 '
-        db 13,10,13,10
-        db 'CS='
-ExceptionCSt    db '0000 '
-        db 'DS='
-ExceptionDSt    db '0000 '
-        db 'ES='
-ExceptionESt    db '0000 '
-        db 'FS='
-ExceptionFSt    db '0000 '
-        db 'GS='
-ExceptionGSt    db '0000 '
-        db 'SS='
-ExceptionSSt    db '0000 '
-        db 13,10,13,10
-        db 'CR0='
-ExceptionCR0t   db '00000000 '
-        db 'CR2='
-ExceptionCR2t   db '00000000 '
-        db 'CR3='
-ExceptionCR3t   db '00000000 '
-        db 'TR='
-ExceptionTRt    db '0000'
-        db 13,10,13,10
-        db 'SystemFlags='
-ExceptionSysFlags db '00000000 '
-        db 13,10,13,10,'$'
-ExceptionHeaderEnd      label byte
+    db 13,10
+    db "CauseWay Error 09 : Unrecoverable internal exception, program terminated.",13,10
+    db 13,10
+    db 'Exception: %2, Error code: %4',13,10
+    db 13,10
+    db 'EAX=%8 EBX=%8 ECX=%8 EDX=%8 ESI=%8',13,10
+    db 'EDI=%8 EBP=%8 ESP=%8 EIP=%8 EFL=%8',13,10
+    db 13,10
+    db 'CS=%4 DS=%4 ES=%4 FS=%4 GS=%4 SS=%4',13,10
+    db 13,10
+    db 'CR0=%8 CR2=%8 CR3=%8 TR=%4',13,10
+    db 13,10
+    db 'SystemFlags=%8',13,10
+    db 13,10,'$',0
 ;
 	align 4
 
 ExceptionIntBuffer RealRegsStruc <>
 ;
 	align 4
-reg8dmptab label dword
-	dd offset ExceptionCR0      , offset ExceptionCR0t
-	dd offset ExceptionCR2      , offset ExceptionCR2t
-	dd offset ExceptionCR3      , offset ExceptionCR3t
-	dd offset ExceptionRegs._eax, offset ExceptionEAXt
-	dd offset ExceptionRegs._ebx, offset ExceptionEBXt
-	dd offset ExceptionRegs._ecx, offset ExceptionECXt
-	dd offset ExceptionRegs._edx, offset ExceptionEDXt
-	dd offset ExceptionRegs._esi, offset ExceptionESIt
-	dd offset ExceptionRegs._edi, offset ExceptionEDIt
-	dd offset ExceptionRegs._ebp, offset ExceptionEBPt
-	dd offset ExceptionESP      , offset ExceptionESPt
-	dd offset ExceptionEIP      , offset ExceptionEIPt
-	dd offset ExceptionEFL      , offset ExceptionEFLt
-	dd offset DpmiEmuSystemFlags, offset ExceptionSysFlags
-reg4dmptab label dword
-	dd offset ExceptionCode     , offset ExceptionENum
-	dd offset ExceptionTR       , offset ExceptionTRt
-	dd offset ExceptionCS       , offset ExceptionCSt
-	dd offset ExceptionRegs._ds , offset ExceptionDSt
-	dd offset ExceptionRegs._es , offset ExceptionESt
-	dd offset ExceptionRegs._fs , offset ExceptionFSt
-	dd offset ExceptionRegs._gs , offset ExceptionGSt
-	dd offset ExceptionSS       , offset ExceptionSSt
-endregdmptab label byte
+
+stdregdump2 label dword
+    dd offset ExceptionIndex
+    dd offset ExceptionCode
+    dd offset ExceptionRegs._eax
+    dd offset ExceptionRegs._ebx
+    dd offset ExceptionRegs._ecx
+    dd offset ExceptionRegs._edx
+    dd offset ExceptionRegs._esi
+    dd offset ExceptionRegs._edi
+    dd offset ExceptionRegs._ebp
+    dd offset ExceptionESP
+    dd offset ExceptionEIP
+    dd offset ExceptionEFL
+    dd offset ExceptionCS
+    dd offset ExceptionRegs._ds
+    dd offset ExceptionRegs._es
+    dd offset ExceptionRegs._fs
+    dd offset ExceptionRegs._gs
+    dd offset ExceptionSS
+    dd offset ExceptionCR0
+    dd offset ExceptionCR2
+    dd offset ExceptionCR3
+    dd offset ExceptionTR
+    dd offset DpmiEmuSystemFlags
 
 ;-------------------------------------------------------------------------------
 
@@ -1125,49 +1087,9 @@ inter19_Use16Bit678:
 ;
         mov     eax, offset inter19_pl0
         call    EmuCallPL0Proc
-        jmp     @F
-inter19_pl0:        
-.386P
-        str     ax              ;get TR
-        mov     ExceptionTR,ax
-        mov     eax,cr0
-        mov     ExceptionCR0,eax
-        mov     eax,cr2
-        mov     ExceptionCR2,eax
-        mov     eax,cr3
-        mov     ExceptionCR3,eax
-        retd
-@@:
 ;
-;Convert register values into ASCII ready for printing.
-;
-        mov     eax,ExceptionIndex
-        mov     ecx,2
-        mov     edi,offset ExceptionINum
-        call    Bin2HexE
-
-        ;
-        mov     esi, offset reg8dmptab
-        mov     ecx, 8
-nextreg:
-        mov     eax, [esi+0]
-        mov     eax, [eax]
-        mov     edi, [esi+4]
-        call    Bin2HexE
-        add     esi, 2*4
-        cmp     esi, offset reg4dmptab
-        jnz     nextreg
-        mov     ecx, 4
-nextsreg:
-        mov     eax, [esi+0]
-        mov     ax, [eax]
-        mov     edi, [esi+4]
-        call    Bin2HexE
-        add     esi, 2*4
-        cmp     esi, offset endregdmptab
-        jnz     nextsreg
-;
-;Copy register details into the transfer buffer.
+;Convert register values into ASCII ready for printing;
+;use the transfer buffer.
 ;
         push    ds
         mov     ax,KernalDS
@@ -1178,18 +1100,18 @@ nextsreg:
         assume ds:DPMIGRP
         mov     ax,KernalZero
         mov     es,eax
-        mov     ax,di
+        push    edi
         shl     edi,4
-        mov     esi,offset ExceptionHeader
-        mov     ecx,offset ExceptionHeaderEnd - ExceptionHeader
-        rep     movsb
+        mov     esi, offset ExceptionHeader
+        mov     ebx, offset stdregdump2
+        call    myprintf2
+        pop     eax
+
         push    ds
         pop     es
 ;
 ;Print the message.
 ;
-; AX still holds TransferReal
-
         mov     edi,offset ExceptionIntBuffer
         mov     RealRegsStruc.Real_DS[edi],ax
         mov     RealRegsStruc.Real_DX[edi],0
@@ -1220,9 +1142,25 @@ else
         assume ds:GROUP16
         jmp [TerminationHandler]
 endif
-        assume ds:nothing
+
+        assume ds:DPMIGRP
+
+inter19_pl0:        
+        .386P
+        str     ax              ;get TR
+        mov     ExceptionTR,ax
+        mov     eax,cr0
+        mov     ExceptionCR0,eax
+        mov     eax,cr2
+        mov     ExceptionCR2,eax
+        mov     eax,cr3
+        mov     ExceptionCR3,eax
+        retd
+        .386
 
 ExcepNN386      endp
+
+        assume ds:nothing
 
 ;-------------------------------------------------------------------------------
 ;
@@ -1232,12 +1170,11 @@ ExcepNN386      endp
 ;
 ;EAX    - Number to convert.
 ;ECX    - Digits to do.
-;DS:EDI - Buffer to put string in.
+;ES:EDI - Buffer to put string in.
 ;
 Bin2HexE        proc    near
         add     edi,ecx
         push    edi
-        push    ecx
         mov     edx,eax
 rv62_0:
         dec     edi
@@ -1249,12 +1186,40 @@ rv62_0:
         jbe     @F
         add     al,7
 @@:
-        mov     [edi],al
+        mov     es:[edi],al
         loop    rv62_0
-        pop     ecx
         pop     edi
         ret
 Bin2HexE        endp
+
+;-------------------------------------------------------------------------------
+;formatted output.
+;DS:ESI - format string
+;DS:EBX - argument vector
+;ES:EDI - output buffer
+
+myprintf2 proc
+nextchar:
+        lodsb
+        cmp al,0
+        jz done
+        cmp al,'%'
+        jnz normchar
+        lodsb
+        sub al,'0'
+        movzx ecx,al
+        mov edx,[ebx]
+        add ebx,4
+        mov eax,[edx]
+dispnum:
+        call Bin2HexE
+        jmp nextchar
+normchar:
+        stosb
+        jmp nextchar
+done:
+        ret
+myprintf2 endp
 
 ;-------------------------------------------------------------------------------
 ;

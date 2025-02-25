@@ -9,8 +9,13 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 75
 <A NAME="Page_75"></A>
 <P ALIGN=CENTER><FONT SIZE=3><B>Chapter 10:&nbsp;&nbsp;&nbsp;INTERRUPT SERVICES</B></FONT></P>
 <FONT SIZE=3><B><P>EXTENDED OR ALTERED INTERRUPT SERVICES</P>
-</B><P>The size of register used by CauseWay's extended or modified interrupt services depends on the limit of the selector. Extended 32-bit registers are used for 32-bit sized selectors and 16-bit registers are used for selectors within 16-bits. To reflect this, the convention of an [E] in brackets is used before a listed register when it must be a 32-bit value with a 32-bit selector and a 16-bit value with a 16-bit selector.</P>
-<P>Required registers that are not specified in this list should be set up in the same way as required for normal DOS real mode operation. For INT APIs that are not listed and require segemnt pointers, either handle them using the CauseWay IntXX function or create your own interrupt translation code.</P></FONT>
+</B><P>The size of register used by CauseWay's extended or modified interrupt services depends on the limit of the selector.
+Extended 32-bit registers are used for 32-bit sized selectors and 16-bit registers are used for selectors within 16-bits.
+To reflect this, the convention of an [E] in brackets is used before a listed register when it must be a 32-bit value with
+a 32-bit selector and a 16-bit value with a 16-bit selector.</P>
+<P>Required registers that are not specified in this list should be set up in the same way as required for normal DOS real
+mode operation. For INT APIs that are not listed and require segment pointers, either handle them using the CauseWay IntXX
+function or create your own interrupt translation code.</P></FONT>
 <TABLE BORDER CELLSPACING=2 CELLPADDING=8 WIDTH=400>
 <TR><TD VALIGN="TOP">
 <P><FONT SIZE=3>INT 10h</FONT></TD>

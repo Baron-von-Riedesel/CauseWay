@@ -2,9 +2,15 @@
 // 
 // This module MUST be compiled with stack-checking turned off (/s option)
 //
+
 #include <stdio.h>
 #include <stdlib.h>
 
+// Note: struct InfoListStruct has been changed for CauseWay v5.0!
+//    - segment registers ds,es,fs,gs are 32-bit
+//    - cr1 has been removed
+
+#pragma pack( push, 1 )
 struct InfoListStruct {
 	unsigned int ebp;
 	unsigned int edi;
@@ -13,10 +19,10 @@ struct InfoListStruct {
 	unsigned int ecx;
 	unsigned int ebx;
 	unsigned int eax;
-	short unsigned int gs;
-	short unsigned int fs;
-	short unsigned int es;
-	short unsigned int ds;
+	unsigned int gs;
+	unsigned int fs;
+	unsigned int es;
+	unsigned int ds;
 	unsigned int eip;
 	short unsigned int cs;
 	short unsigned int reserved1;
@@ -26,7 +32,6 @@ struct InfoListStruct {
 	short unsigned int reserved2;
 	short unsigned int tr;
 	unsigned int cr0;
-	unsigned int cr1;
 	unsigned int cr2;
 	unsigned int cr3;
 	unsigned int csAddr;
@@ -38,6 +43,7 @@ struct InfoListStruct {
 	short unsigned int Exception;
 	unsigned int Code;
 };
+#pragma pack( pop )
 
 struct InfoListStruct InfoList;
 
