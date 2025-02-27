@@ -470,8 +470,8 @@ dpmiAPI_Lock    proc    near
         mov     bx,cx
         shl     esi,16
         mov     si,di
-        mov     edx,ebx
-        mov     ecx,esi
+        mov     edx,ebx     ;key value
+        mov     ecx,esi     ;second value
         mov     ax,Res_LOCK
         call    RegisterResource
         popad
@@ -500,8 +500,8 @@ dpmiAPI_UnLock  proc    near
         mov     bx,cx
         shl     esi,16
         mov     si,di
-        mov     edx,ebx
-        mov     ecx,esi
+        mov     edx,ebx    ;key value
+        mov     ecx,esi    ;second value
         mov     ax,Res_LOCK
         call    ReleaseResource
         popad
@@ -663,26 +663,21 @@ cwAPI_CWErrName PROC    NEAR
         test    BYTE PTR cs:apiSystemFlags,1
         jz      cen2
         movzx   edx,dx                  ; 16-bit, zero high word of edx
-
 cen2:
         mov     ax,[ebp].IFRM._CX
         mov     es,eax
         mov     ebx,OFFSET NewCWErrName ; ds:ebx -> destination, es:edx -> source
-        mov     cx,80                   ; don't allow more than 80 chars in file name
+        mov     cl,80                   ; don't allow more than 80 chars in file name
+        movzx   ecx,cl
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
 cenloop:
         mov     al,es:[edx]
-        test    al,al
-        je      centerm                 ; at null terminator
-        mov     ds:[ebx],al
+        mov     [ebx],al
         inc     edx
         inc     ebx
-        dec     cx
-        jne     cenloop
-
-centerm:
-        mov     BYTE PTR ds:[ebx],0
+        test    al,al                   ; stop at null terminator
+        loopnz  cenloop
         ret
 cwAPI_CWErrName ENDP
 
@@ -709,21 +704,18 @@ cwAPI_UserDump  PROC    NEAR
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
         mov     eax,[ebp].IFRM._ES
+        mov     edi,[ebp].IFRM._EDI
+        mov     ecx,[ebp].IFRM._ECX
         verr    ax
         jnz     udfail                  ; can't read to user selector
         mov     DebugUserSel,ax
         mov     es,eax
-
-        mov     edi,[ebp].IFRM._EDI
-        xor     eax,eax
-        mov     ax,es
         lsl     eax,eax
         cmp     eax,10000h
-        jnc     api9_0
+        jnc     @F
         movzx   edi,di
-api9_0:
+@@:
         mov     DebugUserOff,edi
-        mov     cx,[ebp].IFRM._CX
         mov     DebugUserCount,cx
 
 ; check for out of bounds
@@ -731,9 +723,6 @@ api9_0:
         add     edx,edi
         jc      udfail
         dec     edx                     ; make relative 0
-        xor     eax,eax
-        mov     ax,es
-        lsl     eax,eax
         cmp     eax,edx
         jb      udfail
 
@@ -741,7 +730,6 @@ api9_0:
         cmp     al,'A'
         je      aflag
         xor     al,al
-
 aflag:
         mov     DebugAsciiFlag,al
         test    al,al
@@ -751,7 +739,7 @@ aflag:
         je      udret
 
 ; fill the allocation with value in dx to count specified in cx
-        mov     ax,es
+        mov     eax,es
         verw    ax
         jnz     udfail                  ; can't write to user selector
         mov     ax,[ebp].IFRM._DX
@@ -762,18 +750,17 @@ aflag:
         shr     ecx,1
         rep     stosd
         pop     ecx
-        and     cx,3
+        and     ecx,3
         je      udsuccess
         mov     es:[edi],al             ; finish off remainder bytes
-        dec     cx
+        dec     ecx
         je      udsuccess
         inc     edi
         mov     es:[edi],ah
-        dec     cx
+        dec     ecx
         je      udsuccess
         inc     edi
         mov     es:[edi],al
-
 udsuccess:
         clc                             ; flag success
 udret:
@@ -816,10 +803,13 @@ cwAPI_DbgNtfModUnload   endp
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;Get CauseWay identifier, return PageDirLinear and Page1stLinear info
+;AX = 0xfff9
 ;
 ;Returns:
 ;
-;EDX    - Linear address of patch table.
+;ESI    - PageDirLinear  (valid in Raw/VCPI mode only!!!)
+;EDI    - Page1stLinear  (valid in Raw/VCPI mode only!!!)
+;ECX:EDX = "CAUSEWAY"
 ;
 cwAPI_ID        proc    near
         push    ds
@@ -841,6 +831,7 @@ cwAPI_ID        endp
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;Get patch table address. This table isn't used!
+;AX = 0xfffa
 ;
 ;Returns:
 ;
@@ -850,7 +841,6 @@ cwAPI_GetPatch  proc    near
         mov     ebx,cs:apiDSeg32
         Sys     GetSelDet32
         add     edx,offset PatchTable
-;        assume ds:GROUP32
         mov     [ebp].IFRM._EDX,edx
         ret
 cwAPI_GetPatch  endp
@@ -859,6 +849,7 @@ cwAPI_GetPatch  endp
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
 ;Get address of transfer buffer.
+;Ax=0ff25
 ;
 ;Returns:
 ;
@@ -2013,7 +2004,7 @@ cwAPI_Near2Linear endp
 ;Lock a region of memory.
 ;
 ;On Entry:
-;
+;AX = 0xff1b
 ;BX:CX  - Starting linear address of memory to lock.
 ;SI:DI  - Size of region to lock in bytes.
 ;
@@ -2030,10 +2021,10 @@ cwAPI_LockMem   proc    near
         cwAPI_CallOld
         jc      api45_9
 ;
-        mov     dx,bx
+        mov     dx,bx      ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si      ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2051,7 +2042,7 @@ cwAPI_LockMem   endp
 ;Lock a region of memory.
 ;
 ;On Entry:
-;
+;AX = 0xff1c
 ;ESI    - Starting linear address of memory to lock.
 ;ECX    - Size of region to lock in bytes.
 ;
@@ -2070,10 +2061,10 @@ cwAPI_LockMem32 proc near
         mov     ax,0600h
         cwAPI_CallOld
         jc      api46_9
-        mov     dx,bx
+        mov     dx,bx        ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si        ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2090,7 +2081,7 @@ cwAPI_LockMem32 endp
 ;Un-lock a region of memory.
 ;
 ;On Entry:
-;
+;AX = 0xff1d
 ;BX:CX  - Starting linear address of memory to unlock
 ;SI:DI  - Size of region to unlock in bytes
 ;
@@ -2102,10 +2093,10 @@ cwAPI_UnLockMem proc near
         mov     ax,0601h
         cwAPI_CallOld
         jc      api47_9
-        mov     dx,bx
+        mov     dx,bx       ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si       ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2122,7 +2113,7 @@ cwAPI_UnLockMem endp
 ;Un-lock a region of memory.
 ;
 ;On Entry:
-;
+;AX = 0xff1e
 ;ESI    - Starting linear address of memory to unlock
 ;ECX    - Size of region to unlock in bytes
 ;
@@ -2143,10 +2134,10 @@ cwAPI_UnLockMem32 proc near
         mov     ax,0601h
         cwAPI_CallOld
         jc      api48_9
-        mov     dx,bx
+        mov     dx,bx      ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si      ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2163,7 +2154,7 @@ cwAPI_UnLockMem32 endp
 ;Lock a region of memory using application relative address.
 ;
 ;On Entry:
-;
+;AX = 0xff1f
 ;ESI    - Starting linear address of memory to lock.
 ;EBX    - Size of region to lock in bytes.
 ;
@@ -2186,10 +2177,10 @@ cwAPI_LockMemNear proc near
         mov     ax,0600h
         cwAPI_CallOld
         jc      api49_9
-        mov     dx,bx
+        mov     dx,bx      ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si      ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2206,7 +2197,7 @@ cwAPI_LockMemNear endp
 ;Un-lock a region of memory using application relative address.
 ;
 ;On Entry:
-;
+;AX = 0xff20
 ;ESI    - Starting linear address of memory to unlock
 ;EBX    - Size of region to unlock in bytes
 ;
@@ -2225,10 +2216,10 @@ cwAPI_UnLockMemNear proc near
         mov     ax,0601h
         cwAPI_CallOld
         jc      api50_9
-        mov     dx,bx
+        mov     dx,bx      ;edx=key value
         shl     edx,16
         mov     dx,cx
-        mov     cx,si
+        mov     cx,si      ;ecx=second value
         shl     ecx,16
         mov     cx,di
         mov     ax,Res_LOCK
@@ -2245,7 +2236,7 @@ cwAPI_UnLockMemNear endp
 ;Allocate a region of DOS (conventional) memory.
 ;
 ;On Entry:
-;
+;AX = 0xff21
 ;BX     - Number of paragraphs (16 byte blocks) required.
 ;
 ;On Exit:
@@ -2290,7 +2281,7 @@ cwAPI_GetMemDOS endp
 ;GetMemDOS.
 ;
 ;On Entry:
-;
+;AX = 0xff22
 ;BX     - New block size in paragraphs
 ;DX     - Selector of block to modify
 ;
@@ -2336,7 +2327,7 @@ cwAPI_ResizeMemDOS endp
 ;GetMemDOS.
 ;
 ;On Entry:
-;
+;AX = 0xff23
 ;DX     - Selector of block to free.
 ;
 ;On Exit:
@@ -2384,7 +2375,7 @@ cwAPI_RelMemDOS endp
 ;Run another CauseWay program directly.
 ;
 ;On Entry:
-;
+;AX = 0xff24
 ;DS:EDX - File name.
 ;ES:ESI - Command line. First byte is length, then real data.
 ;CX     - Environment selector, 0 to use existing copy.
@@ -2423,7 +2414,7 @@ cwAPI_Exec      endp
 ;Validate and get expanded length of a CWC'd file.
 ;
 ;On Entry:
-;
+;AX = 0xff2b
 ;BX     - File handle.
 ;
 ;On Exit:
@@ -2447,7 +2438,7 @@ cwAPI_cwcInfo   endp
 ;Load/Expand a CWC'd data file into memory.
 ;
 ;On Entry:
-;
+;AX = 0xfffb
 ;BX     - Source file handle.
 ;ES:EDI - Destination memory.
 ;
@@ -2472,7 +2463,8 @@ cwAPI_cwcLoad endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-;--- in: ESI=address to check
+;--- in: AX = 0xfffc
+;---     ESI=address to check
 ;--- exit: C if address invalid (page fault)
 
 cwAPI_LinearCheck proc near
@@ -2504,6 +2496,7 @@ cwAPI_LinearCheck endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+;--- in: AX = 0xfffd
 ;--- ds:edx: filename
 ;--- es:esi: cmdline
 ;--- cx: environment
@@ -2556,7 +2549,7 @@ cwAPI_ExecDebug endp
 ;actually execute it.
 ;
 ;On Entry:
-;
+;AX = 0xff2a
 ;DS:EDX - File name.
 ;
 ;On Exit:
@@ -5513,7 +5506,7 @@ api82_gp2:
         add     ecx,256                 ;allow for exec name length.
         Sys     GetMem32
         jc      api82_error
-        mov     ax,es
+        mov     eax,es
         mov     es,apiDSeg16
         assume es:GROUP16
         mov     es,es:PSPSegment
@@ -7056,8 +7049,8 @@ api92_NoRelHandle:
         jnz     api92_RelHandles
   endif
 
-        mov     ax,fs
-        mov     bx,es
+        mov     eax,fs
+        mov     ebx,es
         cmp     ax,bx
         jz      api92_donehandles
         Sys     RelMem

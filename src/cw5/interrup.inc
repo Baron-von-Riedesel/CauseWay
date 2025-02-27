@@ -3,8 +3,8 @@
 ;Protected mode interrupt/exception handlers.
 ;for RAW/VCPI
 ;
-; 1. all 256 IDT vectors are setup to call proc IntHandler (in cw32.asm)
-; 2. IntHandler jumps to either IntStack or KernalStack
+; 1. all 256 IDT vectors are setup to call proc IntHandler
+; 2. IntHandler jumps to either IntStack or KernalStack(Exc,Irq,int 1ch/23h/24h)
 ; 3a. IntStack jumps to InterruptTable[int#]
 ; 3b. KernalStack jumps to IntDispatch, which then jumps to
 ;     either InterruptTable[int#] or ExceptionTable[int#]
@@ -50,53 +50,11 @@ ExceptionCR0    dd ?
 ExceptionCR2    dd ?
 ExceptionCR3    dd ?
 ;
-ExceptionHeader label byte
-    db 13,10
-    db "CauseWay Error 09 : Unrecoverable internal exception, program terminated.",13,10
-    db 13,10
-    db 'Exception: %2, Error code: %4',13,10
-    db 13,10
-    db 'EAX=%8 EBX=%8 ECX=%8 EDX=%8 ESI=%8',13,10
-    db 'EDI=%8 EBP=%8 ESP=%8 EIP=%8 EFL=%8',13,10
-    db 13,10
-    db 'CS=%4 DS=%4 ES=%4 FS=%4 GS=%4 SS=%4',13,10
-    db 13,10
-    db 'CR0=%8 CR2=%8 CR3=%8 TR=%4',13,10
-    db 13,10
-    db 'SystemFlags=%8',13,10
-    db 13,10,'$',0
-;
 	align 4
 
-ExceptionIntBuffer RealRegsStruc <>
+ExceptionIntBuffer RealRegsStruc <>  ;used to display unhandled exception info
 ;
 	align 4
-
-stdregdump2 label dword
-    dd offset ExceptionIndex
-    dd offset ExceptionCode
-    dd offset ExceptionRegs._eax
-    dd offset ExceptionRegs._ebx
-    dd offset ExceptionRegs._ecx
-    dd offset ExceptionRegs._edx
-    dd offset ExceptionRegs._esi
-    dd offset ExceptionRegs._edi
-    dd offset ExceptionRegs._ebp
-    dd offset ExceptionESP
-    dd offset ExceptionEIP
-    dd offset ExceptionEFL
-    dd offset ExceptionCS
-    dd offset ExceptionRegs._ds
-    dd offset ExceptionRegs._es
-    dd offset ExceptionRegs._fs
-    dd offset ExceptionRegs._gs
-    dd offset ExceptionSS
-    dd offset ExceptionCR0
-    dd offset ExceptionCR2
-    dd offset ExceptionCR3
-    dd offset ExceptionTR
-    dd offset DpmiEmuSystemFlags
-
 ;-------------------------------------------------------------------------------
 
 InterruptTable  label fword
@@ -136,9 +94,53 @@ IntNum  = 0
 IntNum  = IntNum+1
         endm
 
+inter17_Call2   df 0
+
 _cwDPMIEMU$1 ends
 
+ExceptionHeader label byte
+    db 13,10
+    db "CauseWay Error 09 : Unrecoverable internal exception, program terminated.",13,10
+    db 13,10
+    db 'Exception: %2, Error code: %4',13,10
+    db 13,10
+    db 'EAX=%8 EBX=%8 ECX=%8 EDX=%8 ESI=%8',13,10
+    db 'EDI=%8 EBP=%8 ESP=%8 EIP=%8 EFL=%8',13,10
+    db 13,10
+    db 'CS=%4 DS=%4 ES=%4 FS=%4 GS=%4 SS=%4',13,10
+    db 13,10
+    db 'CR0=%8 CR2=%8 CR3=%8 TR=%4',13,10
+    db 13,10
+    db 'SystemFlags=%8',13,10
+    db 13,10,'$',0
+;
 	align 4
+
+stdregdump2 label dword
+    dd offset ExceptionIndex
+    dd offset ExceptionCode
+    dd offset ExceptionRegs._eax
+    dd offset ExceptionRegs._ebx
+    dd offset ExceptionRegs._ecx
+    dd offset ExceptionRegs._edx
+    dd offset ExceptionRegs._esi
+    dd offset ExceptionRegs._edi
+    dd offset ExceptionRegs._ebp
+    dd offset ExceptionESP
+    dd offset ExceptionEIP
+    dd offset ExceptionEFL
+    dd offset ExceptionCS
+    dd offset ExceptionRegs._ds
+    dd offset ExceptionRegs._es
+    dd offset ExceptionRegs._fs
+    dd offset ExceptionRegs._gs
+    dd offset ExceptionSS
+    dd offset ExceptionCR0
+    dd offset ExceptionCR2
+    dd offset ExceptionCR3
+    dd offset ExceptionTR
+    dd offset DpmiEmuSystemFlags
+
 ;-------------------------------------------------------------------------------
 ;
 ;initial entry points for the interupt handlers.
@@ -705,13 +707,13 @@ IntDispatch     proc    near
         db      66h  ; make the following push a 16-bit push
         push    cs
         push    lowword offset inter17_Resume
-        jmp     FWORD PTR cs:[inter17_Call2]
+        jmp     cs:[inter17_Call2]
         ;
 inter17_Use32Bit14:
         push    cs:[ExceptionFlags]             ;EFlags before entry.
         push    cs
         push    offset inter17_Resume
-        jmp     FWORD PTR cs:[inter17_Call2]
+        jmp     cs:[inter17_Call2]
 
 IDSTKFRM struc
 _ebx	dd ?
@@ -789,13 +791,13 @@ inter17_Excep:
         db      66h
         push    cs
         push    lowword offset inter17_ResumeExc16
-        jmp     FWORD PTR cs:[inter17_Call2]
+        jmp     cs:[inter17_Call2]
         ;
 inter17_eUse32Bit14:
         push    cs:[ExceptionCode]              ;EFlags before entry.
         push    cs
         push    offset inter17_ResumeExc32
-        jmp     FWORD PTR cs:[inter17_Call2]
+        jmp     cs:[inter17_Call2]
         ;
 
 RESTKFRM struc
@@ -850,8 +852,6 @@ inter17_ResumeExc32:
         lds     ebx,fword ptr [ebx].RESTKFRM._ebx
         iretd
         ;
-	align 4
-inter17_Call2   df 0
 IntDispatch     endp
 
 ;-------------------------------------------------------------------------------
@@ -924,9 +924,9 @@ endif
         add     ebx,offset CallBackTable
         test    CallBackStruc.CallBackFlags[ebx],1
         jz      inter18_c2
-        test    CallBackStruc.CallBackFlags[ebx],128    ;already busy?
+        test    CallBackStruc.CallBackFlags[ebx],80h    ;already busy?
         jnz     inter18_c2
-        or      CallBackStruc.CallBackFlags[ebx],128    ;mark it as busy.
+        or      CallBackStruc.CallBackFlags[ebx],80h    ;mark it as busy.
         mov     [ebp].INTNN386FR.xxx,ebx
 inter18_c2:
         ;
@@ -944,7 +944,8 @@ inter18_c2:
         cmp     [ebp].INTNN386FR.xxx,0
         jz      inter18_NoCall
         mov     esi,[ebp].INTNN386FR.xxx
-        and     CallBackStruc.CallBackFlags[esi],255-128
+;        and     CallBackStruc.CallBackFlags[esi],255-128
+        and     CallBackStruc.CallBackFlags[esi],not 80h
 inter18_NoCall:
         ;
         ;Update the flags.

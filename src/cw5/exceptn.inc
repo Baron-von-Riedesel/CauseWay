@@ -360,8 +360,8 @@ exc2_2:
         int     31h
 @@:
         add     edi,6
-        inc     bx
-        cmp     bx,NUMEXC
+        inc     ebx
+        cmp     ebx,NUMEXC
         jb      exc2_2
         ;
 if TRAPINT00

@@ -7,7 +7,7 @@ _Environment dw ?
 _SystemFlags dd ?
 _AutoOffset  dd ?
 _Command     df ?
-_Handle      dw ?            ;file handle.
+_Handle      dd ?            ;file handle.
 _Flags       dd ?
 _EntryEIP    dd ?
 _EntryESP    dd ?
@@ -94,7 +94,7 @@ local   load0:LOAD3P
         ;
         xor     eax, eax
         mov     [load0._PSP],eax
-        mov     [load0._Handle],ax
+        mov     [load0._Handle],eax
         mov     [load0._SegMem],eax
         mov     [load0._RelocMem],eax
         mov     [load0._AutoOffset],eax
@@ -117,12 +117,12 @@ local   load0:LOAD3P
         int     21h
         pop     ds
         jc      api89_no_file_error
-        mov     [load0._Handle],ax                  ;store the handle.
+        mov     [load0._Handle],eax
 ;
 ;Check for just a 3P file with no extender.
 ;
 api89_Look3P:
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edx,offset apiMZHeader              ;somewhere to put the info.
         mov     ecx,size MZHeader
         mov     ah,3fh
@@ -175,9 +175,9 @@ api89_CheckNew:
 ;Get file offset and store it.
 ;
 api89_emc0:
-        mov     bx,[load0._Handle]
-        xor     cx,cx
-        xor     dx,dx
+        mov     ebx,[load0._Handle]
+        xor     ecx,ecx
+        xor     edx,edx
         mov     ax,4201h
         int     21h
         shl     edx,16
@@ -186,10 +186,10 @@ api89_emc0:
 ;
 ;Close the file again.
 ;
-        mov     bx,[load0._Handle]
+        xor     ebx,ebx
+        xchg    ebx,[load0._Handle]
         mov     ah,3eh
         int     21h
-        mov     [load0._Handle],0
 ;
 ;Create a new PSP.
 ;
@@ -211,7 +211,7 @@ api89_emc0:
         int     21h
         pop     ds
         jc      api89_file_error
-        mov     [load0._Handle],ax                  ;store the handle.
+        mov     [load0._Handle],eax
 ;
 ;Move past 3P header again.
 ;
@@ -219,8 +219,8 @@ api89_emc0:
         mov     cx,dx
         shr     edx,16
         xchg    dx,cx
+        mov     ebx,[load0._Handle]
         mov     ax,4200h
-        mov     bx,[load0._Handle]
         int     21h
 ;
 ;Grab flags.
@@ -331,7 +331,7 @@ api89_NoAutoSeg:
         jz      api89_ncp0
         push    es
         mov     es,realseg
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edi,[load0._SegMem]
         Sys     cwcLoad                             ;bx=file handle, es:edi=memory to load
         pop     es
@@ -343,7 +343,7 @@ api89_ncp0:
         mov     esi,offset apiNewHeader
         movzx   ecx,NewHeaderStruc.NewSegments[esi] ;get number of segments.
         shl     ecx,3                               ;8 bytes per entry.
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edx,[load0._SegMem]
         push    ecx
         push    ds
@@ -396,7 +396,7 @@ api89_NoAutoMake:
         jz      api89_ncp2
         push    es
         mov     es,realseg
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edi,[load0._RelocMem]
         Sys     cwcLoad
         pop     es
@@ -408,7 +408,7 @@ api89_ncp2:
         mov     esi,offset apiNewHeader
         mov     ecx,NewHeaderStruc.NewRelocs[esi]   ;get number of relocation entries.
         shl     ecx,2                               ;4 bytes per entry.
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edx,[load0._RelocMem]
         push    ecx
         push    ds
@@ -432,7 +432,7 @@ api89_NoRelocsMem:
         jz      api89_ncp3
         push    es
         mov     es,realseg
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edi,[load0._ExpMem]
         Sys     cwcLoad
         pop     es
@@ -441,7 +441,7 @@ api89_NoRelocsMem:
         jmp     api89_NoExpMem
         ;
 api89_ncp3:
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edx,[load0._ExpMem]
         push    ecx
         push    ds
@@ -471,7 +471,7 @@ api89_NoExpMem:
         jz      api89_ncp20
         push    es
         mov     es,realseg
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edi,[load0._ImpMem]
         Sys     cwcLoad
         pop     es
@@ -482,7 +482,7 @@ api89_NoExpMem:
 api89_ncp20:
         mov     esi,offset apiNewHeader
         mov     ecx,NewHeaderStruc.NewImports[esi]  ;get size of IMPORT table.
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         mov     edx,[load0._ImpMem]
         push    ecx
         push    ds
@@ -500,7 +500,7 @@ api89_NoImpMem1:
         mov     esi,offset apiNewHeader
         test    NewHeaderStruc.NewFlags[esi],1 shl 31 ;compressed?
         jz      api89_NotComp
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         push    es
         mov     es,realseg
         mov     edi,[load0._ProgBase]
@@ -517,7 +517,7 @@ api89_NotComp:
 api89_LoadAll:
         mov     edx,[load0._ProgBase]
         mov     ecx,NewHeaderStruc.NewLength[esi]   ;get image length.
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         push    ecx
         push    ds
         mov     ds,realseg
@@ -582,7 +582,7 @@ api89_sl1:
 api89_sl3:
 
         mov     edx,[load0._SL_LoadPnt]
-        mov     bx,[load0._Handle]
+        mov     ebx,[load0._Handle]
         push    ecx
         push    ds
         push    es
@@ -673,8 +673,8 @@ api89_ImageLoaded:
         pop     fs
         pop     es
         ;
-        mov     bx,[load0._Handle]                  ;grab handle again,
-        mov     [load0._Handle],0
+        xor     ebx,ebx
+        xchg    ebx,[load0._Handle]                 ;grab handle again,
         mov     ah,3eh                              ;and close it.
         int     21h
 ;
@@ -756,7 +756,7 @@ api89_SegLoop:
         test    eax,1 shl 20                        ;G bit set?
         jz      api89_NoGBit
         shl     ecx,12
-        or      ecx,4095
+        or      cx,0fffh
 api89_NoGBit:
         or      ecx,ecx
         jz      api89_NoDecLim
@@ -1166,9 +1166,9 @@ api89_error:
 ;Make sure file is closed.
 ;
         pushfd
-        xor     bx,bx
-        xchg    bx,[load0._Handle]
-        or      bx,bx
+        xor     ebx,ebx
+        xchg    ebx,[load0._Handle]
+        or      ebx,ebx
         jz      api89_NoClose
         mov     ah,3eh
         int     21h

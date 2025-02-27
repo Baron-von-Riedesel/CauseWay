@@ -2290,9 +2290,11 @@ cw5_InProtected:
         mov     ax,0600h
         int     31h                     ;Lock memory.
         jc      InitError
-        shl     ebx,16
-        mov     bx,cx
-        mov     dpmiSelBase,ebx
+;        shl     ebx,16
+;        mov     bx,cx
+;        mov     dpmiSelBase,ebx
+        mov      w dpmiSelBase+0, cx
+        mov      w dpmiSelBase+2, bx
 ;
 ;Allocate code & data selector.
 ;

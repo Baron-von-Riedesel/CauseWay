@@ -15,13 +15,14 @@ LE_OBJ          ends
 
 LOADLE struct 4
 _Name        df ?
-_Handle      dw ?
+_EntryES     dw ?
 _Command     df ?
 _Environment dw ?
+_Handle      dd ?
 _Flags       dd ?
 _LEOffset    dd ?
 _ProgMem     dd ?,?
-_BaseSeg     dw ?
+_BaseSeg     dw ?     ;_BaseSeg & _NumSegs must be consecutive
 _NumSegs     dw ?
 _ObjMem      dd ?
 _FixupMem    dd ?
@@ -33,7 +34,6 @@ _EntryCS     dw ?
 _PSP         dw ?
 _EntryESP    dd ?
 _EntrySS     dw ?
-_EntryES     dw ?
 _EntryDS     dw ?
 _ModLink     dd ?,?
 LOADLE ends
@@ -108,7 +108,7 @@ local   _ebp:dword
         mov     [load1._Environment],cx
         ;
         xor     eax,eax
-        mov     [load1._Handle],ax
+        mov     [load1._Handle],eax
         mov     [load1._PSP],ax
         mov     [load1._ProgMem+0],eax
         mov     d[load1._BaseSeg],eax
@@ -128,11 +128,11 @@ local   _ebp:dword
         int     21h
         pop     ds
         jc      load1_no_file_error
-        mov     [load1._Handle],ax       ;store the handle.
+        mov     [load1._Handle],eax
 ;
 ;Check it's an MZ file.
 ;
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     edx,offset LEHeader     ;somewhere to put the info.
         mov     ecx,2
         mov     ah,3fh
@@ -146,7 +146,7 @@ local   _ebp:dword
 ;Look for an LE offset.
 ;
 GetLEOff:
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     dx,3ch
         xor     cx,cx
         mov     ax,4200h
@@ -187,10 +187,10 @@ SaveLEOff:
 ;Close the file again.
 ;
 medclose:
-        mov     bx,[load1._Handle]
+        xor     ebx,ebx
+        xchg    ebx,[load1._Handle]
         mov     ah,3eh
         int     21h
-        mov     [load1._Handle],0
 ;
 ;Create a new PSP.
 ;
@@ -212,7 +212,7 @@ medclose:
         int     21h
         pop     ds
         jc      load1_file_error
-        mov     [load1._Handle],ax       ;store the handle.
+        mov     [load1._Handle],eax
 ;
 ;Process any EXPORT entries that need pulling in.
 ;
@@ -234,7 +234,7 @@ ENDIF
         add     ecx,[load1._LEOffset]
         mov     dx,cx
         shr     ecx,16
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     ax,4200h
         int     21h
         ;
@@ -249,7 +249,7 @@ load1_ge0:
         mov     ah,3fh
         int     21h
         jc      load1_file_error
-        cmp     ax,1
+        cmp     ax,cx
         jnz     load1_file_error
         xor     eax,eax
         mov     al,[edx]
@@ -362,7 +362,7 @@ load1_NoExports:
 ;Read object definitions.
 ;
         push    ecx
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     ecx,[LEHeader.LE_ObjOffset] ;Get object table offset.
         add     ecx,[load1._LEOffset]
         mov     dx,cx
@@ -466,7 +466,7 @@ load1_objup1:
         ;
         mov     ecx,[LEHeader.LE_EntryTable]
         add     ecx,[load1._LEOffset]
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     dx,cx
         shr     ecx,16
         mov     ax,4200h
@@ -702,7 +702,7 @@ load1_load1:
         shr     eax,16
         mov     cx,ax
         mov     ax,4200h
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         int     21h                                 ;set the file pointer.
         ;
         ;Work out how much data we're going to load.
@@ -732,7 +732,7 @@ load1_load3:
         ;
         ;Load the data.
         ;
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         push    ds
         push    es
         pop     ds
@@ -787,7 +787,7 @@ load1_loadz:
         add     ecx,[load1._LEOffset]
         mov     dx,cx
         shr     ecx,16
-        mov     bx,[load1._Handle]
+        mov     ebx,[load1._Handle]
         mov     ax,4200h
         int     21h                     ;move to fixup data.
         pop     ecx
@@ -1603,7 +1603,7 @@ load1_SegLoop:
         test    eax,1 shl 20            ;G bit set?
         jz      load1_NoGBit
         shl     ecx,12
-        or      ecx,4095
+        or      cx,0fffh
 load1_NoGBit:
         or      ecx,ecx
         jz      load1_NoDecLim
@@ -1672,8 +1672,8 @@ load1_SegDone:
 ;
 ;Close the input file.
 ;
-        xor     bx,bx
-        xchg    bx,[load1._Handle]
+        xor     ebx,ebx
+        xchg    ebx,[load1._Handle]
         mov     ah,3eh
         int     21h
 ;
@@ -1734,9 +1734,9 @@ load1_error:
 ;Make sure file is closed.
 ;
         pushfd
-        xor     bx,bx
-        xchg    bx,[load1._Handle]
-        or      bx,bx
+        xor     ebx,ebx
+        xchg    ebx,[load1._Handle]
+        or      ebx,ebx
         jz      load1_NoClose
         mov     ah,3eh
         int     21h

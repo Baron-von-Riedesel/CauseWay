@@ -288,7 +288,7 @@ rv29_IsInt:
         shl     bx,1            ;*16
         add     bx,ax           ;*24 (=size CallBackStruc)
         add     bx,offset CallBackTable
-        test    CallBackStruc.CallBackFlags[bx],128     ;this entry in use?
+        test    CallBackStruc.CallBackFlags[bx],80h     ;this entry in use?
         jz      rv29_c3
         mov     ecx,CallBackStruc.CallBackReal[bx]
         jmp     rv29_c2
@@ -672,7 +672,7 @@ RawICallBack    proc    near
         cmp     cs:InWindows,0
         jnz     rv31_ForceOld
         ;
-        test    cs:[bx].CallBackStruc.CallBackFlags,128  ;call back busy?
+        test    cs:[bx].CallBackStruc.CallBackFlags,80h  ;call back busy?
         jz      rv31_NotBusy
         ;
         ;This is a busy int call back so pass control to old real mode vector.
@@ -689,7 +689,7 @@ rv31_ForceOld:
         ;
         ;
 rv31_NotBusy:
-        or      cs:[bx].CallBackStruc.CallBackFlags,128  ;mark it as busy.
+        or      cs:[bx].CallBackStruc.CallBackFlags,80h  ;mark it as busy.
         mov     bx,sp
         mov     ax,ss:[bx+(2+2+2)+(2+2)]
         and     ah,00001100b               ; clear TF,IF,IOPL,NT
@@ -850,7 +850,8 @@ rv31_Use16Bit13:
         or      es:[esi+(2+2)],ax
         ;
         mov     bx,[rv31_CallTab]      ;restore call back structure.
-        and     [bx].CallBackStruc.CallBackFlags,255-128 ;clear busy flag.
+;        and     [bx].CallBackStruc.CallBackFlags,255-128 ;clear busy flag.
+        and     [bx].CallBackStruc.CallBackFlags,not 80h ;clear busy flag.
         ;
         ;Switch back to real/v86 mode.
         ;
