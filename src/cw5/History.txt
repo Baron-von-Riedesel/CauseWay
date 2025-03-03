@@ -8,6 +8,7 @@
    - added ALIGNs in data segments to avoid unaligned accesses.
    - generally avoid (register) WORD pushes in 32-bit segments so stack
      remains 32-bit aligned.
+   - data in code segments moved to data segments.
    - fixed: emulation of DPMI functions 090x.
    - int 41h "protected-mode debugger API": ensure that interrupt isn't
      reflected to real-mode.
@@ -38,3 +39,4 @@
    - fixed: no swapfile-related DOS access if indos flag is set.
    - default value for LOWMEM is now 256kB; previously the value entered was
      added to a minimum of 32 kB.
+   - removed restriction that cwstub.exe can only launch a 32-bit application.

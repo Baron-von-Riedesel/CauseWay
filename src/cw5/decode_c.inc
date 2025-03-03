@@ -1,6 +1,9 @@
 
+;--- decompressor
+;--- uses self-modifying code! see dec2_shifter & dec2_masker
+
 decode_c_struc struc
-DecC_ID db "CWC"
+DecC_ID         db "CWC"
 DecC_Bits       db 0
 DecC_Len        dd ?
 DecC_Size       dd ?
@@ -75,7 +78,7 @@ GetCWCInfo      proc    near
         xor     cx,cx
         xor     dx,dx
         int     21h
-        mov     w[decode_c_count],ax
+        mov     w[decode_c_count+0],ax
         mov     w[decode_c_count+2],dx
         ;
         ;Read the header.
@@ -98,8 +101,8 @@ GetCWCInfo      proc    near
         and     eax,0FFFFFFh
         cmp     eax,"CWC"
         jnz     dec1_error
-        mov     ecx,d[decode_c_head.DecC_Len]
-        mov     eax,d[decode_c_head.DecC_Size]
+        mov     ecx,[decode_c_head.DecC_Len]
+        mov     eax,[decode_c_head.DecC_Size]
         add     eax,size decode_c_struc
         clc
         jmp     dec1_exit
@@ -111,9 +114,9 @@ dec1_exit:
         pushfd
         push    eax
         push    ecx
-        mov     ax,4200h
-        mov     dx,w[decode_c_count]
+        mov     dx,w[decode_c_count+0]
         mov     cx,w[decode_c_count+2]
+        mov     ax,4200h
         int     21h
         pop     ecx
         pop     eax
@@ -163,8 +166,8 @@ DecodeCWC       proc    near
         assume ds:GROUP32
         mov     CWCStack,esp            ;Set for error exit.
         mov     decode_c_handle,bx      ;Store the handle.
-        mov     d[OutAddr],edi  ;Store destination.
-        mov     w[OutAddr+4],es ;/
+        mov     d[OutAddr+0],edi        ;Store destination.
+        mov     w[OutAddr+4],es
 ;
 ;Setup disk buffer variables.
 ;
@@ -200,13 +203,13 @@ DecodeCWC       proc    near
         and     eax,0FFFFFFh
         cmp     eax,"CWC"
         jnz     dec2_cwc_error
-        movzx   ecx,b[decode_c_head.DecC_Bits]
+        movzx   ecx,[decode_c_head.DecC_Bits]
         mov     b[dec2_Shifter+2],cl
         mov     eax,1
         shl     eax,cl
         dec     eax
         mov     d[dec2_Masker+2],eax
-        mov     ebx,d[decode_c_head.DecC_Len]
+        mov     ebx,[decode_c_head.DecC_Len]
 ;
 ;Get on with decodeing the data.
 ;
@@ -222,7 +225,8 @@ DecodeCWC       proc    near
 ;The main decompresion loop.
 ;
         align 4
-dec2_0: _DCD_ReadBit
+dec2_0:
+        _DCD_ReadBit
         jnc     dec2_1
         ;
         ;Read a raw byte.
@@ -236,7 +240,8 @@ dec2_0: _DCD_ReadBit
         jmp     dec2_0
         ;
         align 4
-dec2_1: _DCD_ReadBit
+dec2_1:
+        _DCD_ReadBit
         jnc     dec2_2
         ;
         ;Do a rep with 8 bit position, 2 bit length.
@@ -279,7 +284,8 @@ dec2_1_0:
         jmp     dec2_0
         ;
         align 4
-dec2_2: _DCD_ReadBit
+dec2_2:
+        _DCD_ReadBit
         jnc     dec2_3
         ;
         ;Do a rep with 12 bit position, 4 bit length.
@@ -322,14 +328,15 @@ dec2_2_0:
         ;Do a rep with 12-bit position, 12-bit length.
         ;
         align 4
-dec2_3: mov     eax,[esi]
+dec2_3:
+        mov     eax,[esi]
         add     esi,3
         and     eax,0FFFFFFh
         mov     ecx,eax
-dec2_Masker:
+dec2_Masker:                 ;target self-modifying code!
         and     ecx,4095
         add     ecx,2
-dec2_Shifter:
+dec2_Shifter:                ;target self-modifying code!
         shr     eax,12
         dec     eax
         js      dec2_3_0
@@ -403,7 +410,7 @@ dec2_4:
         or      ebx,ebx
         jnz     dec2_form_error
         ;
-        mov     ecx,DWORD PTR cs:[decode_c_head.DecC_Len]       ;return length.
+        mov     ecx,cs:[decode_c_head.DecC_Len]       ;return length.
         xor     eax,eax
         clc
         jmp     dec2_exit
@@ -478,9 +485,9 @@ dec2_fb0:
         mov     edi,offset decode_c_buffer
         mov     eax,decode_c_count      ;get current count.
         add     eax,ecx
-        cmp     eax,d[decode_c_head.DecC_Size]  ;check against total size.
+        cmp     eax,[decode_c_head.DecC_Size]  ;check against total size.
         jc      dec2_FB_2
-        sub     eax,d[decode_c_head.DecC_Size]
+        sub     eax,[decode_c_head.DecC_Size]
         sub     ecx,eax         ;reduce ECX as needed.
 dec2_FB_2:
         add     decode_c_count,ecx      ;update total count.

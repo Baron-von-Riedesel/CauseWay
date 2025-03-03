@@ -827,37 +827,32 @@ RawReal2Prot    endp
 ;
 RawProt2Real    proc    near
         pop     [rv17_Return]
-;        mov     [rv17_ReturnSP],dx
-;        mov     [rv17_ReturnSS],cx
         ;
         call    RawPL3toPL0
+
+        mov     eax,cr0
+        mov     CR0ProtSav,eax  ; save protected mode cr0 status
+
         mov     ax,KernalSS0Switch ;SS must be PL0, 16-bit and 64k limit
         mov     ss,ax
         mov     ax,KernalDS
         mov     ds,ax           ;DS,ES,FS,GS,SS must be data with 64k limit
         mov     es,ax           ;expand up, read/write for switch back to real
         mov     fs,ax           ;mode.
-        mov     gs,ax           ;/
+        mov     gs,ax
         ;
-
-; MED 10/15/96
-        mov     eax,cr0
-        mov     CR0ProtSav,eax  ; save protected mode cr0 status
-
         mov     eax,CR0Sav              ;Get machine control &
-
 ; MED 10/15/96, don't clear emulate math coprocessor bit
-;       and     eax,07FFFFFF2h  ;clear PM bit.
-        and     eax,07FFFFFF6h  ;clear PM bit.
+;       and     eax,07FFFFFF2h  ;clear PM,EM,TS & PG bits.
+        and     eax,07FFFFFF6h  ;clear PM,TS & PG bits.
+        mov     cr0,eax
 
-        mov     cr0,eax         ;/
-        db 0eah                 ;Absolute 16-bit jump, to clear
+        db 0eah                 ;immediate 16-bit far jump, to clear
         dw rv17_Resume,GROUP16  ;instruction pre-fetch & load CS.
 rv17_Resume:
+
         mov     ax,cs
         mov     ds,ax
-;        mov     ss,[rv17_ReturnSS]
-;        movzx   esp,[rv17_ReturnSP]
         mov     ss,cx
         movzx   esp,dx
         mov     eax,CR3Sav
@@ -868,8 +863,6 @@ rv17_Resume:
 ;       popfd
         ;
         jmp     [rv17_Return]
-;        push    [rv17_Return]
-;        ret
         ;
 RawProt2Real    endp
 

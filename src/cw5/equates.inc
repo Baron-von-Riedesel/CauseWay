@@ -43,7 +43,7 @@ KernalPL3toPL0	equ	48h+3	;PL3 to PL0 call gate.
 KernalLDT		equ	50h+3
 KernalCS		equ	58h+3	;Kernal CS
 KernalDS		equ	60h+3	;Kernal DS
-KernalSS		equ	68h+3	;Kernal SS
+KernalSS		equ	68h+3	;Kernal SS (size RawStackTotal in raw/vcpi)
 KernalZero		equ	70h+3	;Kernal 0-4G data referance.
 ;
 MainSS			equ	78h+3	;Main stack seg (_cwStack).

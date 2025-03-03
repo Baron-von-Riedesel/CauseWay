@@ -23,18 +23,35 @@ b       equ <byte ptr>
 w       equ <word ptr>
 d       equ <dword ptr>
 
+;--- values for variable ProtectedType
 PT_RAWXMS equ 0
 PT_VCPI   equ 1
 PT_DPMI   equ 2
 
+;--- bits in variable ProtectedFlags
+PF_DPMI   equ 1     ;DPMI host detected
+PF_VCPI   equ 2
+PF_RAW    equ 4
+
+;--- values for GDT/LDT bytestring (MDTLinear+4)
 DT_FREE    equ 0	;free descriptor 
 DT_LDTDESC equ 1	;LDT descriptor 
 DT_GDTDESC equ 2	;GDT descriptor
 
+;--- values for SystemFlags
+SF_16BIT   equ 0001h  ;running a 16-bit app
+SF_VMM     equ 0002h  ;VMM & swapfile present
+;--- bits 000Ch are copied from ProtectedType
+;--- bits 0070h are copied from ProtectedFlags
+SF_GDT     equ 0080h  ;move GDT
+SF_SINGLE  equ 4000h  ;single (=not dual) mode; or is it bit 16???
+SF_PM      equ 8000h  ;running in protected-mode
+
 PTMAPADDR   equ 0FFC00000h ;=1024*4096*1023, last page directory entry
 PDEMAPDET   equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF 
-MAINSTKSIZE equ 2048       ;stack size of PL3 kernal (segment _cwStack)
+MAINSTKSIZE equ 2048       ;stack size of PL3 stack during init/exit (segment _cwStack)
 
+VIDEOGDTSELS     equ 1	;1=define selectors A000h,B000h and B800h (an odd CauseWay peculiarity)
 SMARTRMALLOC     equ 1	;1=if conv. memory couldn't be alloc'd in an UMB, it will use space behind transient area
 MOVEPAGE1STTOEXT equ 1	;1=move page table for region 0-3fffff to extended memory
 MOVETSS          equ 1	;1=move TSS to extended memoy (behind IDT)
@@ -283,9 +300,6 @@ HighMemory label dword
                 dw 00090h     ; Set equal to FFFF:0090
                 dw 0FFFFh
 ;
-INewHeader      NewHeaderStruc <>   ;make space for a header.
-;DPMIErrRegs     RealRegsStruc <>
-
 ;--- there's also a MZHeader struct in api.inc, size 64!
 MZHdr struct
 Signature	dw ?	;00 Identifier text 'MZ', '3P'.
@@ -304,7 +318,10 @@ RelocFirst	dw ?	;18 First relocation item offset.
 OverlayNum	db ?	;1A Overlay number.
 MZHdr ends
 
-IExeHdr MZHdr <>
+INewHeader  NewHeaderStruc <>
+	org INewHeader
+IExeHdr     MZHdr <>
+	org INewHeader + NewHeaderStruc
 
 	align 2
 ;
@@ -321,7 +338,7 @@ ELSE
 NoVMSwitch      db 0
 ENDIF
 
-MainExec        db 128 dup (0)
+MainExec        db 128 dup (0)  ;.exe file name
 VMMDrivPath1    db 128 dup (0)  ;used by CAUSEWAY=SWAP:?:\??
 VMMDrivPath2    db 128 dup (0)  ;used by TEMP=
 VMMDrivPath3    db 128 dup (0)  ;used by TMP=
@@ -924,24 +941,31 @@ endif
         call    MakeDesc
 ;
 ;KernalCS0 - Kernel (RAW) code seg at PL0 (must be 64k!)
-;KernalCS  - Kernel (RAW) code seg.
 ;KernalDS  - Kernel (RAW) data seg (must be 64k!).
+;KernalCS  - Kernel (RAW) code seg.
 ;
         mov     esi,GROUP16
         shl     esi,4
-        mov     ecx,65535
+        mov     cx,65535
         xor     al,al
         mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
         mov     di,KernalCS0
         call    MakeDesc
 
+        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
+        mov     di,KernalDS
+        call    MakeDesc
+
+if 0
+        mov     cx,_cwDPMIEMU
+        sub     cx,GROUP16
+        shl     cx,4
+        dec     cx
+endif
         mov     ah,DescPresent+DescPL3+DescMemory+DescERCode
         mov     di,KernalCS
         call    MakeDesc
 
-        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
-        mov     di,KernalDS
-        call    MakeDesc
 ;
 ;KernalSS - (RAW) stack seg PL3.
 ;
@@ -1302,7 +1326,7 @@ endif
 ;
 ;Setup initial segment variables.
 ;
-        or      w[SystemFlags],32768    ;Flags us in protected mode.
+        or      [SystemFlags],8000h     ;Flags us in protected mode.
 ;
 ;Now get extended memory sorted out, move the page tables into extended memory
 ;for a start.
@@ -1667,7 +1691,7 @@ cw5_6:
         ;
         ;See which table we want to use.
         ;
-        test    BYTE PTR SystemFlags,128 ;GDT or LDT?
+        test    BYTE PTR SystemFlags,80h;GDT or LDT?
         jnz     cw5_LDT
 
         ;
@@ -1723,6 +1747,7 @@ cw5_5:
         loop    cw5_4
 endif
 
+if VIDEOGDTSELS
         ;
         ;Now setup extra GDT descriptors.
         ;
@@ -1739,26 +1764,21 @@ endif
         ;
         mov     di,KernalB800
         mov     esi,0b8000h
-;        mov     ecx,65535
-;        xor     al,al
-;        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         ;
         mov     di,KernalA000
         mov     esi,0a0000h
-;        mov     ecx,65535
-;        xor     al,al
-;        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         pop     es
 
 ;--- mark the extra descriptors as used
         mov     esi,MDTLinear+4
-        mov     al,2
+        mov     al,DT_GDTDESC
         mov     es:[esi+(KernalA000 shr 3)],al
         mov     es:[esi+(KernalB000 shr 3)],al
         mov     es:[esi+(KernalB800 shr 3)],al
         ;
+endif
 
 cw5_LDT:
         ;Setup new LDT.
@@ -2159,7 +2179,7 @@ cw5_Use32Bit24:
         popa
         jnc     cw5_DpmiInProtected
         mov     IErrorNumber,9
-        test    w[SystemFlags+2],1      ;Dual mode?
+        test    [SystemFlags+2],1       ;Dual mode?
         jz      InitError
         xor     SystemFlags,1
         xor     ax,1                    ;toggle the mode.
@@ -2267,12 +2287,12 @@ cw5_InProtected:
         ;
         mov     ax,ProtectedType        ;Copy protected mode environment type into common
         shl     ax,1+1                  ;variable for application access. Might become useful
-        or      w[SystemFlags],ax       ;at some point. Other flags can be added at will.
+        or      [SystemFlags],ax        ;at some point. Other flags can be added at will.
         mov     ax,ProtectedFlags       ;bits 0-2 are relevant
         shl     ax,1+1+2
-        or      w[SystemFlags],ax
-        or      w[SystemFlags],32768    ;Flags us in protected mode.
-        ;
+        or      ax,8000h                ;Flags us in protected mode.
+        or      [SystemFlags],ax
+;
 ;        mov     ax,DataSegmenti
 ;        mov     ds,ax
 ;        assume ds:GROUP16
@@ -3245,35 +3265,33 @@ GetEXECName     endp
         assume ds:GROUP16
 
 GetSystemFlags  proc    near
-        push    ds
+retry:
         mov     dx,offset MainExec
         mov     ax,3d40h                ;open, read only, deny none
         int     21h
-        jc      cw12_5
+        jc      cw12_exit
         mov     bx,ax
         mov     dx,offset IExeHdr       ;somewhere to put the info.
-        mov     cx,sizeof MZHdr         ;size of it.
+;        mov     cx,sizeof MZHdr         ;size of it.
+        mov     cx,sizeof NewHeaderStruc;read 40h bytes
         mov     ah,3fh
         int     21h
-        jc      cw12_4
-        cmp     ax,sizeof MZHdr         ;did we read right amount?
-        jnz     cw12_4
+        jc      cw12_readerr
+        cmp     ax,cx                   ;did we read right amount?
+        jnz     cw12_readerr
         cmp     IExeHdr.Signature,'ZM'  ;Normal EXE?
-        jnz     cw12_4
+        jnz     cw12_checkP3
         mov     ax,IExeHdr._Length+2    ;get length in 512 byte blocks
-
 ; MED 01/17/96
         cmp     IExeHdr._Length,0
         je      medexe2                 ; not rounded if no modulo
-
         dec     ax                      ;lose 1 cos its rounded up
-
 medexe2:
         add     ax,ax                   ;mult by 2
         mov     dh,0
         mov     dl,ah
         mov     ah,al
-        mov     al,dh                   ;mult by 256=*512
+        mov     al,dh                   ;now DX:AX = ([_Length+2])*512
         add     ax,IExeHdr._Length      ;add length mod 512
         adc     dx,0                    ;add any carry to dx
         mov     cx,ax
@@ -3284,41 +3302,40 @@ medexe2:
         mov     cx,size NewHeaderStruc  ;size of it.
         mov     ah,3fh
         int     21h
-        jc      cw12_4
+        jc      cw12_readerr
         or      ax,ax                   ;end of the file?
         jz      cw12_SetRUN
-        cmp     ax,size NewHeaderStruc  ;did we read right amount?
-        jnz     cw12_4
-        cmp     w[INewHeader],'P3'      ;ID ok?
-        jnz     cw12_4
-        mov     si,offset INewHeader
-        mov     ax,w[si].NewHeaderStruc.NewFlags+0  ;Copy main flags.
-        mov     cx,w[si].NewHeaderStruc.NewFlags+2
-        mov     [SystemFlags+0],ax
-        mov     [SystemFlags+2],cx
+        cmp     ax,cx                   ;did we read right amount?
+        jnz     cw12_readerr
+cw12_checkP3:
+        cmp     w INewHeader.NewID,'P3'   ;ID ok?
+        jnz     cw12_readerr
+        mov     si,dx
         .386
+        mov     eax,[si].NewHeaderStruc.NewFlags  ;Copy main flags.
+        mov     d[SystemFlags],eax
+        push    ds
         mov     dx,DPMIGRP
         mov     ds,dx
         assume ds:DPMIGRP
-        mov     [DpmiEmuSystemFlags+0],ax
-        mov     [DpmiEmuSystemFlags+2],cx
+        mov     d[DpmiEmuSystemFlags],eax
         mov     dx,GROUP32
         mov     ds,dx
         assume ds:GROUP32
-        mov     [apiSystemFlags+0],ax
-        mov     [apiSystemFlags+2],cx
+        mov     d[apiSystemFlags],eax
         .286
-cw12_4:
+        pop     ds
+        assume ds:GROUP16
+cw12_readerr:                 ;<--- no MZ or P3 header found
         mov     ah,3eh
         int     21h
-        jmp     cw12_5
+cw12_exit:
+        ret
 ;
 ;Nothing on the end of the extender so replace the exec name with first
-;command line argument and shuffle everything else down. Allows CW32 to be used
-;to run 32-bit programs not attached to it from the command line.
+;command line argument and shuffle everything else down. Allows CauseWay to be used
+;to run 16- and 32-bit programs not attached to it from the command line.
 ;
-        assume ds:GROUP16
-
 cw12_SetRUN:
         mov     ah,3eh                  ;close file, we don't need it.
         int     21h
@@ -3329,7 +3346,6 @@ cw12_SetRUN:
         mov     cl,BYTE PTR es:[si]
         jcxz    cw12_sr5
         inc     si
-        mov     di,offset MainExec      ;default to storeing program name.
         ;
         ;Skip white space.
         ;
@@ -3339,64 +3355,30 @@ cw12_sr0:
         jnz     cw12_sr1
         inc     si
         loop    cw12_sr0
-        jmp     cw12_sr3
+cw12_sr5:
+        pop     es
+        ret
+cw12_sr1:
         ;
         ;Get program name.
         ;
-cw12_sr1:
+        mov     di,offset MainExec      ;default to storeing program name.
+cw12_nextchar:
+        mov     [di],al
+        inc     di
+        inc     si
         mov     al,es:[si]
         cmp     al," "
-        jz      cw12_sr2
-        mov     BYTE PTR es:[si],' '
-        mov     [di],al
-        inc     si
-        inc     di
-        loop    cw12_sr1
-cw12_sr2:
+        loopnz  cw12_nextchar
         mov     b[di],0
-cw12_sr3:
+        mov     di,80h+1
+        rep     movsb es:[di],es:[si]   ;Copy it down.
+        mov     b es:[di],13
+        mov     ax,di
+        sub     ax,80h+1
+        mov     es:[80h],al
         pop     es
-;
-;Clean up the command line, ie, remove any spaces created by removeing name.
-;
-        push    es
-        mov     es,RealPSPSegment
-        assume es:_cwEnd
-        mov     si,80h
-        xor     ch,ch
-        mov     cl,BYTE PTR es:[si]
-        jcxz    cw12_cl3
-        inc     si
-        mov     di,si
-cw12_cl0:
-        cmp     BYTE PTR es:[si],' '
-        jnz     cw12_cl1
-        inc     si
-        loop     cw12_cl0
-cw12_cl1:
-        jcxz    cw12_cl2
-        push    cx
-        push    ds
-
-        push    es
-        pop     ds
-        rep     movsb                   ;Copy it down.
-
-        pop     ds
-        pop     cx
-cw12_cl2:
-        mov     BYTE PTR es:[80h],cl    ;Store new length.
-cw12_cl3:
-        xor     ch,ch
-        add     cx,81h
-        mov     si,cx
-        mov     BYTE PTR es:[si],13     ;Terminate it correctly.
-cw12_sr5:
-        pop     es
-        ;
-cw12_5:
-        pop     ds
-        ret
+        jmp     retry                   ;now retry with the new name in MainExec
 GetSystemFlags  endp
 
 
@@ -3405,17 +3387,17 @@ GetProtectedFlags proc near
 ;
 ;Find out what protected mode environments are available.
 ;
-        call    ChkDPMI                 ;32 bit DPMI server present?
+        call    ChkDPMI                 ;DPMI host present?
         jc      cw13_0
-        or      ProtectedFlags,1
+        or      ProtectedFlags,PF_DPMI
 cw13_0:
         call    ChkVCPI                 ;VCPI >= v1.0 present?
         jc      cw13_1
-        or      ProtectedFlags,2
+        or      ProtectedFlags,PF_VCPI
 cw13_1:
         call    ChkRAW                  ;Running in real mode?
         jc      cw13_2
-        or      ProtectedFlags,4
+        or      ProtectedFlags,PF_RAW   ;RAW (=XMS/I15) mode possible
 cw13_2:
         ret
 GetProtectedFlags endp
@@ -3453,7 +3435,7 @@ ChkDPMI proc    near
         int     2fh
         or      ax,ax                   ;None-zero means its not there.
         jnz     cw15_9
-        test    w[SystemFlags],1
+        test    [SystemFlags],1
         jz      cw15_Use32Bit21
         jmp     cw15_Use16Bit21
 cw15_Use32Bit21:
@@ -3598,13 +3580,14 @@ ChkRAW  proc    near
 ;
 ;Can we run on this machine.
 ;
-        .286P
+        .286
         smsw    ax
-        and     ax,1                    ; are we in protected mode?
+        and     ax,1                    ; are we in protected (=v86) mode?
         jnz     cw17_9
         clc
         ret
-cw17_9: stc
+cw17_9:
+        stc
         ret
 ChkRAW  endp
 
