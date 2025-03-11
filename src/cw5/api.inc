@@ -2646,8 +2646,8 @@ api61_ok:
         push    ebx
         mov     ecx,[api61_SelectorSize]
         mov     esi,[api61_SelectorBase]
-        mov     eax,ds                       ;need RPL to base DPL on.
-        lar     ax,ax
+        mov     eax,ds                      ;need RPL to base DPL on.
+        lar     eax,eax
         and     ah,DescPL3
         or      ah,DescPresent+DescMemory+DescRWData
         ;
@@ -2655,13 +2655,12 @@ api61_ok:
         shr     dx,14
         mov     al,dl
         xor     al,1
-        or      al,b[apiSystemFlags+2]
+        or      al,b[apiSystemFlags+2]      ; bit 16
         and     al,1
-        shl     al,6
+        shl     al,6                        ; shift to D bit position
         ;
         cmp     ecx,0fffffh                 ; see if we need to set g bit
-        jc      api61_3
-        jz      api61_3
+        jbe     api61_3
         shr     ecx,12                      ; div by 4096
         or      al,80h                      ; set g bit
 api61_3:

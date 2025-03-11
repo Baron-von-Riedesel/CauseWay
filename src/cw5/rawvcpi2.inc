@@ -1344,8 +1344,8 @@ rv46_DPMI_0400:
         mov     bx,00000011b
 ; see if should turn on virtual memory supported bit 2
         mov     dx,cs:DpmiEmuSystemFlags
-        and     dx,1 shl 1              ; isolate VMM bit
-        shl     dx,1                    ; shift to proper position
+        and     dx,SF_VMM               ; isolate VMM bit
+        shl     dx,1                    ; shift to bit 2 position
         or      bx,dx                   ; turn on VMM bit if set in SystemFlags
 
 ; MED 01/25/96

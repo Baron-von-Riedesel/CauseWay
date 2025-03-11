@@ -73,14 +73,16 @@ _cs		dd ?
 _fl		dd ?
 IRET32 ends
 
+;--- DOS SDA struct; used a bInDos and bBreak
+
 SDA struct
-		db ?
-bInDos	db ?
+		db ?    ;+00
+bInDos	db ?    ;+01
 		db 0Ch - $ dup (?)
-dwDTA	dd ?
-wPSP	dw ?
-		dw ?,?
-bDrive	db ?
+dwDTA	dd ?    ;+0Ch
+wPSP	dw ?    ;+10h
+		dw ?,?  ;+12h
+bDrive	db ?    ;+16h
 bBreak	db ?	;+17h
 SDA ends
 
@@ -272,21 +274,17 @@ _cwStack        ends
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
-;The initialiseation code seg. Takes care of things like checking for the right
+;The initialisation code seg. Takes care of things like checking for the right
 ;processor and determining how we're going to get into protected mode.
 ;
 _cwInit segment para public 'init code' use16
-
-dpmiSelBuffer   db 8 dup (0)
-
-;-------------------------------------------------------------------------------
 ;
 ;Initialisation specific data.
 ;
-dpmiSelBase     dd 0
+dpmiSelBuffer   db 8 dup (?)
+dpmiSelBase     dd 0            ;linear address of DpmiEmu segment in extended memory
 CurrPhysPage    dd ?
 GDTReal         dw ?            ;Real mode segment for GDT.
-;IDTReal         dw ?            ;Real mode segment for IDT.
 Page1stReal     dw ?            ;Real mode segment for 1st page table entry.
 PageDIRReal     dw ?            ;Real mode segment for page directory: later used as first 4k of transfer buffer.
 PageAliasReal   dw ?            ;Real mode segment for page table alias; later used as second 4k of transfer buffer.
@@ -331,6 +329,18 @@ InitErrorList   label word
         dw IErrorM08,IErrorM09
 SELECTTEXT = 2
         include texts.inc
+
+IERR_00 equ 0	;"CauseWay error xx : "
+IERR_01 equ 1	;"unable to resize"
+IERR_02 equ 2	;"386 or better.."
+IERR_03 equ 3	;"non-standard pm program already active.."
+IERR_04 equ 4	;"DOS 3.1 or better.."
+IERR_05 equ 5	;"not enough memory.."
+IERR_06 equ 6	;"VCPI failed to switch to pm.."
+IERR_07 equ 7	;"Unable to control A20"
+IERR_08 equ 8	;"Selector allocation error"
+IERR_09 equ 9	;"DPMI failed to switch to pm"
+
 ;
 IFDEF PERMNOVM
 NoVMSwitch      db 1
@@ -389,13 +399,13 @@ ENDIF
 ;Stow real mode PSP and environment values, we'll need them later.
 ;
         mov     RealPSPSegment,es
-        assume es:_cwEnd
+;        assume es:_cwEnd
         mov     ax,WORD PTR es:[02ch]
         mov     RealENVSegment,ax       ;Stow ENV for later.
 ;
 ;Re-size memory so we can allocate what we want high.
 ;
-        mov     IErrorNumber,1
+        mov     IErrorNumber,IERR_01
         mov     ax,es
         mov     bx,_cwEnd               ;Get program end segment.
         sub     bx,ax                   ;Size program.
@@ -413,7 +423,7 @@ toiniterr:
 ;Check we're on at least a 386 system.
 ;
 chk386:
-        mov     IErrorNumber,2
+        mov     IErrorNumber,IERR_02
         call    CheckProcessor
 
 ;       jc      InitError
@@ -423,7 +433,7 @@ chk386:
 ;
 ;Check DOS version is high enough.
 ;
-        mov     IErrorNumber,4
+        mov     IErrorNumber,IERR_04
         call    CheckDOSVersion
         jc      toiniterr
 ;
@@ -438,7 +448,7 @@ chk386:
 ;Check if a suitable method for switching to protected mode exists.
 ;
         call    GetProtectedFlags       ;set variable ProtectedFlags
-        mov     IErrorNumber,3
+        mov     IErrorNumber,IERR_03
         cmp     ProtectedFlags,0        ;Any types available?
         jz      toiniterr
 ;
@@ -477,14 +487,15 @@ chk386:
         cmp     ProtectedType,PT_DPMI
         jz      cw5_InitDPMI
 ;
-;Get SDA address so VMM can change BREAK state; v5.0: to allow VMM to query indos flag.
+;Get SDA address so VMM can change BREAK state;
+;v5.0: also used to allow VMM to query indos flag.
 ;
         push    ds
         mov     ax,5d06h                ;get SDA in DS:SI
         int     21h
         mov     ax,ds
         pop     ds
-        add     si,17h                  ;offset 17h=extended BREAK flag
+;        add     si,17h                 ;offset 17h=extended BREAK flag
         movzx   eax,ax
         shl     eax,4
         movzx   esi,si
@@ -676,7 +687,7 @@ cw5_A20OFF:
         int     21h                     ;release this block.
         ;
 cw5_OldWay:
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,(4096*4)/16          ;need space for 3 page tables on
         mov     ah,48h                  ;4k boundary.
         int     21h
@@ -741,7 +752,7 @@ cw5_GotSeg:
 ;Allocate memory for Kernal TSS.
 ;
 cw5_TSSOld:
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,(((size TSSFields)+2+15)/16) ;(4096/2)+2+16)/16
         mov     ah,48h
         int     21h
@@ -762,7 +773,7 @@ cw5_TSSGot:
 ;Allocate some memory for the GDT.
 ;
 cw5_GDTOld:
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,((8*GDT_Entries)/16)+1
         mov     ah,48h
         int     21h
@@ -782,7 +793,7 @@ cw5_GDTGot:
 ;
 ;Allocate some memory for the stack.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
 ;        mov     ebx,RawStackPos
 ;        shr     ebx,4
         mov     bx,RawStackTotal/16
@@ -819,7 +830,7 @@ nostack:
 ; MED 09/19/96
 ; Set address for VMM page to disk buffer.
 if 0
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,4096/16
         mov     ah,48h
         int     21h
@@ -1216,7 +1227,7 @@ cw5_RAW:
 ;Use VCPI method to switch to protected mode.
 ;
 cw5_VCPI:
-        mov     IErrorNumber,6
+        mov     IErrorNumber,IERR_06
 ;        cli
         push    ds
         xor     di,di                   ;Page table offset.
@@ -1281,7 +1292,7 @@ cw5_InProt:
 ;
 ;Make sure A20 is enabled.
 ;
-        mov     IErrorNumber,7
+        mov     IErrorNumber,IERR_07
         mov     ax,1
         call    A20Handler
         jnz     InitError
@@ -1331,7 +1342,7 @@ endif
 ;Now get extended memory sorted out, move the page tables into extended memory
 ;for a start.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     ax,KernalZero
         mov     es,ax
 ;
@@ -1606,7 +1617,7 @@ endif
 ;
 ;Get extended memory for DPMI emulator.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         ;
         mov     ebp, offset cwDPMIEMUEnd
         add     ebp,4096-1
@@ -1664,7 +1675,7 @@ cw5_2:
 ;Allocate memory for new GDT/LDT
 ;it's 64kB + 8 kB byte string behind GDT/LDT
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         ;
         mov     ebp,(8192*8+8192)/4096  ;# of pages needed (=18)
         mov     edi,LinearEntry
@@ -2068,10 +2079,10 @@ medpre2:
         xchg    cx,[ebx+4]              ;get old cs
         mov     d[OldExcep14+0],edx     ;store offset.
         mov     w[OldExcep14+4],cx
-        or      DpmiEmuSystemFlags,1 shl 1 ;flag VMM's presence.
+        or      DpmiEmuSystemFlags,SF_VMM ;flag VMM's presence.
         pop     ds
         assume ds:GROUP16
-        or      SystemFlags,1 shl 1     ;flag VMM's presence.
+        or      SystemFlags,SF_VMM      ;flag VMM's presence.
 cw5_v9:
 if 1 ;resize memory to 8k/12k
         mov     edi,offset PageInt
@@ -2102,7 +2113,7 @@ cw5_InitDPMI:
 ;
         mov     TSREnd, _cwRaw          ;cwRaw not needed for dpmi mode
 
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,8192/16
         mov     ah,48h
         int     21h                     ;get memory for transfer buffer.
@@ -2122,7 +2133,7 @@ endif
 ;
 ;Do installation check and get mode switch address.
 ;
-        mov     IErrorNumber,9
+        mov     IErrorNumber,IERR_09
         mov     ax,1687h                ;DPMI installation check.
         int     2fh
         or      ax,ax                   ;None-zero means its not there.
@@ -2149,7 +2160,7 @@ cw5_Use16Bit23:
 ;
 ;Allocate memory for DPMI state save buffer.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     ah,48h
         int     21h                     ;Try and claim memory for it.
         jc      InitError
@@ -2168,7 +2179,7 @@ cw5_d0:
 ;
 ;Attempt to switch mode.
 ;
-        mov     IErrorNumber,9
+        mov     IErrorNumber,IERR_09
         mov     ax,1                    ;start as 32-bit client
         test    BYTE PTR SystemFlags,1
         jz      cw5_Use32Bit24
@@ -2178,7 +2189,7 @@ cw5_Use32Bit24:
         call    d[bp]                   ;Make the switch.
         popa
         jnc     cw5_DpmiInProtected
-        mov     IErrorNumber,9
+        mov     IErrorNumber,IERR_09
         test    [SystemFlags+2],1       ;Dual mode?
         jz      InitError
         xor     SystemFlags,1
@@ -2215,7 +2226,7 @@ endif
 ;
 ;Create a 0-4G selector.
 ;
-        mov     IErrorNumber,8
+        mov     IErrorNumber,IERR_08
         mov     ax,0000h
         mov     cx,1
         int     31h                     ;allocate a selector.
@@ -2236,7 +2247,7 @@ endif
 ;
 ;Get some memory for the INT buffer (functions ff01/ff02).
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     bx,(RawStackTotal/2)/16	;only half the size as in Raw/VCPI
         mov     ax,100h
         int     31h
@@ -2299,16 +2310,16 @@ cw5_InProtected:
 ;
 ;Add CW API patch to int 31h and 2Fh.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         xor     bx,bx
-        mov     cx, lowword offset endGroup32
-        mov     ax,0501h
-        int     31h                     ;Get memory.
+        mov     cx,lowword offset endGroup32
+        mov     ax,501h
+        int     31h                     ;Get memory
         jc      InitError
         xor     si,si
-        mov     di, lowword offset endGroup32
+        mov     di,lowword offset endGroup32
         mov     ax,0600h
-        int     31h                     ;Lock memory.
+        int     31h                     ;Lock memory (bx:cx=linear addr, si:di=size)
         jc      InitError
 ;        shl     ebx,16
 ;        mov     bx,cx
@@ -2318,7 +2329,7 @@ cw5_InProtected:
 ;
 ;Allocate code & data selector.
 ;
-        mov     IErrorNumber,8
+        mov     IErrorNumber,IERR_08
         mov     cx,2
         mov     ax,0000h
         int     31h                     ;allocate 2 selectors.
@@ -2367,7 +2378,7 @@ cw5_InProtected:
         mov     apiDSeg16,ds
         mov     apiDSeg32,es
         mov     eax,d[SystemFlags]
-        mov     DWORD PTR [apiSystemFlags],eax
+        mov     d[apiSystemFlags],eax
 ;
 ;Set INT vector to bring API code into play.
 ;
@@ -2481,7 +2492,7 @@ endif
 ;
 ;Get memory for new PSP.
 ;
-        mov     IErrorNumber,5
+        mov     IErrorNumber,IERR_05
         mov     ecx,size EPSP_Struc
         Sys     GetMem32
         jc      InitError
@@ -2499,7 +2510,7 @@ endif
 ;
 ;Initialise PSP fields.
 ;
-        mov     IErrorNumber,8
+        mov     IErrorNumber,IERR_08
         push    ds
         push    es
         xor     edx,edx
@@ -2558,7 +2569,7 @@ cw5_normal:
 ;
 ;Setup transfer buffer and selector.
 ;
-        mov     IErrorNumber,8
+        mov     IErrorNumber,IERR_08
         Sys     GetSel
         jc      InitError
         movzx   edx,TransferReal
@@ -2731,7 +2742,7 @@ if 0
         int     31h
 cw6_d0:
 endif
-        cmp     IErrorNumber,0
+        cmp     IErrorNumber,IERR_00
         jz      cw6_NoError
         mov     ax,[InitErrorList]      ;get the "CauseWay error nn : " string
         mov     edi,offset PageInt      ;not used yet in dpmi mode
@@ -3261,6 +3272,7 @@ GetEXECName     endp
 ;-------------------------------------------------------------------------------
 ;--- real-mode proc
 ;--- DS:GROUP16
+;--- init variable SystemFlags
 
         assume ds:GROUP16
 
@@ -3314,18 +3326,25 @@ cw12_checkP3:
         .386
         mov     eax,[si].NewHeaderStruc.NewFlags  ;Copy main flags.
         mov     d[SystemFlags],eax
+
+;--- also set copy of system flags in DPMIGRP
+
         push    ds
         mov     dx,DPMIGRP
         mov     ds,dx
         assume ds:DPMIGRP
         mov     d[DpmiEmuSystemFlags],eax
-        mov     dx,GROUP32
-        mov     ds,dx
-        assume ds:GROUP32
-        mov     d[apiSystemFlags],eax
+
+;--- setting apiSystemFlags? not useful, this var will be initialized later.
+;        mov     dx,GROUP32
+;        mov     ds,dx
+;        assume ds:GROUP32
+;        mov     d[apiSystemFlags],eax
+
         .286
         pop     ds
         assume ds:GROUP16
+
 cw12_readerr:                 ;<--- no MZ or P3 header found
         mov     ah,3eh
         int     21h
