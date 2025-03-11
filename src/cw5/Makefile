@@ -19,6 +19,7 @@
 # NOI21RMHOOK:if defined, removes code for real-mode int 21h hook;
 #           PERMNOEX and CAUSEWAY=NOEX are dummies then.
 # SRDPMISTATE: if defined, call save/restore DPMI state (barely useful at all)
+# COPYFCBS: if 1, copy FCBs in int 21h, ax=4B00h emulation (default 0)
 
 ASM=jwasm.exe
 #ASM=ml.exe

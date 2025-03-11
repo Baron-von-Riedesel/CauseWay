@@ -34,9 +34,12 @@
    - trace log writes (macro @dprintf) added.
    - fixed: DPMI emulator func 0001 (release descriptor) always returned
      with NC.
+   - significant binary size reduction: compressed binary (CWSTUB.EXE) now
+     40 kB (was 46.5), uncompressed binary now 72 kB (was 94). 
    - fixed: all DPMI descriptor functions got some validity checks so they
      should fail for an invalid selector argument in BX.
    - fixed: no swapfile-related DOS access if indos flag is set.
    - default value for LOWMEM is now 256kB; previously the value entered was
      added to a minimum of 32 kB.
    - removed restriction that cwstub.exe can only launch a 32-bit application.
+   - fixed: copy FCBs in int 21h, ax=4B00h emulation; code still optional.

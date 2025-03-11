@@ -2,6 +2,10 @@
 ;/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 ;
 
+ifndef COPYFCBS
+COPYFCBS equ 0	;1=copy fcbs in int 21h, ax=4b00h emulation
+endif
+
 ;--- macros
 ;
 
@@ -935,9 +939,9 @@ int2121_OK:
         ;
         mov     ds,[ebp].IFRM._DS
         mov     esi,[ebp].IFRM._EDX
-        call    Int21hExtend_DS_ESI     ;Extend [E]SI.
+        call    Int21hExtend_DS_ESI     ;Extend [E]SI
         xor     al,al
-        call    Int21hStringLen ;Get length of this string.
+        call    Int21hStringLen ;Get length of this string
         inc     ecx
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         xor     edi,edi
@@ -945,8 +949,12 @@ int2121_OK:
         ;
         ;Copy the command line into transfer buffer.
         ;
-        mov     ebx,[ebp].IFRM._EBX
-        mov     ds,[ebp].IFRM._ES
+        mov     edi,[ebp].IFRM._EBX
+        mov     es,[ebp].IFRM._ES
+        call    Int21hExtend_ES_EDI     ;Extend [E]DI
+        mov     ebx,edi
+        push    es
+        pop     ds
         cmp     cs:Int21hDOS4GFlag,0
         jz      int2121_0
         lds     esi,fword ptr [ebx+4+2] ; load cmdline into ds:esi
@@ -954,12 +962,10 @@ int2121_OK:
 int2121_0:
         test    BYTE PTR cs:apiSystemFlags,1
         jz      int2121_Ef3
-        movzx   ebx,bx
-        movzx   esi,w[ebx+2]            ;Get command line offset.
-        mov     ds,[ebx+2+2]            ;& segment.
-        jmp     int2121_Ef4
+        xor     esi,esi
+        db 66h                          ;prefix 66h changes next instr to LDS SI,dword ptr [ebx+2]
 int2121_Ef3:
-        lds     esi,fword ptr [ebx+2]
+        lds     esi,fword ptr [ebx+2]   ;Get command line offset & segment.
 int2121_Ef4:
         mov     es,fs:[EPSP_Struc.EPSP_TransProt]
         mov     edi,256
@@ -970,106 +976,65 @@ int2121_Ef4:
         stosb
         mov al,0
         stosb
+
+if COPYFCBS
         ;
-        ;Copy the FCB's
+        ;Copy the FCB's - check for DOS/4G added
         ;
-if 0
-        push    ecx
-        push    esi
-        push    edi
-        push    ds
-        push    es
+        push    ebx
+        mov     ds,[ebp].IFRM._ES
+        cmp     cs:Int21hDOS4GFlag,0
+        jz      int2121_Ef5
+        add     ebx,4        ; skip ENV offset
+        jmp     int2121_Ef6
+int2121_Ef5:
         test    BYTE PTR cs:apiSystemFlags,1
         jz      int2121_Ef6
-        movzx   ebx,bx
-        movzx   edi,WORD PTR es:[ebx+(2)+(2+2)] ;Get FCB 1 offset.
-        mov     es,es:[ebx+(2)+(2+2)+2] ;& segment.
+        xor     eax,eax
+        mov     ax,[ebx+(2)+(2+2)+(2+2)+0] ;Get FCB 2 offset
+        mov     dx,[ebx+(2)+(2+2)+(2+2)+2] ;Get FCB 2 segment
+        xor     esi,esi
+        lds     si,[ebx+(2)+(2+2)]  ;Get FCB 1 offset & segment
         jmp     int2121_Ef7
 int2121_Ef6:
-        mov     edi,es:[ebx+(2)+(4+2)]
-        mov     es,es:[ebx+(2)+(4+2)+4]
+        mov     eax,[ebx+(2)+(4+2)+(4+2)+0] ;Get FCB 2 offset
+        mov     dx, [ebx+(2)+(4+2)+(4+2)+4] ;Get FCB 2 segment
+        lds     esi,[ebx+(2)+(4+2)] ;Get FCB 1 offset & segment
 int2121_Ef7:
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        lds     esi,TransferBuffer
-        assume ds:nothing
-        add     esi,512
-        push    esi
-        push    edi
-        push    ds
-        push    es
-        pop     ds
-        pop     es
-        pop     esi
-        pop     edi
-        mov     ecx,10h
-        cld
-        rep     movsb
-        pop     es
-        pop     ds
-        pop     edi
-        pop     esi
-        pop     ecx
+        mov     es,fs:[EPSP_Struc.EPSP_TransProt]
+        mov     di,512
+        movsd          ;copy FCB1 - 16 bytes
+        movsd
+        movsd
+        movsd
         ;
-        push    ecx
-        push    esi
-        push    edi
-        push    ds
-        push    es
-        test    BYTE PTR cs:apiSystemFlags,1
-        jz      int2121_Ef8
-        movzx   ebx,bx
-        movzx   edi,WORD PTR es:[ebx+(2)+(2+2)+(2+2)] ;Get FCB 2 offset.
-        mov     es,es:[ebx+(2)+(2+2)+(2+2)+2] ;& segment.
-        jmp     int2121_Ef9
-int2121_Ef8:
-        mov     edi,es:[ebx+(2)+(4+2)+(4+2)]
-        mov     es,es:[ebx+(2)+(4+2)+(4+2)+4]
-int2121_Ef9:
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
-        lds     esi,TransferBuffer
-        assume ds:nothing
-        add     esi,512+16
-        push    esi
-        push    edi
-        push    ds
-        push    es
-        pop     ds
-        pop     es
-        pop     esi
-        pop     edi
-        mov     ecx,10h
-        cld
-        rep     movsb
-        pop     es
-        pop     ds
-        pop     edi
-        pop     esi
-        pop     ecx
+        mov     esi,eax
+        mov     ds, edx
+        movsd          ;copy FCB2 - 16 bytes
+        movsd
+        movsd
+        movsd
+        pop     ebx
 endif
         ;
         ;Sort out the environment.
         ;
-        mov     edi,[ebp].IFRM._EBX
         mov     es,[ebp].IFRM._ES
-        call    Int21hExtend_ES_EDI     ;Extend [E]SI.
-        mov     ebx,edi
         xor     esi,esi
         cmp     cs:Int21hDOS4GFlag,0
         jz      int2121_1
         cmp     WORD PTR es:[ebx+4],0
         jz      int2121_2
-        lds     esi,FWORD PTR es:[ebx]
+        lds     esi,es:[ebx+0]
         jmp     int2121_Ef12
 int2121_1:
-        cmp     WORD PTR es:[ebx],0     ;got an environment?
+        cmp     WORD PTR es:[ebx+0],0   ;got an environment?
         jnz     int2121_Ef10
 int2121_2:
         mov     ds,fs:[PSP_Struc.PSP_Environment]      ;Get current environment.
         jmp     int2121_Ef12
 int2121_Ef10:
-        mov     ds,es:[ebx]             ;get environment segment.
+        mov     ds,es:[ebx+0]           ;get environment segment.
 int2121_Ef12:
         push    esi
 int2121_3:
@@ -1095,10 +1060,10 @@ int2121_3:
         mov     bl,21h
         Sys     IntXX           ;allocate this memory.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;get segment address.
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_Flags[edi],1      ;alloc failed?
         mov     di,ax
         mov     al,1
-        jnz     int2121_Ef13
+        jnz     int2121_Ef13                            ;error
         movzx   edi,di
         push    edi
         shl     edi,4
@@ -1107,7 +1072,7 @@ int2121_3:
         mov     es,es:RealSegment
         assume es:nothing
         rep     movsb           ;Copy environment.
-        pop     edx
+        pop     edx             ;EDX=segment address of env. block
 ;
 ;Patch INT 21h exec function
 ;--- this should perhaps be changed - it's needed for DPMI mode only, if at all...
@@ -1151,7 +1116,7 @@ ENDIF
         mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
         mov     es:RealRegsStruc.Real_AX[edi],4b00h
-        mov     es:RealRegsStruc.Real_BX[edi],512+32
+        mov     es:RealRegsStruc.Real_EBX[edi],esi
         mov     es:RealRegsStruc.Real_DX[edi],0
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     es:RealRegsStruc.Real_ES[edi],ax
