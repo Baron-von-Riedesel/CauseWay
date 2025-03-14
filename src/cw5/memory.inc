@@ -695,6 +695,7 @@ RawDiscardPages endp
 ;-------------------------------------------------------------------------------
 ;
 ;Map physical memory into address space and return linear access address.
+;This is the worker behind int 31h, ax=800h emulation.
 ;
 ;BX:CX  Physical address of memory
 ;SI:DI  Size of region to map in bytes
@@ -705,8 +706,19 @@ RawDiscardPages endp
 ;
 ;BX:CX  Linear address that can be used to access the physical memory.
 ;
+;This function had a lot of issues:
+;
+; - physical address must have bits 0-11 cleared, else it fails; not compatible with DOS/4G or DPMI.
+; - Hiwords(ebx) and (ecx) are cleared if mapping was successful.
+; - in case of error, registers BX/CX aren't preserved.
+; - no check if size of physical region is too large (addr + size > 32bit).
+; - no check if there's enough linear address space for the mapping.
+; - the check if there's already a mapping for the required region is faulty and never succeeds;
+;   this is also true for DOS/4G, but unlike CauseWay DOS/4G has a working unmap function (ax=801h).
+;
+;The last issue hasn't been fixed yet.
+;
 RawMapPhys2Lin  proc    near
-        @dprintf DOPT_MEM,<"RawMapPhys2Lin enter",10>
         push    ds
         push    es
         push    eax
@@ -714,6 +726,8 @@ RawMapPhys2Lin  proc    near
         push    esi
         push    edi
         push    ebp
+        push    ecx
+        push    ebx
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
@@ -724,84 +738,89 @@ RawMapPhys2Lin  proc    near
 ;
         shl     ebx,16
         mov     bx,cx
-        test    ebx,4095
-        jnz     mem5_9
+        @dprintf DOPT_MEM,<"RawMapPhys2Lin enter, BX:CX=%lX",10>,ebx
+;        test    bx,0fffh
+;        jnz     mem5_err       ;error if bits 0-11 are != 0
 ;
 ;Get length as number of pages.
 ;
         shl     esi,16
         mov     si,di
+        lea     esi,[ebx+esi-1]
+        mov     eax,esi
+        cmp     eax,ebx
+        jb      mem5_err        ;size too large or 0
+        and     bx,0f000h
+        sub     esi,ebx
         add     esi,4095
         shr     esi,12
-        test    esi,esi
-        jz      mem5_9
-
-; MED 06/13/96, remove 4M restriction
-;; MED 04/18/96, don't allow more than a 4M mapping (not supported by CW)
-;       cmp     esi,400h
-;       ja      @@9
-
 ;
 ;Deal with addresses below 1 Meg.
 ;
-        mov     edi,ebx
-        mov     eax,esi
-        shl     eax,12
-        add     eax,edi
-        dec     eax
         cmp     eax,100000h+10000h
         jc      mem5_8
 ;
 ;Find first un-used physical mapping space.
 ;
         mov     ebp,PageDirLinear
-        mov     eax,1021
+;        mov     eax,1021                ;start for mappings (linear FF400000h)
+        mov     eax,PDEMAPDET-1         ;start for mappings (linear FF400000h)
 mem5_0:
 
-; MED 04/18/96
         mov     ecx,es:[ebp+eax*4]
-;        and     ecx,not 4095            ; get linear address
-        and     cx,0f000h               ; get linear address
+        and     cx,0f000h               ; get linear address (what? it's a physical address!)
+
+;--- Next line claims to check if physical address is already mapped.
+;--- However, it actually compares a PDE with a physical address - this
+;--- will usually fail - and if not, it's an error.
+
         cmp     ecx,ebx                 ; see if matches desired linear address
         jne     med2c                   ; no, continue as before
+
         mov     edi,eax
         shl     edi,22                  ; convert index to 4M space
         jmp     mem5_8
 
 med2c:
-        cmp     DWORD PTR es:[ebp+eax*4],0
+        cmp     DWORD PTR es:[ebp+eax*4],0   ;reached end of mapping regions?
         jz      mem5_1
 
-;       dec     eax
-        sub     eax,1
-        jc      mem5_9
+        dec     eax
+        jns     mem5_0
+        jmp     mem5_err
 
-        jmp     mem5_0
+mem5_1:
 ;
 ;Work out how many page tables we need and set first tables index.
 ;
-mem5_1: mov     ecx,esi
-        shr     ecx,10
+        mov     ecx,esi
+        add     ecx,1024-1
+        shr     ecx,10      ;size in pages -> size in 4MB chunks
         sub     eax,ecx
-        inc     ecx
+        jc      mem5_err    ;linear address space exhausted
+        inc     eax
+
+;--- check if address space is free to use
+        lea     edi,[ebp+eax*4]
+        cmp     DWORD PTR es:[edi],0
+        jnz     mem5_err    ;linear address space exhausted
 ;
 ;Make sure we can get enough memory for physical page tables.
 ;
         call    PhysicalGetPages
         add     edx,NoneLockedPages
         cmp     edx,ecx
-        jc      mem5_9
+        jc      mem5_err
 ;
 ;Put all the page tables into place.
 ;
-        lea     edi,[ebp+eax*4]
         push    edi
         mov     ebp,ecx
-mem5_2:
-        call    PhysicalGetPage
+mem5_2:                                 ;<--- next PDE
+        call    PhysicalGetPage         ;get a free physical page
         jnc     mem5_3
-        call    UnMapPhysical
-        jc      mem5_10
+        call    UnMapPhysical           ;get a mapped physical page
+        jc      mem5_err2               ;none, so "out of memory"
 mem5_3:
         and     ecx,1                   ;put user bits in useful place.
         shl     ecx,10
@@ -822,6 +841,7 @@ mem5_3:
         sub     edi,PageDirLinear
         shl     edi,10
         add     edi,PTMAPADDR           ;base of page alias's.
+        @dprintf DOPT_MEM,<"RawMapPhys2Lin, clear PDE %lX",10>,edi
         mov     ecx,4096/4
         xor     eax,eax
         cld
@@ -841,7 +861,8 @@ mem5_3:
         push    edi
         add     edi,PTMAPADDR
         or      ebx,111b
-mem5_4: mov     es:[edi],ebx
+mem5_4:                         ;<--- next PTE
+        mov     es:[edi],ebx
         add     edi,4
         add     ebx,4096
         dec     esi
@@ -851,17 +872,23 @@ mem5_4: mov     es:[edi],ebx
 ;Return linear address to caller.
 ;
         shl     edi,12-2
-mem5_8: xor     ecx,ecx
-        xor     ebx,ebx
-        mov     cx,di
+mem5_8:
+        pop     ebx
+        pop     ecx
+        and     di,0f000h
+        and     cx,0fffh
+        or      cx,di
         shr     edi,16
         mov     bx,di
         clc
         jmp     mem5_11
 ;
-mem5_10:
+mem5_err2:
         pop     edi
-mem5_9: stc
+mem5_err:
+        pop     ebx
+        pop     ecx
+        stc
 mem5_11:
         pop     ebp
         pop     edi
@@ -878,10 +905,35 @@ RawMapPhys2Lin  endp
 ;-------------------------------------------------------------------------------
 ;
 ;Un-Do a physical to linear address mapping.
+;DPMI function ax=0801h
+;in: BX:CX = linear address
 ;
 RawUnMapPhys2Lin proc near
-        @dprintf DOPT_MEM,<"RawUnMapPhys2Lin enter",10>
+if 0
+        push    ds
+        push    es
+        push    eax
+        push    edx
+        push    esi
+        push    edi
+        push    ebp
+        mov     ax,KernalDS
+        mov     ds,eax
+        assume ds:GROUP16
+        mov     ax,KernalZero
+        mov     es,eax
+endif
+        @dprintf DOPT_MEM,<"RawUnMapPhys2Lin enter (dummy)",10>
         clc
+if 0
+        pop     ebp
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     eax
+        pop     es
+        pop     ds
+endif
         ret
 RawUnMapPhys2Lin endp
 
@@ -2360,7 +2412,7 @@ VirtualFault    proc    far
         pop     edx
         pop     ecx
         pop     eax
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1        ;check exit size.
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT    ;check exit size.
         jz      mem18_Use32Bit3
         retw                    ;16 bit exit.
 mem18_Use32Bit3:

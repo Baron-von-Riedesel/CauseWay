@@ -483,7 +483,7 @@ INTSTKFRM ends
         ;
         ;Put old details onto new stack.
         ;
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter15_iUse32
         sub     ebx, sizeof IRET16PL
         mov     eax,[esp].INTSTKFRM._eip
@@ -548,7 +548,7 @@ inter15_Int:
         mov     eax,ss
         mov     ds,eax
         assume ds:nothing
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter15_i2Use32
         movzx   ebx,sp
         lss     sp,d[ebx+5*4].IRET16PL._sp ;get original stack again.
@@ -619,7 +619,7 @@ KRNSTKFRM ends
 inter16_Update:
         ;Put old details onto new stack.
         ;
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter16_Use32
         sub     ebx, sizeof IRET16PL
         mov     eax,[esp].KRNSTKFRM._eip
@@ -696,7 +696,7 @@ IntDispatch     proc    near
         mov     d[inter17_Call2+0],eax
         mov     ax,[esi+4]
         mov     w[inter17_Call2+4],ax
-        test    BYTE PTR DpmiEmuSystemFlags,1
+        test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         pop     ds
         assume ds:nothing
         pop     edi
@@ -741,7 +741,7 @@ inter17_Resume:
         mov     ds,eax
         assume ds:nothing
         mov     ebx,esp
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter17_Use32
         ;
         movzx   ebx,bx
@@ -780,7 +780,7 @@ inter17_Excep:
         mov     d[inter17_Call2+0],eax
         mov     ax,[esi+4]
         mov     w[inter17_Call2+4],ax
-        test    BYTE PTR DpmiEmuSystemFlags,1
+        test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         pop     ds
         assume ds:nothing
         pop     edi
@@ -885,7 +885,7 @@ endif
         pushad
         ;
         mov     ebp,esp
-        test    BYTE PTR DpmiEmuSystemFlags,1
+        test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         jz      inter18_Use32Bit19
         movzx   ebp,bp
         movzx   eax,[ebp+sizeof INTNN386FR].IRET16._fl
@@ -953,7 +953,7 @@ inter18_NoCall:
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
         and     ax,1000100011111111b            ;lose TF, IF, DF, IOPL, NT
         ;
-        test    BYTE PTR DpmiEmuSystemFlags,1
+        test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         jz      inter18_Use32Bit
         mov     bx,[ebp+sizeof INTNN386FR].IRET16._fl
         and     bx,0111011100000000b            ;retain TF, IF, DF, IOPL, NT
@@ -1034,7 +1034,7 @@ endif
         pushad
         mov     ax,DpmiEmuDS
         mov     ds,eax
-        test    BYTE PTR DpmiEmuSystemFlags,1
+        test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         jz      inter19_Use32Bit16
         movzx   eax,[esp].EXCFR16._fl
         jmp     inter19_Use16Bit16
@@ -1056,7 +1056,7 @@ inter19_Use16Bit16:
         cld
         rep     movsd [edi],[esi]       ;copy registers off the stack.
         ;
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter19_Use32Bit17
         xor     eax, eax
         add     esi,2+2+2               ;skip return address/flags.
@@ -1365,7 +1365,7 @@ RawSetVector    proc    near
         push    edx
         push    ds
         push    es
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      inter9_use32_add
         movzx   edx,dx
         ;

@@ -1,7 +1,10 @@
 
-;--- 32-bit sample, memory model tiny.
-;--- assemble: ml -c tiny32.asm
-;--- link: WL32 tiny32
+;--- 32-bit sample, memory model tiny. To create:
+;---   ml -c tiny32.asm
+;---   wl32 tiny32
+;--- or, alternativly:
+;---   ml -c -D?FLAT tiny32.asm
+;---   wl32 /f tiny32
 
 	.386
 	.model tiny
@@ -23,6 +26,7 @@ main proc c
 main endp
 
 start:
+ifndef ?FLAT
 ;--- model tiny needs an alias, since DGROUP is code
 	mov ebx,cs
 	mov ax,000ah
@@ -33,6 +37,11 @@ start:
 	inc edx
 	mov ss,eax
 	mov esp,edx
+else
+	mov eax,ss
+	mov ds,eax
+	mov es,eax
+endif
 	call main
 	mov ax,4c00h
 	int 21h

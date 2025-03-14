@@ -221,7 +221,7 @@ rv29_GotStack:
 ;Store current stack pointer on v86 stack.
 ;
         mov     eax,esp
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      rv29_noextendstack
         movzx   eax,ax
 rv29_noextendstack:
@@ -559,7 +559,7 @@ rv30_contpm:
         stosd   es:[edi]            ;SS:SP
         mov     edi,edx
         ;
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      rv30_Use32Bit12
         push    w[ebx].CallBackStruc.CallBackProt+4
         push    w[ebx].CallBackStruc.CallBackProt+0
@@ -591,7 +591,7 @@ rv30_Use16Bit12:
 
         pop     edi
         pop     es
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         pop     ds              ;load DS with stack sel
         assume ds:nothing
         movzx   esi,es:RealRegsStruc.Real_SP[edi]
@@ -757,7 +757,7 @@ rv31_contpm:
         mov     cx,cs:[ebx+4]              ;get segment selector.
 ;        pop     ds
 ;        assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      rv31_Use32Bit12
         mov     w[rv31_CallB016+0],dx
         mov     w[rv31_CallB016+2],cx
@@ -789,7 +789,7 @@ rv31_Use16Bit12:
         push    [rv31_CallTab]
         push    ds
 
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      rv31_Use32Bit13
 
 ;--- todo: explain the extra 3 (d)words on the stack
@@ -1191,7 +1191,7 @@ rv46_DPMI_0202:
         push    eax
         push    edx
         call    RawGetEVector
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         pop     eax
         jz      rv46_0202_0
         mov     ax,dx
@@ -1203,7 +1203,7 @@ rv46_0202_0:
         ;
 rv46_DPMI_0203:
         push    edx
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_0203_0
         movzx   edx,dx
 rv46_0203_0:
@@ -1215,7 +1215,7 @@ rv46_DPMI_0204:
         push    eax
         push    edx
         call    RawGetVector
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         pop     eax
         jz      rv46_0204_0
         mov     ax,dx
@@ -1227,7 +1227,7 @@ rv46_0204_0:
         ;
 rv46_DPMI_0205:
         push    edx
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_0205_0
         movzx   edx,dx
 rv46_0205_0:
@@ -1255,7 +1255,7 @@ rv46_DPMI_030x:
         push    edi
         push    ebp
         lea     ebp,[esp+(4*4)+(4+4+4)]
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_030x_0a
         movzx   edi,di
         movzx   ebp,bp
@@ -1270,7 +1270,7 @@ rv46_030x_0a:
 ;
 ;Mask real mode register structure flags.
 ;
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_030x_0
         mov     ax,[ebp-2]     ;get original flags.
         jmp     rv46_030x_1
@@ -1312,7 +1312,7 @@ rv46_DPMI_0305:
         ;SI:(E)DI = protected-mode entry for function
         mov     si,KernalCS
         mov     di,offset StateSavePM
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jnz     @F
         movzx   edi,di
 @@:
@@ -1326,7 +1326,7 @@ rv46_DPMI_0306:
         ;SI:(E)DI = protected-mode entry for function
         mov     si,KernalCS
         mov     di,offset SwitchProcPM
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jnz     @F
         movzx   edi,di
 @@:
@@ -1515,7 +1515,7 @@ rv46_DPMI_0900:                 ;enable/disable/get virtual interupts.
         jae     rv46_NotOurs
         push    ebp
         lea     ebp,[esp+2*4+2*4]
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_1
         movzx   ebp,bp
         sub     ebp,2*2
@@ -1852,7 +1852,7 @@ rv46_Done:
         ;
         push    eax
         setc    al
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_Use32Bit8
         push    ebp
         movzx   ebp,sp
@@ -1902,7 +1902,7 @@ DPMI_MINFO ends
 
         call    RawGetMemoryMax   ;get max virtual memory in EBX
 
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv46_0
         movzx   edi,di
 rv46_0:
@@ -3534,7 +3534,7 @@ rv64_Done:
         push    eax
         pushfd
         pop     eax                             ;get new flags.
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      rv64_Use32Bit8
         push    ebp
         movzx   ebp,sp
@@ -3567,7 +3567,7 @@ Raw2FPatch      endp
 
 Raw41Patch      proc    near
 
-        test    BYTE PTR cs:DpmiEmuSystemFlags,1
+        test    BYTE PTR cs:DpmiEmuSystemFlags,SF_16BIT
         jz      @F
         iret
 @@:

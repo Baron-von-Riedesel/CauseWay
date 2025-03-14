@@ -20,6 +20,7 @@
 #           PERMNOEX and CAUSEWAY=NOEX are dummies then.
 # SRDPMISTATE: if defined, call save/restore DPMI state (barely useful at all)
 # COPYFCBS: if 1, copy FCBs in int 21h, ax=4B00h emulation (default 0)
+# XMSITEMS: max # of XMS handles the extender can manage (default 32)
 
 ASM=jwasm.exe
 #ASM=ml.exe

@@ -241,7 +241,7 @@ if EXC16INCS16
         mov     ebp, cs
         cmp     ProtectedType,PT_DPMI
         jnz     @F
-        test    byte ptr apiSystemFlags,1
+        test    byte ptr apiSystemFlags,SF_16BIT
         jz      @F
         call    dpmi16bitspec
 @@:
@@ -267,7 +267,7 @@ if TRAPINT00
         ;
         mov     bl,00
         Sys     GetVect
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc1_i00Use32
         movzx   edx, dx
 exc1_i00Use32:
@@ -284,7 +284,7 @@ endif
 exc1_1:
         mov     ax,202h
         int     31h
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc1_Use32
         movzx   edx,dx
 exc1_Use32:
@@ -405,7 +405,7 @@ Int00Handler    proc    near
         mov     DebugBuffer._fs,fs
         mov     DebugBuffer._gs,gs
         ;
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc3_Use32_0
         add     DebugESP,2+2+2
         movzx   ebp,sp
@@ -514,7 +514,7 @@ DPMIExcPatch    proc    far
         push    edi
         push    ebp
         mov     ebp, esp
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      @F
         movzx   ebp, bp
 @@:
@@ -543,7 +543,7 @@ endif
         pop     ds
         mov     esi,0            ; reset linear address set by cwAPI_LinearCheck
         lea     esp,[esp+4]      ; skip exception#
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc20_S14_32
         retw
 exc20_S14_32:
@@ -596,7 +596,7 @@ exc20_ok:
         ;
         lodsd   [esi]               ;exception#
         mov     es:DebugExceptionIndex, ax
-        test    BYTE PTR es:apiSystemFlags,1
+        test    BYTE PTR es:apiSystemFlags,SF_16BIT
         jz      exc20_Use32Bit17
         movzx   eax,w[ebp+sizeof STKFRAME+(2+2)]
         mov     es:DebugExceptionCode,eax
@@ -677,7 +677,7 @@ exc20_Use16Bit678:
         ;Now modify original CS:EIP,SS:ESP values and return control
         ;to this code via interupt structure to restore stacks.
         ;
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      exc20_Use32_2
 if EXC16INCS16
         mov     ax, cs:cs16sel
@@ -979,7 +979,7 @@ SSEBPDEBUGDUMPCOUNT     EQU     256     ; should be multiple of 16
         mov     ecx,CSEIPDEBUGDUMPCOUNT
         mov     fs,DebugCS
         mov     esi,DebugEIP
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc22_cseip32
         movzx   esi,si
 
@@ -1025,7 +1025,7 @@ exc22_cseip3:
         assume ds:GROUP32
         mov     DumpAsciiFlag,al
 
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      user32
         movzx   esi,si
 user32:
@@ -1099,7 +1099,7 @@ ssesp:
         mov     ecx,SSESPDEBUGDUMPCOUNT
         mov     fs,DebugSS
         mov     esi,DebugESP
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc22_ssesp32
         movzx   esi,si
 exc22_ssesp32:
@@ -1139,7 +1139,7 @@ exc22_ssesp3:
         mov     ecx,esi
 med2d:
         sub     esi,ecx
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      medssebp32
         movzx   esi,si
 medssebp32:
@@ -1221,7 +1221,7 @@ ebpdump:
         mov     ecx,SSEBPDEBUGDUMPCOUNT
         mov     fs,DebugSS
         mov     esi,DebugBuffer._ebp
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      exc22_ssebp32
         movzx   esi,si
 exc22_ssebp32:

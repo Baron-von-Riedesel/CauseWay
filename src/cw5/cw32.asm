@@ -44,8 +44,14 @@ SF_VMM     equ 0002h  ;VMM & swapfile present
 ;--- bits 000Ch are copied from ProtectedType
 ;--- bits 0070h are copied from ProtectedFlags
 SF_GDT     equ 0080h  ;move GDT
-SF_SINGLE  equ 4000h  ;single (=not dual) mode; or is it bit 16???
+;--- bit 14 is checked in api.inc, proc _SetSelector
+;--- "dual" mode bit seems to be bit 16
+;SF_??????  equ 4000h  ;bit 14 set to 1 by WL32 if binary has no 32-bit segments
 SF_PM      equ 8000h  ;running in protected-mode
+
+A20_DISABLE equ 0
+A20_ENABLE  equ 1
+A20_RESTORE equ 2
 
 PTMAPADDR   equ 0FFC00000h ;=1024*4096*1023, last page directory entry
 PDEMAPDET   equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF 
@@ -57,6 +63,9 @@ MOVEPAGE1STTOEXT equ 1	;1=move page table for region 0-3fffff to extended memory
 MOVETSS          equ 1	;1=move TSS to extended memoy (behind IDT)
 RELXMSINRM       equ 1	;1=release xms memory handles after final switch to real-mode
 VCPIPMCALL       equ 1	;1=alloc/release vcpi pages via protected-mode VCPI call
+ifndef XMSITEMS
+XMSITEMS         equ 32	;max XMS handles to manage
+endif
 ifndef EARLYKDINIT
 EARLYKDINIT      equ 1	;1=init KD very early after switch to protected-mode
 endif
@@ -291,6 +300,7 @@ PageAliasReal   dw ?            ;Real mode segment for page table alias; later u
 KernalTSSReal   dw ?            ;Real mode segment for kernal TSS.
 DOSVersion      dw ?
 
+;--- A20 state check vars
 LowMemory label dword         ; Set equal to 0000:0080
                 dw 00080h
                 dw 00000h
@@ -359,11 +369,11 @@ VMMDrivPath5    db 128 dup (0)  ;used by boot drive.
 	align 2
 
 cw5_OldStrat      dw ?,?
-cw5_XMSSize       dd 0
 wUMB              dw 0          ;UMB used 1) for paging tables 2) for transfer buffer + swapfile buffer
 ;cw5_NumXMSHandles db ?
 IProtectedMode    db 0
 IProtectedForce   db 0          ;CAUSEWAY environment setting "DPMI"
+;IXMSVer3          DB 0
 ;
 ;
 ;-------------------------------------------------------------------------------
@@ -518,134 +528,113 @@ chk386:
         mov     XMSPresent,1            ;flag XMS is available.
 
 ; MED, 09/10/99, support extended XMS API to calculate XMS available to CauseWay
-;  (maximum of 2G-32K, i.e. 32 handles/entries of 64K-1)
+;  (maximum of 2G-32K, i.e. 32 handles/entries of 64K-1); may be changed (XMSITEMS).
         mov     ah,0
         call    [XMSControl]            ; get info
         cmp     ah,3
         jb      xms2
-        cmp     bh,3
-        jb      xms2
-        cmp     bl,8
+        cmp     bx,308h
         jb      xms2                    ; treat early 3.x drivers < 3.08 as 2.x
 
 ; use extended XMS API
-        mov     XMSVer3Present,1        ; flag XMS 3.x driver present
+;        mov     IXMSVer3,1              ; flag XMS 3.x driver present
         mov     ah,88h
-        call    [XMSControl]            ;get size of biggest block free.
-        mov     edx,eax
+        call    [XMSControl]            ;returns: eax=size of biggest block free, edx=total free
         test    eax,eax
         jz      cw5_YesXMS              ;no memory available.
-        mov     [cw5_XMSSize],edx
+        mov     edx,eax
+        mov     esi,eax                 ;save biggest free block in ESI
         mov     ah,89h                  ;claim biggest block to force XMS
         call    [XMSControl]            ;to stake a claim on int 15h.
-        cmp     ax,1
-        jnz     cw5_YesXMS
-        mov     di,1
-;        mov     [cw5_NumXMSHandles],1
+        dec     ax
+        jnz     cw5_YesXMS              ; err if ax != 1
+        mov     di,1                    ; use DI as handle count
         push    dx
         mov     ah,8eh                  ; get handle information
-        call    [XMSControl]            ; CX=free handles
-        cmp     ax,1
-        jnz     cw5_NoHandles3
+        call    [XMSControl]            ; returns CX=# of free handles
+        dec     ax
+        jnz     cw5_NoHandles3          ; err if ax != 1
         cmp     cx,4
         jc      cw5_NoHandles3
         sub     cx,2
-;        mov     [cw5_NumXMSHandles],32
-        mov     di,XMSITEMS
-        cmp     cx,bx
+        mov     di,XMSITEMS             ; di=min(XMSITEMS,cx)
+        cmp     cx,di
         jnc     cw5_NoHandles3
-;        mov     [cw5_NumXMSHandles],cl  ; cx known 8-bit value
         mov     di,cx
-
 cw5_NoHandles3:
-;        mov     [cw5_NumXMSHandles],di
-        pop     dx
-        mov     ah,0ah
-        call    [XMSControl]            ;now free it.
 
-;        movzx   eax,[cw5_NumXMSHandles]
+;--- eax = min( biggest block, avail. hdl * 65535)
         movzx   eax,di
-        mov     edx,eax
-        shl     eax,16
-        sub     eax,edx                 ; eax == handles (up to 32) * 65535
-        cmp     eax,[cw5_XMSSize]
-        jae     cw5_ComputeSize
-        mov     [cw5_XMSSize],eax    ; throttle maximum size
-
-cw5_ComputeSize:
-        push    eax
+        imul    eax,65535
+        cmp     eax,esi
+        jb      @F
+        mov     eax,esi
+@@:
+;--- XMS block size for alloc = eax / avail. hdl
         xor     edx,edx
-;        movzx   ebx,[cw5_NumXMSHandles]
-        movzx   ebx,di
-        div     ebx
-        pop     ebx
-        cmp     ax,4                    ; eax known 16-bit value
-        jnc     cw5_SizeOK3
-        mov     ax,bx                   ; ebx == maximum size, known 16-bit value here
-
-cw5_SizeOK3:
-        mov     XMSBlockSize,ax
-        jmp     cw5_YesXMS
+        movzx   edi,di
+        div     edi
+        mov     bx,si
+        shr     esi,16
+        jz      cw5_XMScommon           ;hiword(esi)==0?
+        mov     bx,0ffffh               ;use 65535 (since XMS func 09h is used for allocations)
+        jmp     cw5_XMScommon
 
 ;--- handle XMS v2 host
 xms2:
         mov     ah,8
         call    [XMSControl]            ;get size of biggest block free.
-        mov     dx,ax
         or      ax,ax
         jz      cw5_YesXMS              ;no memory available.
-        mov     WORD PTR [cw5_XMSSize],dx
+        mov     dx,ax
+        mov     si,ax
         mov     ah,9
         call    [XMSControl]            ;claim biggest block to force XMS
-        cmp     ax,1                    ;to stake a claim on int 15h.
-        jnz     cw5_YesXMS
-;        mov     [cw5_NumXMSHandles],1
-        mov     di,1
+        dec     ax                      ;to stake a claim on int 15h.
+        jnz     cw5_YesXMS              ;err if ax != 1
+        mov     di,1                    ;use DI as handle count
         push    dx
         mov     ah,0eh                  ;get handle info
-        call    [XMSControl]            ;BL=# of free handles
-        cmp     ax,1
-        jnz     cw5_NoHandles
+        call    [XMSControl]            ;returns BL=# of free handles
+        dec     ax
+        jnz     cw5_NoHandles2          ;err if ax != 1
         cmp     bl,4
-        jc      cw5_NoHandles
+        jc      cw5_NoHandles2
         sub     bl,2
-;        mov     [cw5_NumXMSHandles],32
-        mov     di,XMSITEMS
+        mov     di,XMSITEMS             ;di=min(XMSITEMS,bl)
         mov     bh,0
         cmp     bx,di
-        jnc     cw5_NoHandles
-;        mov     [cw5_NumXMSHandles],bl
+        jnc     cw5_NoHandles2
         mov     di,bx
-cw5_NoHandles:
+cw5_NoHandles2:
+        mov     ax,si
+        mov     bx,ax
+        xor     dx,dx
+        div     di
+cw5_XMScommon:
+        cmp     ax,4
+        jnc     @F
+        mov     ax,bx                   ; bx == maximum size, known 16-bit value here
+@@:
+        mov     XMSBlockSize,ax
+        @dprintf DOPT_PHYSMEM,<"block size for XMS allocations: %u",10>,ax
         pop     dx
         mov     ah,0ah
-        call    [XMSControl]            ;now free it.
-        mov     ax,WORD PTR [cw5_XMSSize]
-        push    ax
-        xor     dx,dx
-;        xor     bh,bh
-;        mov     bl,[cw5_NumXMSHandles]
-        mov     bx,di
-        div     bx
-        pop     bx
-        cmp     ax,4
-        jnc     cw5_SizeOK
-        mov     ax,bx
-cw5_SizeOK:
-        mov     XMSBlockSize,ax
+        call    [XMSControl]            ;free the XMS block
         jmp     cw5_YesXMS
+
+cw5_NoXMS:
 ;
 ;Install raw A20 handler.
 ;
-cw5_NoXMS:
-        call    InstallA20              ; set A20HandlerCall (called by A20Handler)
+        call    InstallA20              ; set A20HandlerCall (called in Raw mode by A20Handler if no XMS host detected)
 ;
 ;Get A20 state.
 ;
 cw5_YesXMS:
         push    ds
-        les     di,HighMemory           ;   with the four at FFFF:0090
-        lds     si,LowMemory            ; Compare the four words at 0000:0080
+        les     di,HighMemory           ; Compare the four words at 0000:0080
+        lds     si,LowMemory            ; with the four at FFFF:0090
         mov     cx,4
         cld
         repe  cmpsw
@@ -654,7 +643,7 @@ cw5_YesXMS:
         jcxz    cw5_A20OFF              ; Are the two areas the same?
         inc     ax                      ; No, return A20 Enabled
 cw5_A20OFF:
-        mov     A20Flag,al
+        mov     A20Flag,al              ; store initial state of A20
 ;
 ;Grab memory for page dir, page alias & first page table entry.
 ;
@@ -1194,7 +1183,7 @@ cw5_RAW:
 ;
         movzx   eax,Page1stReal         ;segment address with bits 0-7 cleared!
         shl     eax,4
-        or      ax,111b                 ;user+write+present
+        or      al,111b                 ;user+write+present
         mov     es,PageDIRReal
         xor     di,di
         mov     es:[di],eax
@@ -1208,7 +1197,7 @@ cw5_RAW:
         ;
         movzx   eax,PageAliasReal       ;get para address (bits 0-7 cleared).
         shl     eax,4                   ;make linear.
-        or      ax,111b                 ;user+write+present.
+        or      al,111b                 ;user+write+present.
         mov     es,PageDIRReal
         mov     di,1023*4
         mov     es:[di],eax             ;setup in last page dir entry.
@@ -1253,7 +1242,7 @@ cw5_VCPI:
         shr     di,8-2                  ;convert to offset (0-3FCh) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0f000h               ;clear status bits 0-11.
-        or      ax,111b                 ;set our bits.
+        or      al,111b                 ;set our bits.
         mov     es,PageDIRReal
         xor     di,di
         mov     es:[di+0],eax           ;set first PDE in page dir
@@ -1272,7 +1261,7 @@ cw5_VCPI:
         shr     di,8-2                  ;convert to offset (0-3FC) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0F000h               ;clear status bits.
-        or      ax,111b                 ;user+write+present.
+        or      al,111b                 ;user+write+present.
         mov     es,PageDIRReal
         mov     di,1023*4
         mov     es:[di],eax             ;setup in last page dir entry (address range FFC00000-FFFFFFFF)
@@ -1290,10 +1279,10 @@ cw5_VCPI:
         mov     vcpi._pIDT,eax
 cw5_InProt:
 ;
-;Make sure A20 is enabled.
+;Raw/VCPI: Make sure A20 is enabled.
 ;
         mov     IErrorNumber,IERR_07
-        mov     ax,1
+        mov     ax,A20_ENABLE
         call    A20Handler
         jnz     InitError
 ;
@@ -1337,7 +1326,7 @@ endif
 ;
 ;Setup initial segment variables.
 ;
-        or      [SystemFlags],8000h     ;Flags us in protected mode.
+        or      [SystemFlags],SF_PM     ;Flags us in protected mode.
 ;
 ;Now get extended memory sorted out, move the page tables into extended memory
 ;for a start.
@@ -2144,7 +2133,7 @@ endif
         test    SystemFlags,1 shl 14    ;Dual mode?
         jnz     cw5_Use16Bit23
         ;
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      cw5_Use32Bit23
         jmp     cw5_Use16Bit23
 cw5_Use32Bit23:
@@ -2181,7 +2170,7 @@ cw5_d0:
 ;
         mov     IErrorNumber,IERR_09
         mov     ax,1                    ;start as 32-bit client
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      cw5_Use32Bit24
         xor     ax,ax                   ;start as 16-bit client
 cw5_Use32Bit24:
@@ -2192,7 +2181,7 @@ cw5_Use32Bit24:
         mov     IErrorNumber,IERR_09
         test    [SystemFlags+2],1       ;Dual mode?
         jz      InitError
-        xor     SystemFlags,1
+        xor     SystemFlags,SF_16BIT
         xor     ax,1                    ;toggle the mode.
         call    d[bp]                   ;Make the switch.
         jc      InitError               ;really isn't feeling well.
@@ -2385,7 +2374,7 @@ cw5_InProtected:
         mov     bl,31h
         mov     ax,204h
         int     31h
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      cw5_Use32
         mov     [int31call], offset int31call16
         mov     [int31callcc], offset int31call16cc
@@ -2434,7 +2423,7 @@ ifdef SRDPMISTATE
         jc      cw5_NoState
         mov     w[DPMIStateSize+0],ax
         mov     w[DPMIStateSize+2],0
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      cw5_DS_Use32
         mov     w[DPMIStateAddr+0],di
         mov     w[DPMIStateAddr+2],si
@@ -3454,7 +3443,7 @@ ChkDPMI proc    near
         int     2fh
         or      ax,ax                   ;None-zero means its not there.
         jnz     cw15_9
-        test    [SystemFlags],1
+        test    SystemFlags,SF_16BIT
         jz      cw15_Use32Bit21
         jmp     cw15_Use16Bit21
 cw15_Use32Bit21:

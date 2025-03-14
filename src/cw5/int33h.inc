@@ -33,7 +33,7 @@ Int33hOpen      proc    far
 ;
         assume ds:GROUP32
         assume es:GROUP16
-        test    BYTE PTR es:SystemFlags,1
+        test    BYTE PTR es:SystemFlags,SF_16BIT
         jz      int331_32bit
         mov     eax,offset Int33hDummy
         mov     w[int33h.UserCode+0],ax
@@ -72,7 +72,7 @@ int331_0bit:
         ;
         mov     bl,33h
         Sys     GetVect
-        test    BYTE PTR es:SystemFlags,1
+        test    BYTE PTR es:SystemFlags,SF_16BIT
         jz      int331_Use32
         movzx   edx, dx
 int331_Use32:
@@ -159,7 +159,7 @@ int333_SwapEvent: ; AX=0014h
         cmp     int33h.UserOK,0  ;handler installed?
         jnz     int333_se0
         ;
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int333_se1
         xchg    dx,w[int33h.UserCode+0]
         mov     ax,w[int33h.UserCode+2]
@@ -197,7 +197,7 @@ int333_se2:
         jmp     int333_se9
         ;
 int333_se0:
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int333_se3
         xchg    dx,w[int33h.UserCode+0]
         mov     ax,w[int33h.UserCode+2]
@@ -259,7 +259,7 @@ int333_Reset:
         assume ds:GROUP32
         mov     int33h.UserOK,0
         mov     d[int33h.UserCode+0],offset Int33hDummy
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int333_r32
         mov     w[int33h.UserCode+2],cs
         jmp     int333_r0
@@ -342,7 +342,7 @@ int333_SetEvent: ; AX=000Ch
         push    es
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
         mov     int33h.UserOK,0          ;disable old handler.
@@ -565,7 +565,7 @@ int333_Done:
         pushfd
         pop     eax                             ;get new flags.
         and     ah,11111001b                    ;lose IF & DF.
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int333_Use32Bit8
         push    ebp
         movzx   ebp,sp
@@ -596,7 +596,7 @@ Int33h  endp
 
 MouseEvent      proc    far
 
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int334_start32
         movzx esi, si
         movzx edi, di
@@ -637,7 +637,7 @@ int334_start32:
         ;
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      int334_Use32Bit
         db 66h
 int334_Use32Bit:
@@ -646,7 +646,7 @@ int334_Use32Bit:
 int334_Exit:
         mov     ds,cs:apiDSeg16
         assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         pop     edi
         pop     es
         pop     ds
@@ -660,7 +660,7 @@ MouseEvent      endp
 
 ;==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==-==
 Int33hDummy     proc    near
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int335_32Bit
         retw
 int335_32Bit:

@@ -1,7 +1,10 @@
 
-;--- 32-bit sample, memory model small.
-;--- assemble: ml -c small32.asm
-;--- link: WL32 small32
+;--- 32-bit sample, memory model small. To create:
+;---   ml -c small32.asm
+;---   wl32 small32
+;--- or, alternatively:
+;---   ml -c -D?FLAT small32.asm
+;---   wl32 /f small32
 
 	.386
 	.model small
@@ -31,10 +34,12 @@ start:
 	mov eax,@data
 	mov ds,eax
 	mov es,eax
+ifndef ?FLAT
 	lsl edx,eax
 	inc edx
 	mov ss,eax
 	mov esp,edx
+endif
 	call main
 	mov ax,4c00h
 	int 21h

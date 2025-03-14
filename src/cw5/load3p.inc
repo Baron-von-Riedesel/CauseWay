@@ -81,7 +81,7 @@ local   _dx:word
 local   load0:LOAD3P
 
 ;--- for Win3x/9x, clear hiword(ebp) if client is 16-bit
-        test    b cs:apiSystemFlags,1
+        test    b cs:apiSystemFlags,SF_16BIT
         jz      @F
         movzx   ebp,bp
 @@:

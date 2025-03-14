@@ -45,7 +45,6 @@ _LM_BlockEnd    dd ?
 _LM_Needed      dd ?
 _LM_Got         dd ?
 ;
-XMSITEMS equ 32
 XMSMEMITEM struc
 wHdl     dw ?
 dwBase   dd ?
@@ -95,14 +94,11 @@ fProtected2Real  label PF16
 Protected2Real	dw offset VCPIProt2Real, KernalCS
 Real2Protected	dw offset VCPIReal2Prot
 ;
-A20HandlerCall  dw ?          ; A20_PS2/A20_AT
-A20Flag         db 0
-
+A20HandlerCall  dw ?          ; offset A20 handler (PS2/AT KBC); used if no XMS host found
+A20Flag         db 0          ; initial state A20 (enabled/disabled)
 XMSPresent      db 0
-XMSVer3Present  DB 0          ; MED, 09/10/99
-
 XMSControl      dd ?          ; XMS entry; real-mode far16 address
-XMSBlockSize    dw ?
+XMSBlockSize    dw ?          ; size in KB to alloc XMS ext. memory blocks
 ;XMSUMBUsed      dw 0
 
 IFDEF PERMBIG1
@@ -312,7 +308,7 @@ endif
 ;
 ;Restore A20 state.
 ;
-        mov     ax,2
+        mov     ax,A20_RESTORE
         call    A20Handler
 ;
 ;We're back in real mode so remove any patches.
@@ -1009,12 +1005,12 @@ StateSavePM   proc    far
         pop     ds
         assume ds:GROUP16
         push    edi
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      @F
         movzx   edi,di
 @@:
         call    ssproc
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         pop     edi
         pop     ds
         jz      @F
@@ -1091,7 +1087,7 @@ SwitchProcRM   proc    far
 ;--- Real2Protected expects new ss:esp in CX:EDX
         mov     cx,dx
         mov     edx,ebx
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz @F
         movzx   edx,dx
         movzx   edi,di
@@ -1243,7 +1239,7 @@ A20_AT  proc    near
         jz      rv35_AAHDisable
         cmp     ax,2
         jnz     rv35_AAHEnable
-        cmp     A20Flag,0
+        cmp     A20Flag,0       ; initially disabled?
         jz      rv35_AAHDisable
 rv35_AAHEnable:
         call    rv35_Sync8042   ; Make sure the Keyboard Controller is Ready
@@ -1308,7 +1304,7 @@ PS2_A20BIT      equ     00000010b
         jz      rv36_PAHDisable
         cmp     ax,2
         jnz     rv36_PAHEnable
-        cmp     A20Flag,0
+        cmp     A20Flag,0          ;initially disabled?
         jz      rv36_PAHDisable
         ;
 rv36_PAHEnable:

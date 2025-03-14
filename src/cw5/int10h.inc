@@ -32,7 +32,7 @@ Int10hOpen      proc    far
         ;
         mov     bl,10h
         Sys     GetVect
-        test    BYTE PTR es:SystemFlags,1
+        test    BYTE PTR es:SystemFlags,SF_16BIT
         jz      @F
         movzx   edx, dx
 @@:
@@ -973,7 +973,7 @@ int103_Done:
         pushfd
         pop     eax
         and     ah,11111001b                    ;lose IF & DF.
-        test    BYTE PTR apiSystemFlags,1
+        test    BYTE PTR apiSystemFlags,SF_16BIT
         jz      int103_Use32Bit8
         push    ebp
         movzx   ebp,sp

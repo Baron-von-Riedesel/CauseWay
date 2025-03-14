@@ -43,3 +43,4 @@
      added to a minimum of 32 kB.
    - removed restriction that cwstub.exe can only launch a 32-bit application.
    - fixed: copy FCBs in int 21h, ax=4B00h emulation; code still optional.
+   - various fixes for emulation of int 31h, ax=800h (map physical memory).

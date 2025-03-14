@@ -1249,6 +1249,12 @@ EPSP_Struc		struc
 
  EPSP_ExecCount	dd ?		;PMode pointer to exec counter.
 
+ EPSP_EntryCSEIP	df ?	;Entry CS:EIP for DLL's
+
+ EPSP_PSPSel	dw ?		;This PSP's selector.
+
+ EPSP_FileName	db 256 dup (?)  ;This module full file name.
+
 EPSP_Struc		ends
 
 

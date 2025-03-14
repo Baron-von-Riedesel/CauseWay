@@ -448,7 +448,7 @@ RawBPutDescriptor proc near
         call    checkdesc
         jc      done
         assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      ldt8_Use32
         movzx   edi,di
 ldt8_Use32:
@@ -490,7 +490,7 @@ RawBGetDescriptor proc near
         call    checkdesc
         jc      done
         assume ds:GROUP16
-        test    BYTE PTR SystemFlags,1
+        test    BYTE PTR SystemFlags,SF_16BIT
         jz      ldt9_Use32
         movzx   edi,di
 ldt9_Use32:

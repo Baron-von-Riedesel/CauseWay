@@ -165,7 +165,7 @@ Int21h  proc    near
         cmp     cs:[Int21hTable+eax*4],0
         jz      Int21hNotOurs
         mov     esi,IFRM.i32._fl
-        test    BYTE PTR cs:apiSystemFlags,1 ;/
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT ;/
         jz      int211_32Bit0           ;/
         movzx   ebp,bp          ;/
         mov     esi,IFRM.i16._fl
@@ -190,7 +190,7 @@ int21_backtocaller::
         pop     fs
         pop     es
         pop     ds
-        test    BYTE PTR cs:apiSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jz      int211_32Bit1
         iret
 int211_32Bit1:
@@ -224,7 +224,7 @@ Int21hDOS4GTest proc near
 ;
 ;This check only allowed for 32-bit programs which is what DOS4G uses.
 ;
-        test    BYTE PTR cs:apiSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jnz     Int21hNotOurs
 ;
 ;Check register setup.
@@ -430,7 +430,7 @@ Int21hGetVect   endp
 ;Function 38 emulation.
 ;
 Int21hGetSetCountry proc near
-        test    BYTE PTR cs:apiSystemFlags,1 ;16 or 32-bit -1 check?
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT ;16 or 32-bit -1 check?
         jz      int2110_32Bit0
         cmp     dx,-1           ;Setting code?
         jmp     int2110_ExitCheck               ;pass to old handler?
@@ -960,7 +960,7 @@ int2121_OK:
         lds     esi,fword ptr [ebx+4+2] ; load cmdline into ds:esi
         jmp     int2121_Ef4
 int2121_0:
-        test    BYTE PTR cs:apiSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jz      int2121_Ef3
         xor     esi,esi
         db 66h                          ;prefix 66h changes next instr to LDS SI,dword ptr [ebx+2]
@@ -988,7 +988,7 @@ if COPYFCBS
         add     ebx,4        ; skip ENV offset
         jmp     int2121_Ef6
 int2121_Ef5:
-        test    BYTE PTR cs:apiSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jz      int2121_Ef6
         xor     eax,eax
         mov     ax,[ebx+(2)+(2+2)+(2+2)+0] ;Get FCB 2 offset
@@ -1846,7 +1846,7 @@ Int21hStringLen endp
 
 ;------------------------------------------------------------------------------
 Int21hAL2Carry  proc    near
-        test    BYTE PTR cs:apiSystemFlags,1
+        test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jz      int2136_32Bit
         or      b[ebp].IFRM.i16._fl,al
         ret
@@ -1869,7 +1869,7 @@ Int21hOpen      proc    far
         ;
         mov     bl,21h
         Sys     GetVect
-        test    BYTE PTR es:SystemFlags,1
+        test    BYTE PTR es:SystemFlags,SF_16BIT
         jz      int2137_Use32
         movzx   edx,dx
 int2137_Use32:
