@@ -24,16 +24,19 @@ Res_CALLBACK    equ 6   ;3 entries.
 Res_NOTHING     equ 254
 Res_CHAIN       equ 255 ;single entry.
 
+;--- fields for page details ( 4 MB region )
+;--- an "allocated" memory region start with a MEM_START, the rest is MEM_END
 MEM_FREE    equ 0   ;Free page.
 MEM_START   equ 1   ;Used page, start of block.
 MEM_END     equ 2   ;Used page, end of block.
-MEM_MASK    equ 3
+MEM_MASK    equ 11b ;just bits 0 & 1
 ;
+;--- bits 2-5 are lock count
 MEM_LOCK	equ	4	;Start of lock count.
 MEM_LOCK_MASK	equ	15	;4 bit lock count.
 MEM_LOCK_SHIFT	equ	2
 ;
-MEM_PHYS	equ	32	;physical mapping.
+MEM_PHYS	equ	32	;physical mapping - not used (and should be 64, since bit 5 is used by lock cnt)
 ;
 MEM_FILL	equ	(MEM_LOCK_MASK shl MEM_LOCK_SHIFT)+MEM_START
 
@@ -44,12 +47,12 @@ KernalA000		equ	0a000h+3
 
 ;
 Desc		struc
-Limit		dw 0		;Offset of last byte.
-Base_l		dw 0		;Low 16 bits of 32-bit address.
-Base_m		db 0		;Bits 16-23 of base.
-Access		db 0		;Access priviledge level.
-Gran		db 0		;Granularity and limit.
-Base_H		db 0		;bits 24-31 of base.
+Limit		dw 0		;+0 Offset of last byte.
+Base_l		dw 0		;+2 Low 16 bits of 32-bit address.
+Base_m		db 0		;+4 Bits 16-23 of base.
+Access		db 0		;+5 Access priviledge level.
+Gran		db 0		;+6 Granularity and limit.
+Base_H		db 0		;+7 bits 24-31 of base.
 Desc		ends
 
 DescPresent		equ	1 shl 7	;Segment is present.

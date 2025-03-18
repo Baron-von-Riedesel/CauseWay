@@ -6,6 +6,8 @@ ifndef COPYFCBS
 COPYFCBS equ 0	;1=copy fcbs in int 21h, ax=4b00h emulation
 endif
 
+;--- todo: ah=48h: works with BX only - for 32-bit, EBX should be used for DOS/4G compatibility.
+
 ;--- macros
 ;
 
@@ -848,6 +850,9 @@ Int21hGetCurDir endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 48 emulation.
+;BX: size in paragraphs, both for 16- and 32-bit.
+;Note: this is NOT DOS/4G compatible - DOS/4G accepts 32-bit value in EBX.
+;      Also, for DOS/4G value 0ffffh in BX has no special meaning.
 ;
 Int21hAllocMem  proc    near
         cmp     bx,-1           ;maximum free check?
@@ -906,6 +911,7 @@ Int21hRelMem    endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 4A emulation.
+;handles BX paragraphs only, even in 32-bit mode.
 ;
 Int21hResMem    proc    near
         movzx   ebx,[ebp].IFRM._BX

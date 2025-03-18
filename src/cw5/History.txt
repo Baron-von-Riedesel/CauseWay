@@ -44,3 +44,7 @@
    - removed restriction that cwstub.exe can only launch a 32-bit application.
    - fixed: copy FCBs in int 21h, ax=4B00h emulation; code still optional.
    - various fixes for emulation of int 31h, ax=800h (map physical memory).
+   - DPMI functions 0x10x: removed allocation of an extra paragraph to store
+     block size.
+   - fixed DPMI functions 0x10x: no selector tiling for 32-bit apps.
+   - DPMI functions 0x102: expanding DOS memory block implemented for 32-bit.

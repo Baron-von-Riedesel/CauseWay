@@ -1,5 +1,5 @@
 
-;--- for RAW/VCPI mode
+;--- emulation of DPMI ax=000xh (LDT descriptor) functions.
 
 MAXREAL2PROT equ 128
 
@@ -10,7 +10,7 @@ _cwDPMIEMU$1 ends
 
 ;-------------------------------------------------------------------------------
 ;
-;Allocate block of descriptor entries.
+;Allocate block of descriptor entries; ax=0000.
 ;
 ;On Entry:-
 ;
@@ -106,7 +106,7 @@ RawGetDescriptors endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Release a previously allocated descriptor entry.
+;Release a previously allocated descriptor entry; ax=0001.
 ;
 ;On Entry:-
 ;
@@ -180,7 +180,7 @@ RawRelDescriptor endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Create/return a protected mode selector that maps a real mode segment.
+;Create/return a protected mode selector that maps a real mode segment; ax=0002.
 ;
 ;On Entry:
 ;
@@ -290,7 +290,7 @@ checkdesc endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set selector type.
+;Set selector type; ax=0009h
 ;
 ;On Entry:-
 ;
@@ -306,10 +306,10 @@ RawSetSelType   proc    near
         push    es
         call    checkdesc
         jc      done
-        mov     es:[esi+5],cl
+        mov     es:[esi].Desc.Access,cl
         and     ch,11110000b
-        and     BYTE PTR es:[esi+6],00001111b
-        or      es:[esi+6],ch
+        and     BYTE PTR es:[esi].Desc.Gran,00001111b
+        or      es:[esi].Desc.Gran,ch
         ;
         clc
 done:
@@ -324,7 +324,7 @@ RawSetSelType   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set selector limit.
+;Set selector limit; ax=0008h
 ;
 ;On Entry:-
 ;
@@ -348,11 +348,11 @@ RawSetSelLimit  proc    near
         shr     ecx,12          ; div by 4096
         or      al,80h          ; set g bit
 ldt5_2:
-        mov     es:[esi+0],cx   ;store low word of limit.
+        mov     es:[esi].Desc.Limit,cx   ;store low word of limit.
         shr     ecx,16
         or      cl,al
-        and     BYTE PTR es:[esi+6],01110000b   ;lose limit & G bit.
-        or      es:[esi+6],cl           ;store high bits of limit and G bit.
+        and     BYTE PTR es:[esi].Desc.Gran,01110000b   ;lose limit & G bit.
+        or      es:[esi].Desc.Gran,cl    ;store high bits of limit and G bit.
         ;
         clc
 done:
@@ -368,7 +368,7 @@ RawSetSelLimit  endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set selector linear base address.
+;Set selector linear base address; ax=0007h.
 ;
 ;On Entry:-
 ;
@@ -383,9 +383,9 @@ RawSetSelBase   proc    near
         push    es
         call    checkdesc
         jc      done
-        mov     es:[esi+2],dx   ;base low.
-        mov     es:[esi+4],cl   ;base mid.
-        mov     es:[esi+7],ch   ;base high.
+        mov     es:[esi].Desc.Base_l,dx   ;base low.
+        mov     es:[esi].Desc.Base_m,cl   ;base mid.
+        mov     es:[esi].Desc.Base_H,ch   ;base high.
 done:
         pop     es
         pop     ds
@@ -398,7 +398,7 @@ RawSetSelBase   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Get selector linear base address.
+;Get selector linear base address; ax=0006h.
 ;
 ;On Entry:-
 ;
@@ -416,9 +416,9 @@ RawGetSelBase   proc    near
         push    es
         call    checkdesc
         jc      done
-        mov     dx,es:[esi+2]   ;base low.
-        mov     cl,es:[esi+4]   ;base mid.
-        mov     ch,es:[esi+7]   ;base high.
+        mov     dx,es:[esi].Desc.Base_l   ;base low.
+        mov     cl,es:[esi].Desc.Base_m   ;base mid.
+        mov     ch,es:[esi].Desc.Base_H   ;base high.
 done:
         pop     es
         pop     ds
@@ -431,7 +431,7 @@ RawGetSelBase   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Copy buffer into descriptor.
+;Copy buffer into descriptor; ax=000ch
 ;
 ;On Entry:-
 ;
@@ -473,7 +473,7 @@ RawBPutDescriptor endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Copy descriptor into buffer.
+;Copy descriptor into buffer; ax=000bh.
 ;
 ;On Entry:-
 ;

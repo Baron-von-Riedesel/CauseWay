@@ -1047,40 +1047,37 @@ rv46_DPMI_0009:
         ret
         ;
 rv46_DPMI_000A:
+;--- create an alias descriptor of selector in BX; return new descriptor in AX
         push    ebx
         push    eax
+        push    edi
+        push    es
+        mov     edi,offset RawSelBuffer
+        mov     ax,KernalDS
+        mov     es,eax
+        call    RawBGetDescriptor       ;get src descriptor
+        jc      rv46_000A_err
+;
         push    ecx
         mov     cx,1
         call    RawGetDescriptors
         pop     ecx
-        jnc     rv46_000A_0
-        pop     eax
-        pop     ebx
-        ret
-;
-rv46_000A_0:
-        push    eax
-        push    ebx
-        push    edi
-        push    es
-        push    eax
-        mov     edi,offset RawSelBuffer
-        mov     ax,KernalDS
-        mov     es,eax
-        call    RawBGetDescriptor       ;copy original details.
-        mov     BYTE PTR es:[edi+5],DescPresent+DescPL3+DescMemory+DescRWData
-        pop     ebx
+        jc      rv46_000A_err
+        mov     BYTE PTR es:[edi].Desc.Access,DescPresent+DescPL3+DescMemory+DescRWData
+        mov     ebx,eax
         call    RawBPutDescriptor       ;set new descriptor details.
+rv46_000A_err:
         pop     es
         pop     edi
-        pop     ebx
-        pop     eax
-;
+        jc      rv46_000A_err2
         pop     ebx
         mov     bx,ax
         mov     eax,ebx
         pop     ebx
-        clc
+        ret
+rv46_000A_err2:
+        pop     eax
+        pop     ebx
         ret
         ;
 rv46_DPMI_000B:
@@ -1145,9 +1142,8 @@ rv46_DPMI_0101:
         jmp     med3_0101
 
 med2_0101:
-        call    RawRelDOSMemory
+        call    RawReleaseDOSMemory
         jc      rv46_0101_0
-
 med3_0101:
         pop     eax
         pop     ebx
@@ -1475,8 +1471,8 @@ rv46_DPMI_0604:
         ret
         ;
 rv46_DPMI_0700:
-rv46_DPMI_0701:
-rv46_DPMI_0702:
+;rv46_DPMI_0701:
+;rv46_DPMI_0702:
         cmp     al,02h          ;mark page as demand pageing?
         jnz     rv46_DPMI_0703
         clc
@@ -3480,39 +3476,6 @@ rv59_100:
 
 GetCONVPages    endp
 endif
-
-;-------------------------------------------------------------------------------
-;
-;Build a segment descriptor.
-;
-;On Entry:-
-;
-;ES:EDI - Descriptor entry to use.
-;ESI    - Linear base to set.
-;ECX    - limit in bytes.
-;AL     - Code size bit.
-;AH     - Present/PL/memory|system/type bits.
-;
-EMUMakeDesc     proc    near
-        pushad
-        and     edi,not 7               ;lose RPL & TI
-        cmp     ecx,0100000h    ; see if we need to set g bit
-        jc      rv60_0
-        shr     ecx,12          ; div by 4096
-        or      al,80h          ; set g bit
-rv60_0: mov     es:[edi],cx             ;store low word of limit.
-        shr     ecx,16
-        or      cl,al
-        mov     es:[edi+6],cl   ;store high bits of limit and gran/code size bits.
-        mov     es:[edi+2],si   ;store low word of linear base.
-        shr     esi,16
-        mov     bx,si
-        mov     es:[edi+4],bl   ;store mid byte of linear base.
-        mov     es:[edi+7],bh   ;store high byte of linear base.
-        mov     es:[edi+5],ah   ;store pp/dpl/dt/type bits.
-        popad
-        ret
-EMUMakeDesc     endp
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;

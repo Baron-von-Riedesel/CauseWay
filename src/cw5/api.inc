@@ -1301,8 +1301,8 @@ cwAPI_GetMem    proc    near
         je      gm2             ; padding flag not turned on
         test    ecx,0ffff0000h
         jne     gm2             ; don't pad >64K allocation
-        add     ecx,1023
-        and     ecx,NOT 1023    ; pad to 1K-boundary allocation
+        add     ecx,1024-1
+        and     cx,NOT 1023     ; pad to 1K-boundary allocation
 gm2:
 
         call    mcbGetMemLinear32

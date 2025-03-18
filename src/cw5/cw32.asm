@@ -53,13 +53,16 @@ A20_DISABLE equ 0
 A20_ENABLE  equ 1
 A20_RESTORE equ 2
 
-PTMAPADDR   equ 0FFC00000h ;=1024*4096*1023, last page directory entry
-PDEMAPDET   equ 1022       ;entry in page dir, address range FF800000-FFBFFFFF 
+MAPINDEX    equ 1023
+PTMAPADDR   equ MAPINDEX shl 22 ;=FFC00000h, 4 MB region to map all physical pages
+DETINDEX    equ 1022       ;PD index for page details region
+DETMAPADDR  equ DETINDEX shl 22 ;=FF800000h, 4 MB region to store page details
 MAINSTKSIZE equ 2048       ;stack size of PL3 stack during init/exit (segment _cwStack)
+STARTPDINDEX equ 1         ;PD index start address space (1 shl 22 = 400000h)
 
 VIDEOGDTSELS     equ 1	;1=define selectors A000h,B000h and B800h (an odd CauseWay peculiarity)
 SMARTRMALLOC     equ 1	;1=if conv. memory couldn't be alloc'd in an UMB, it will use space behind transient area
-MOVEPAGE1STTOEXT equ 1	;1=move page table for region 0-3fffff to extended memory
+MOVEPT0TOEXT     equ 1	;1=move page table 0 (region 0-3fffff) to extended memory
 MOVETSS          equ 1	;1=move TSS to extended memoy (behind IDT)
 RELXMSINRM       equ 1	;1=release xms memory handles after final switch to real-mode
 VCPIPMCALL       equ 1	;1=alloc/release vcpi pages via protected-mode VCPI call
@@ -295,7 +298,7 @@ dpmiSelBase     dd 0            ;linear address of DpmiEmu segment in extended m
 CurrPhysPage    dd ?
 GDTReal         dw ?            ;Real mode segment for GDT.
 Page1stReal     dw ?            ;Real mode segment for 1st page table entry.
-PageDIRReal     dw ?            ;Real mode segment for page directory: later used as first 4k of transfer buffer.
+PageDirReal     dw ?            ;Real mode segment for page directory: later used as first 4k of transfer buffer.
 PageAliasReal   dw ?            ;Real mode segment for page table alias; later used as second 4k of transfer buffer.
 KernalTSSReal   dw ?            ;Real mode segment for kernal TSS.
 DOSVersion      dw ?
@@ -703,12 +706,11 @@ cw5_GotSeg:
 ;--- dx=segment addr of block
         mov     wUMB,dx
         push    cx
-        push    dx
         mov     es,ax
 
         mov     Page1stReal,ax          ;setup 1st page table address.
         add     ax,4096/16
-        mov     PageDIRReal,ax          ;setup page directory address.
+        mov     PageDirReal,ax          ;setup page directory address.
         add     ax,4096/16
         mov     PageAliasReal,ax        ;setup alias table address.
         xor     di,di
@@ -716,17 +718,14 @@ cw5_GotSeg:
         xor     al,al
         cld
         rep     stosb                   ;clear it.
-        movzx   eax,PageDIRReal
-        shl     eax,4
-        mov     PageDirLinear,eax
-        mov     vcpi._CR3,eax
-        movzx   eax,PageAliasReal
-        shl     eax,4
-        mov     PageAliasLinear,eax
         movzx   eax,Page1stReal
         shl     eax,4
         mov     Page1stLinear,eax
-        pop     dx
+        add     eax,4096
+        mov     PageDirLinear,eax
+        mov     vcpi._CR3,eax
+        add     eax,4096
+        mov     PageAliasLinear,eax
         pop     cx
 ;
 ;See if enough wasted space to squeeze TSS into.
@@ -850,7 +849,7 @@ cw5_0:
 
 ; MED 09/19/96
 ;       mov     bx,Page1stReal
-;        mov     bx,PageDIRReal
+;        mov     bx,PageDirReal
         mov     bx,wUMB
         add     bx,100h                 ;skip the swapfile buffer
         mov     TransferReal,bx
@@ -1179,27 +1178,27 @@ endif
 cw5_RAW:
         .386p
 ;
-;Need to initialise 1st entry of page dir & alias.
+;Need to initialise PD[0] and PD[1023]
 ;
         movzx   eax,Page1stReal         ;segment address with bits 0-7 cleared!
         shl     eax,4
         or      al,111b                 ;user+write+present
-        mov     es,PageDIRReal
+        mov     es,PageDirReal
         xor     di,di
         mov     es:[di],eax
         mov     es,PageAliasReal
         mov     es:[di],eax
-        mov     es,KernalTSSReal
 ;--- eax doesn't hold the value for CR3 ( it's PDE for page table 0 )!
+;        mov     es,KernalTSSReal
 ;        mov     es:[di].TSSFields.tCR3,eax  ;set CR3 in TSS as well.
         ;
-        ;map alias into page dir as well.
+        ;set PDE for page table mappings into page dir as well.
         ;
         movzx   eax,PageAliasReal       ;get para address (bits 0-7 cleared).
         shl     eax,4                   ;make linear.
         or      al,111b                 ;user+write+present.
-        mov     es,PageDIRReal
-        mov     di,1023*4
+        mov     es,PageDirReal
+        mov     di,MAPINDEX*4
         mov     es:[di],eax             ;setup in last page dir entry.
         ;
 ;       pushfd
@@ -1243,14 +1242,14 @@ cw5_VCPI:
         mov     eax,es:[di]             ;get physical address.
         and     ax,0f000h               ;clear status bits 0-11.
         or      al,111b                 ;set our bits.
-        mov     es,PageDIRReal
+        mov     es,PageDirReal
         xor     di,di
         mov     es:[di+0],eax           ;set first PDE in page dir
         mov     es,PageAliasReal
         mov     es:[di+0],eax
         ;
         mov     es,Page1stReal
-        mov     di,PageDIRReal
+        mov     di,PageDirReal
         shr     di,8-2                  ;convert to offset (0-3FCh) for PT 0
         mov     eax,es:[di]             ;get physical address.
         and     ax,0F000h               ;clear status bits.
@@ -1262,8 +1261,8 @@ cw5_VCPI:
         mov     eax,es:[di]             ;get physical address.
         and     ax,0F000h               ;clear status bits.
         or      al,111b                 ;user+write+present.
-        mov     es,PageDIRReal
-        mov     di,1023*4
+        mov     es,PageDirReal
+        mov     di,MAPINDEX*4
         mov     es:[di],eax             ;setup in last page dir entry (address range FFC00000-FFFFFFFF)
         ;
         mov     vcpi._LDT,KernalLDT
@@ -1346,21 +1345,21 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
 
         or      dx,111b                 ;present+user+write.
         or      dx,cx                   ;set use flags.
-        mov     eax,1                   ;use 2. entry (range 400000-7fffff)
+        mov     eax,STARTPDINDEX        ;PDE(1) = range 400000-7fffff
         mov     esi,PageDirLinear
         mov     es:[esi+eax*4],edx      ;store this tables address.
         mov     esi,PageAliasLinear     ;get alias table address.
         mov     es:[esi+eax*4],edx      ;setup in alias table as well, same range.
 ;        call    CR3Flush
-        mov     edi,PTMAPADDR+1000h     ;base of page alias's (=FFC00000).
+        mov     edi,PTMAPADDR+1000h     ;clear the page table
         mov     ecx,4096/4
         xor     eax,eax
         cld
         rep     stosd [edi]
         call    CR3Flush
-        mov     LinearEntry,1024        ;start address space (400h shl 12 = 400000h)
+        mov     LinearEntry,STARTPDINDEX shl 10  ;start address space (1 shl 22 = 400000h)
 ;
-;Setup DET page alias.
+;Setup DET page table.
 ;
         call    getandmappage
         shl     eax,12
@@ -1372,16 +1371,16 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         cld
         rep     stosd [edi]             ;clear it.
 
-        mov     eax,PDEMAPDET           ;PDE index
+        mov     eax,DETINDEX
         mov     esi,PageDirLinear
         mov     edx,CurrPhysPage        ;get physical address again.
         or      dx,111b
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+        mov     es:[esi+eax*4],edx
         mov     esi,PageAliasLinear
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+        mov     es:[esi+eax*4],edx
         call    CR3Flush
 ;
-;Setup DET page 1st.
+;Setup DET page 0 (region 0-3FFFFFh)
 ;
         call    getandmappage
         shl     eax,12
@@ -1390,16 +1389,17 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         mov     ecx,4096/4
         mov     eax,MEM_FILL
         cld
-        rep     stosd [edi]             ;copy old to new.
+        rep     stosd [edi]
 
         mov     edx,CurrPhysPage
         or      dx,111b
         mov     esi,PageDETLinear
-        mov     eax,0
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+;        xor     eax,eax
+;        mov     es:[esi+eax*4],edx
+        mov     es:[esi+0*4],edx
         call    CR3Flush
 ;
-;Allocate 2nd page DET
+;Allocate DET page 1 (region 400000h-7fffffh)
 ;
         call    getandmappage
         shl     eax,12
@@ -1408,13 +1408,13 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         mov     ecx,4096/4
         mov     eax,MEM_FILL
         cld
-        rep     stosd [edi]             ;copy old to new.
+        rep     stosd [edi]
 
-        mov     edx,CurrPhysPage        ;get physical address again.
+        mov     edx,CurrPhysPage      ;get physical address again.
         or      dx,111b
         mov     esi,PageDETLinear
-        mov     eax,1
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+;        mov     eax,1
+        mov     es:[esi+1*4],edx      ;put new page into the map.
         call    CR3Flush
 ;
 ;Move page alias into extended memory.
@@ -1435,16 +1435,16 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
 
         mov     edx,CurrPhysPage
         or      dx,111b
-        mov     eax,1023
+        mov     eax,MAPINDEX
         mov     esi,PageDirLinear
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+        mov     es:[esi+eax*4],edx
         mov     esi,PageAliasLinear
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+        mov     es:[esi+eax*4],edx
         call    CR3Flush
 
-if MOVEPAGE1STTOEXT
+if MOVEPT0TOEXT
 ;
-;Move page 1st into extended memory.
+;Move page table 0 into extended memory.
 ;
         call    getandmappage
         shl     eax,12
@@ -1466,11 +1466,13 @@ if MOVEPAGE1STTOEXT
         ;
         mov     edx,CurrPhysPage
         or      dx,111b
-        mov     eax,0
+;        mov     eax,0
         mov     esi,PageDirLinear
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+;        mov     es:[esi+eax*4],edx
+        mov     es:[esi+0*4],edx
         mov     esi,PageAliasLinear
-        mov     es:[esi+eax*4],edx      ;put new page into the map.
+;        mov     es:[esi+eax*4],edx
+        mov     es:[esi+0*4],edx
         call    CR3Flush
 endif
 ;
@@ -1808,7 +1810,7 @@ cw5_LDT:
 ;--- 2 page directory
 ;--- 3 PDE for region 400000-7FFFFF (where the GDT is located)
 ;--- 4 optionally page for IDT (if KRNLDBG is defined)
-;--- 5 optionally PDE for region 000000-3FFFFF (MOVEPAGE1STTOEXT=1)
+;--- 5 optionally PDE for region 000000-3FFFFF (MOVEPT0TOEXT=1)
 ;--- ES=zero-based flat
 
         mov     bx, offset PhysPageSave
@@ -1846,7 +1848,7 @@ endif
         mov     [bx], eax
         add     bx, 4
 @@:
-if MOVEPAGE1STTOEXT
+if MOVEPT0TOEXT
         btr     w es:[esi+0],10
         jnc     @F
         mov     eax,es:[esi+0]
@@ -1864,7 +1866,7 @@ endif
         ;
         call    getandmappage
         dec     LinearEntry             ;undo INC done inside getandmappage()
-        mov     esi,1024*4096*PDEMAPDET ;=FF800000h
+        mov     esi,DETMAPADDR
         mov     DWORD PTR es:[esi+eax*4],0      ;clear this page's details.
 ;
 ;Initialise virtual memory manager stuff.
@@ -2618,7 +2620,7 @@ cw5_e0:
 ;---      edx=PTE
 ;---      LinearEntry incremented
 ;---      CurrPhysPage updated
-;---      edi preserved
+;---      ecx, esi modified; ebp, edi, ebx preserved
 
 getandmappage:        
         call    fPhysicalGetPage        ;try to allocate a page.
@@ -2633,7 +2635,7 @@ getandmappage:
         mov     esi,PTMAPADDR           ;base of page alias's.
         mov     es:[esi+eax*4],edx      ;set physical address.
         call    CR3Flush
-        inc     LinearEntry             ;update pointer.
+        inc     LinearEntry             ;update index
         retn
 
 Startup endp
@@ -3771,6 +3773,7 @@ endif
         include interrup.inc
         include ldt.inc
         include memory.inc
+        include dosmem.inc
 
 _cwDPMIEMU ends
 

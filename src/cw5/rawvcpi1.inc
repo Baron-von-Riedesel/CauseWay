@@ -12,6 +12,8 @@ _cwRaw  segment para public 'raw kernal code' use16
 
         assume ds:GROUP16
 
+PAGESTACKSIZE   equ 32
+
 _cwRaw$1 segment dword public 'raw kernal data' use16
 ;
 SDAaddress      dd ?      ; lin. address of DOS SDA; set during Setup (int 21h, ax=5d06)
@@ -21,14 +23,13 @@ InWindows       db 0      ; 1 while "enhanced Windows" is running
 VMMName db '?:\',128 dup (0)
 ;
 	align 2
-PageStackSize   equ     32
 ProposedPresentFlag db 0
 ProposedRecentFlag db 0
 	align 4
 ProposedPage    dd 0
 CompareCount    dd 0
 NoneLockedPages dd 0
-RecentMapStack  dd PageStackSize dup (0)
+RecentMapStack  dd PAGESTACKSIZE dup (0)
 ;
 PageingPointer  dd 0	;see memory.inc
 SwapFileLength  dd 0
@@ -38,9 +39,9 @@ medAllocPages   dd 0
 TotalPages      dd 1
 TotalPhysical   dd 0
 ;
-RawSelBuffer    db 16 dup (?)
+RawSelBuffer    Desc <>
 ;
-_LM_BlockBase   dd ?	;see memory.inc
+_LM_BlockBase   dd ?	;used by Raw[Un]LockMemory; see memory.inc
 _LM_BlockEnd    dd ?
 _LM_Needed      dd ?
 _LM_Got         dd ?
@@ -136,15 +137,15 @@ CR3Sav          dd ?            ;CR3 value real-mode
 ;
 MDTLinear       dd ?,?          ;+0: linear address GDT/LDT; +4: end GDT/LDT (64 kb) -> byte string (8 kB )
 ;LDTLinear       dd ?
-Page1stLinear   dd ?
-PageDirLinear   dd ?
-PageAliasLinear dd ?
-PageDETLinear   dd 0
+Page1stLinear   dd ?            ;linear address page table 0
+PageDirLinear   dd ?            ;linear address page dir
+PageAliasLinear dd ?            ;linear address page table for page mappings (FFC00000h)
+PageDETLinear   dd 0            ;linear address page table for page detail region (FF800000h)
 
 ifdef KRNLDBG
-PhysPageSave    dd 4+MOVEPAGE1STTOEXT dup (0)   ;save max 4(5) VCPI pages to be released in real-mode only
+PhysPageSave    dd 4+MOVEPT0TOEXT dup (0)   ;save max 4(5) VCPI pages to be released in real-mode only
 else
-PhysPageSave    dd 3+MOVEPAGE1STTOEXT dup (0)   ;save max 3(4) VCPI pages to be released in real-mode only
+PhysPageSave    dd 3+MOVEPT0TOEXT dup (0)   ;save max 3(4) VCPI pages to be released in real-mode only
 endif
 ;
 LinearEntry     dd ?            ;current linear page# (address shr 12) for address space management.

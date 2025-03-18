@@ -12,6 +12,7 @@
 # PERMNOEX: if defined, same as CAUSEWAY environment variable setting NOEX.
 # LXWORK:   if defined, enables support for LX.
 # DEBUGLE:  if defined, enables debug displays for LE loader.
+# DBGOPT:   select debug displays (debug version only) 
 # DEFLOWMEM:if defined, sets default for LOWMEM in kB.
 # NOLOWMEM: if defined, VMM won't touch conv. memory, LOWMEM is a dummy.
 # NOEXPORTS:if defined, disables the kernel exports in api.inc (seems not to
@@ -30,7 +31,7 @@ DEBUG=0
 !endif
 
 !if $(DEBUG)
-AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG
+AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG -DDBGOPT=2
 OUTD=Debug
 DBGINC=dprint16.inc dprint32.inc vioout.inc
 !else
@@ -57,7 +58,7 @@ $(OUTD)\cw32.exe: $(OUTD)\cw32.obj
 #	@jwlink format dos f cw32.obj op q,m
 	@cd ..
 
-$(OUTD)\cw32.obj: cw32.asm rawvcpi1.inc rawvcpi2.inc interrup.inc ldt.inc memory.inc api.inc \
+$(OUTD)\cw32.obj: cw32.asm rawvcpi1.inc rawvcpi2.inc interrup.inc ldt.inc memory.inc dosmem.inc api.inc \
 		int10h.inc int21h.inc int33h.inc decode_c.inc exceptn.inc equates.inc \
 		..\strucs.inc ..\cw.inc loadle.inc load3p.inc $(DBGINC)
 	@$(ASM) /c /Cp $(AOPT) /nologo /I.. /Fl$(OUTD)\ -Fo$(OUTD)\ cw32.asm
