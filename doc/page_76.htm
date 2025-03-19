@@ -22,7 +22,7 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 76
 <P>26h – 29h not supported; use corresponding file handle function.</P>
 <P>2Fh [E]BX instead of BX</P>
 <P>31h No value is required in DX</P>
-<P>35h [E]DX instead of BX. Protected mode vector will be returned.</P>
+<P>35h [E]BX instead of BX. Protected mode vector will be returned.</P>
 <P>39h [E]DX instead of DX</P>
 <P>3Ah [E]DX instead of DX</P>
 <P>3Bh [E]DX instead of DX</P>
@@ -40,14 +40,21 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 76
 <P>48h Protected mode memory will be allocated</P>
 <P>49h Protected mode memory will be released</P>
 <P>4Ah Protected mode memory will be resized</P>
-<P>4Bh [E]DX &amp; [E]BX instead of DX &amp; BX</P>
-<P>Parameter block offset entries are [d]word</P>
+<P>4Bh [E]DX &amp; [E]BX instead of DX &amp; BX; Parameter block offset entries are [d]word</P>
 <P>4Eh [E]DX instead of DX</P>
 <P>56h [E]DX &amp; [E]DI instead of DX &amp; DI</P>
 <P>5Ah [E]DX instead of DX</P>
 <P>5Bh [E]DX instead of DX</P>
 <P>62h Protected mode selector will be returned</P>
 <P>6Ch [E]SI instead of SI</P>
+<P></P>
+<P><b>In DOS/4G mode, a few parameters change:</b></P>
+<P>3Fh ECX instead of CX. Return value in EAX instead of AX.</P>
+<P>40h ECX instead of CX. Return value in EAX instead of AX.</P>
+<P>48h EBX instead of BX</P>
+<P>4Ah EBX instead of BX</P>
+<P>4Bh environment segment/selector in parameter block (ES:EBX) becomes a FWORD (6 bytes)</P>
+
 </FONT>
 
 <P><A HREF="page_77.htm">Next Page</A></P>

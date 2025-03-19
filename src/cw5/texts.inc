@@ -36,10 +36,12 @@ ErrorM09        label byte
 ErrorM10        label byte
         if ENGLISH
         db 'Unable to find '
-ErrorM10_T      db 'application to load.',13,10,'$',32 dup (0)
+ErrorM10_T      label byte
+        db 'application to load.',13,10,'$',32 dup (0)
         elseif SPANISH
         db "Incapaz de encontrar '
-ErrorM10_T      db 'aplicacion a cargar.",13,10,"$",32 dup (0)
+ErrorM10_T      label byte 
+        db 'aplicacion a cargar.',13,10,'$',32 dup (0)
         endif
 ErrorM11        label byte
         if ENGLISH

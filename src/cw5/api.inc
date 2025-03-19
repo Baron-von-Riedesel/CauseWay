@@ -1,4 +1,14 @@
 
+;--- the CauseWay API ( int 31h, ax=0ffxxh )
+
+;--- if kernel exports are disabled, MODULEAPI must be 1
+;--- to enable dll support.
+ifdef NOEXPORTS
+MODULEAPI equ 1
+else
+MODULEAPI equ 0
+endif
+
 ;--- structs & equates
 
 McbChunkStruc struct
@@ -151,7 +161,7 @@ api63_SelectorSize   dd ?
 api73_BlockBase      dd ?
 api73_BlockHandle    dd ?
 api73_BlockSize      dd ?
-api74_dpmembuff      db 30h dup (?)	;DPMI meminfo struct (9 dwords, 12 bytes reserved)
+api74_dpmembuff      DPMI_MINFO <>	;DPMI meminfo struct (9 dwords, 12 bytes reserved)
 api75_OldEBX         dd 0
 api75_OldESI         dd 0
 
@@ -286,6 +296,11 @@ APICallTable label dword
         dd cwAPI_SetDump            ;30
         dd cwAPI_UserErrTerm        ;31
         dd cwAPI_CWErrName          ;32
+if MODULEAPI
+        dd cwAPI_FindModule         ;33
+        dd cwAPI_UnFindModule       ;34
+        dd cwAPI_FindFunction       ;35
+endif
 APILOWMAX equ ($ - APICallTable) / 4
 
 APIHIGHSTART equ 0F7h
@@ -807,11 +822,13 @@ cwAPI_DbgNtfModUnload   endp
 ;
 ;Returns:
 ;
-;ESI    - PageDirLinear  (valid in Raw/VCPI mode only!!!)
-;EDI    - Page1stLinear  (valid in Raw/VCPI mode only!!!)
+;ESI    - PageDirLinear
+;EDI    - Page1stLinear
 ;ECX:EDX = "CAUSEWAY"
 ;
 cwAPI_ID        proc    near
+        test    cs:apiSystemFlags,SF_DPMI
+        jnz     exit_with_carry  ;cannot access kernel data in DPMI mode (selector unknown)
         push    ds
         mov     ax,KernalDS
         mov     ds,eax
@@ -819,6 +836,7 @@ cwAPI_ID        proc    near
         mov     esi,PageDirLinear
         mov     edi,Page1stLinear
         pop     ds
+        assume ds:nothing
         mov     ecx,"CAUS"
         mov     edx,"EWAY"
         mov     [ebp].IFRM._ESI,esi
@@ -1048,7 +1066,7 @@ cwAPI_FarCallReal endp
 cwAPI_GetSel    proc    near
         xor     eax,eax
         xor     ebx,ebx
-        call    _SetSelector
+        call    _AllocSelector
         jc      exit_with_carry
         mov     [ebp].IFRM._BX,bx
         ret
@@ -1076,19 +1094,15 @@ cwAPI_GetSels   proc    near
         mov     cx,[ebp].IFRM._CX
         mov     ax,0000h
         cwAPI_CallOldCC
-        jc      api18_9
+        jc      exit_with_carry
 ;
         mov     [ebp].IFRM._BX,ax
         movzx   edx,ax
-        movzx   ecx,cx
         mov     ax,Res_SEL
 api18_0:
         call    RegisterResource
         add     edx,8
-        dec     ecx
-        jnz     api18_0
-;
-api18_9:
+        loopw   api18_0
         ret
 cwAPI_GetSels   endp
 
@@ -1102,11 +1116,12 @@ cwAPI_GetSels   endp
 ;BX     - Selector to release.
 ;
 cwAPI_RelSel    proc    near
-        mov     bx,[ebp].IFRM._BX
-        mov     ds,[ebp].IFRM._DS
-        mov     es,[ebp].IFRM._ES
-        mov     fs,[ebp].IFRM._FS
-        mov     gs,[ebp].IFRM._GS
+        mov     ebx,[ebp].IFRM._EBX
+;--- segment registers are still set
+;        mov     ds,[ebp].IFRM._DS
+;        mov     es,[ebp].IFRM._ES
+;        mov     fs,[ebp].IFRM._FS
+;        mov     gs,[ebp].IFRM._GS
         @dprintf DOPT_SEL,<"cwAPI_RelSel(bx=%X)",10>, ebx
         call    _RelSelector
         jc      exit_with_carry
@@ -1127,7 +1142,7 @@ cwAPI_RelSel    endp
 ;BX     - Selector.
 ;
 cwAPI_CodeSel   proc    near
-        mov     bx,[ebp].IFRM._BX
+        mov     ebx,[ebp].IFRM._EBX
         call    _CodeSelector
         jc      exit_with_carry
         ret
@@ -1147,21 +1162,19 @@ cwAPI_CodeSel   endp
 ;AX     - New selector.
 ;
 cwAPI_AliasSel  proc    near
+        mov     ebx,[ebp].IFRM._EBX
         mov     ax,000ah
-        mov     bx,[ebp].IFRM._BX
         cwAPI_CallOldCC
-        jc      api21_9
+        jc      exit_with_carry
 ;
         mov     [ebp].IFRM._AX,ax
-        push    eax
-        push    edx
+;        push    eax
+;        push    edx
         movzx   edx,ax
         mov     ax,Res_SEL
         call    RegisterResource
-        pop     edx
-        pop     eax
-;
-api21_9:
+;        pop     edx
+;        pop     eax
         ret
 cwAPI_AliasSel  endp
 
@@ -1180,20 +1193,15 @@ cwAPI_AliasSel  endp
 ;SI:DI  - Byte granular limit.
 ;
 cwAPI_GetSelDet proc near
-        mov     bx,[ebp].IFRM._BX
-        call    _DetSelector
+        mov     ebx,[ebp].IFRM._EBX
+        call    _GetSelector    ;eax=base,ebx=limit
         jc      exit_with_carry
-;
-        mov     ecx,eax         ;get base.
-        mov     dx,cx
-        shr     ecx,16
-        mov     esi,ebx         ;get limit.
-        mov     di,si
-        shr     esi,16
-        mov     [ebp].IFRM._CX,cx
-        mov     [ebp].IFRM._DX,dx
-        mov     [ebp].IFRM._SI,si
-        mov     [ebp].IFRM._DI,di
+        mov     [ebp].IFRM._DX,ax
+        mov     [ebp].IFRM._DI,bx
+        shr     eax,16
+        shr     ebx,16
+        mov     [ebp].IFRM._CX,ax
+        mov     [ebp].IFRM._SI,bx
         ret
 cwAPI_GetSelDet endp
 
@@ -1212,8 +1220,8 @@ cwAPI_GetSelDet endp
 ;ECX    - limit
 ;
 cwAPI_GetSelDet32 proc near
-        mov     bx,[ebp].IFRM._BX
-        call    _DetSelector
+        mov     ebx,[ebp].IFRM._EBX
+        call    _GetSelector
         jc      exit_with_carry
         mov     [ebp].IFRM._EDX,eax
         mov     [ebp].IFRM._ECX,ebx
@@ -1232,18 +1240,14 @@ cwAPI_GetSelDet32 endp
 ;SI:DI  - Byte granular limit.
 ;
 cwAPI_SetSelDet proc near
-        mov     cx,[ebp].IFRM._CX
-        mov     dx,[ebp].IFRM._DX
-        mov     si,[ebp].IFRM._SI
-        mov     di,[ebp].IFRM._DI
-        shl     ecx,16          ;Get base to somewhere useful.
-        mov     cx,dx
-        mov     eax,ecx
-        shl     esi,16          ;get limit to somewhere useful.
-        mov     si,di
-        mov     ebx,esi
+        mov     ax,[ebp].IFRM._CX
+        mov     bx,[ebp].IFRM._SI
+        shl     eax,16
+        shl     ebx,16
+        mov     ax,[ebp].IFRM._DX
+        mov     bx,[ebp].IFRM._DI
         mov     cx,[ebp].IFRM._BX
-        call    _SizeSelector
+        call    _SetSelector
         jc      exit_with_carry
         ret
 cwAPI_SetSelDet endp
@@ -1260,10 +1264,10 @@ cwAPI_SetSelDet endp
 ;ECX    - limit.
 ;
 cwAPI_SetSelDet32 proc near
-        mov     cx,[ebp].IFRM._BX
+        mov     ecx,[ebp].IFRM._EBX
         mov     eax,[ebp].IFRM._EDX
         mov     ebx,[ebp].IFRM._ECX
-        call    _SizeSelector
+        call    _SetSelector
         jc      exit_with_carry
         ret
 cwAPI_SetSelDet32 endp
@@ -1498,14 +1502,15 @@ cwAPI_ResizeMem    endp
 ;SI:DI  - selector:offset new block address.
 ;
 cwAPI_ResizeMemSO  proc    near
-        mov     ds,[ebp].IFRM._DS
-        mov     es,[ebp].IFRM._ES
-        mov     fs,[ebp].IFRM._FS
-        mov     gs,[ebp].IFRM._GS
+;--- segment registers still have their values
+;        mov     ds,[ebp].IFRM._DS
+;        mov     es,[ebp].IFRM._ES
+;        mov     fs,[ebp].IFRM._FS
+;        mov     gs,[ebp].IFRM._GS
 ;
         mov     bx,[ebp].IFRM._SI
         Sys     GetSelDet32             ;get selectors details.
-        jc      api30_9
+        jc      exit_with_carry
         mov     esi,edx
         movzx   eax,[ebp].IFRM._DI
         add     esi,eax                 ;get memory blocks address.
@@ -1514,7 +1519,7 @@ cwAPI_ResizeMemSO  proc    near
         shl     ecx,16                  ;convert new size to 32-bit.
         mov     cx,dx
         call    mcbResizeMemLinear32    ;re-size the memory.
-        jc      api30_9
+        jc      exit_with_carry
 ;
 ;Check new block type.
 ;
@@ -1556,14 +1561,10 @@ api30_1:
 api30_7:
         mov     [ebp].IFRM._SI,bx
         mov     [ebp].IFRM._DI,dx
-        clc
-;
-api30_9:
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
-        jc      exit_with_carry
         ret
 cwAPI_ResizeMemSO  endp
 
@@ -1611,14 +1612,15 @@ cwAPI_ResizeMem32  endp
 ;BX     - Selector for block to release.
 ;
 cwAPI_RelMem    proc    near
-        mov     bx,[ebp].IFRM._BX
+        mov     ebx,[ebp].IFRM._EBX
         Sys     GetSelDet32             ;Get selector base address.
-        jc      api32_9
+        jc      exit_with_carry
         mov     esi,edx
-        mov     ds,[ebp].IFRM._DS
-        mov     es,[ebp].IFRM._ES
-        mov     fs,[ebp].IFRM._FS
-        mov     gs,[ebp].IFRM._GS
+;--- segment registers still have their values
+;        mov     ds,[ebp].IFRM._DS
+;        mov     es,[ebp].IFRM._ES
+;        mov     fs,[ebp].IFRM._FS
+;        mov     gs,[ebp].IFRM._GS
         @dprintf DOPT_MEM,<"cwAPI_RelMem: calling int 31h, RelSel, bx=%X",10>,ebx
         Sys     RelSel                  ;release the selector.
         mov     [ebp].IFRM._DS,ds
@@ -1626,8 +1628,6 @@ cwAPI_RelMem    proc    near
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
         call    mcbRelMemLinear32       ;release the memory.
-api32_9:
-        jc      exit_with_carry
         ret
 cwAPI_RelMem    endp
 
@@ -2255,12 +2255,12 @@ cwAPI_UnLockMemNear endp
 ;
 cwAPI_GetMemDOS proc near
         mov     bx,[ebp].IFRM._BX
-        mov     ax,0100h
+        mov     ax,100h
         cwAPI_CallOldCC
         mov     [ebp].IFRM._AX,ax
         jnc     api51_0
         mov     [ebp].IFRM._BX,bx
-        jmp     api51_9
+        jmp     exit_with_carry
 ;
 api51_0:
         mov     [ebp].IFRM._DX,dx
@@ -2269,8 +2269,6 @@ api51_0:
         shl     ecx,4
         mov     ax,Res_DOSMEM
         call    RegisterResource
-;
-api51_9:
         ret
 cwAPI_GetMemDOS endp
 
@@ -2299,12 +2297,12 @@ cwAPI_GetMemDOS endp
 cwAPI_ResizeMemDOS proc near
         mov     bx,[ebp].IFRM._BX
         mov     dx,[ebp].IFRM._DX
-        mov     ax,0102h
+        mov     ax,102h
         cwAPI_CallOld
         jnc     api52_0
         mov     [ebp].IFRM._AX,ax
         mov     [ebp].IFRM._BX,bx
-        jmp     api52_9
+        jmp     exit_with_carry
 ;
 api52_0:
         mov     ax,Res_DOSMEM
@@ -2313,10 +2311,6 @@ api52_0:
         movzx   ecx,bx
         shl     ecx,4
         call    RegisterResource
-        clc
-;
-api52_9:
-        jc      exit_with_carry
         ret
 cwAPI_ResizeMemDOS endp
 
@@ -2342,30 +2336,28 @@ cwAPI_ResizeMemDOS endp
 ;
 cwAPI_RelMemDOS proc near
 
-        mov     ds,[ebp].IFRM._DS
-        mov     es,[ebp].IFRM._ES
-        mov     fs,[ebp].IFRM._FS
-        mov     gs,[ebp].IFRM._GS
+;--- no need to reload the segment regs
+;        mov     ds,[ebp].IFRM._DS
+;        mov     es,[ebp].IFRM._ES
+;        mov     fs,[ebp].IFRM._FS
+;        mov     gs,[ebp].IFRM._GS
 
         mov     dx,[ebp].IFRM._DX
-        mov     ax,0101h
+        mov     ax,101h
         cwAPI_CallOld
         jnc     api53_0
         mov     [ebp].IFRM._AX,ax
-        jmp     api53_9
+        jmp     exit_with_carry
 ;
 api53_0:
         mov     ax,Res_DOSMEM
         movzx   edx,dx
         call    ReleaseResource
-        clc
-;
-api53_9:
+;--- segment registers may have been set to NULL by int 31h, ax=101h
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
         mov     [ebp].IFRM._FS,fs
         mov     [ebp].IFRM._GS,gs
-        jc      exit_with_carry
         ret
 cwAPI_RelMemDOS endp
 
@@ -2386,25 +2378,23 @@ cwAPI_RelMemDOS endp
 ;
 cwAPI_Exec      proc    near
         @dprintf DOPT_EXEC,<"cwAPI_Exec enter",10>
-        mov     ds,[ebp].IFRM._DS
+        mov     ds, [ebp].IFRM._DS
         mov     edx,[ebp].IFRM._EDX
-        mov     es,[ebp].IFRM._ES
+        mov     es, [ebp].IFRM._ES
         mov     esi,[ebp].IFRM._ESI
-        mov     cx,[ebp].IFRM._CX
+        mov     cx, [ebp].IFRM._CX
         mov     ebx,0
         push    ebp
         call    _Exec
         pop     ebp
         jnc     api54_0
         mov     [ebp].IFRM._AX,ax
-        jmp     api54_9
+        @dprintf DOPT_EXEC,<"cwAPI_Exec exit C",10>
+        jmp     exit_with_carry
 ;
 api54_0:
         mov     [ebp].IFRM._AL,al
-;
-api54_9:
-        jc      exit_with_carry
-        @dprintf DOPT_EXEC,<"cwAPI_Exec exit",10>
+        @dprintf DOPT_EXEC,<"cwAPI_Exec exit NC",10>
         ret
 cwAPI_Exec      endp
 
@@ -2454,10 +2444,8 @@ cwAPI_cwcLoad proc near
         mov     edi,[ebp].IFRM._EDI
         call    DecodeCWC
         mov     [ebp].IFRM._EAX,eax
-        jc      api56_9
-        mov     [ebp].IFRM._ECX,ecx
-api56_9:
         jc      exit_with_carry
+        mov     [ebp].IFRM._ECX,ecx
         ret
 cwAPI_cwcLoad endp
 
@@ -2610,7 +2598,7 @@ cwAPI_Cleanup   endp
 ;
 ;BX     - Segment selector.
 ;
-_SetSelector    proc near
+_AllocSelector    proc near
         ;
         push    eax
         push    ecx
@@ -2708,7 +2696,7 @@ api61_10:
         pop     eax
         ret
 
-_SetSelector    endp
+_AllocSelector    endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -2742,15 +2730,14 @@ _RelSelector    endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-_SizeSelector   proc near
+_SetSelector   proc near
 ;
-;Set a segment selector table entry and return a suitable segment value. Will
-;use whatever method is apropriate to the system environment.
+;Set a selector's base and limit.
 ;
 ;On Entry:-
 ;
 ;EAX    - Linear base address.
-;EBX    - size in bytes.
+;EBX    - Limit in bytes.
 ;CX     - Selector.
 ;
 ;On Exit:-
@@ -2829,11 +2816,11 @@ api63_10:
         pop     eax
         ret
 
-_SizeSelector   endp
+_SetSelector   endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
-_DetSelector    proc    near
+_GetSelector    proc    near
 ;
 ;Fetch selector base & limit values.
 ;
@@ -2844,7 +2831,7 @@ _DetSelector    proc    near
 ;On Exit:-
 ;
 ;EAX    - Linear base address.
-;EBX    - size in bytes.
+;EBX    - Limit in bytes.
 ;
         ;
         push    ecx
@@ -2893,7 +2880,7 @@ api64_10:
         pop     edx
         pop     ecx
         ret
-_DetSelector    endp
+_GetSelector    endp
 
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
@@ -3906,18 +3893,9 @@ _GetMemory      proc    near
         cmp     ebx,-1                  ;special value to get memory free?
         jnz     api73_NotSpecial
 api73_Special:
-        call    _GetMemoryMax           ;call free memory code.
+        call    _GetMemoryMax           ;get max free block/free memory
         stc
-        pop     [api73_BlockHandle]
-        pop     [api73_BlockBase]
-        pop     [api73_BlockSize]
-        pop     es
-        pop     ds
-        pop     ebp
-        pop     edi
-        pop     edx
-        pop     ecx
-        ret
+        jmp api73_10
         ;
 api73_NotSpecial:
         mov     [api73_BlockSize],ebx   ;store real block size.
@@ -3965,6 +3943,8 @@ _GetMemory      endp
 _GetMemoryMax proc near
 ;
 ;Work out biggest memory block remaining.
+;ebx = -2: get free mem
+;ebx = -1: get max block
 ;
         ;
         push    ds
@@ -3976,13 +3956,8 @@ COMMENT ! MED 02/15/96
         cmp     ebx,-1                  ;normal max reporting?
         jz      api74_normal
 
-        push    ds
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
-        cmp     ProtectedType,PT_DPMI
-        assume ds:GROUP32
-        pop     ds
-        jz      api74_normal
+        test    apiSystemFlags,SF_DPMI  ;no access to KernalDS in dpmi mode
+        jnz     api74_normal
 
         ;
         ;Get free disk space remaining.
@@ -4046,21 +4021,20 @@ api74_normal:
         mov     edi,offset api74_dpmembuff
         push    ds
         pop     es
-        push    ebx
         mov     ax,0500h
         cwAPI_CallOld
-        pop     ebx
         pop     es
 
         cmp     ebx,-2
         jnz     api74_normal2
 
-        mov     ebx,d[api74_dpmembuff+1Ch]
+;        mov     ebx,api74_dpmembuff.freeAdrSpace  ;???
+        mov     ebx,api74_dpmembuff.freeUnlocked
         shl     ebx,12
         jmp     api74_exit
 
 api74_normal2:
-        mov     ebx,d[api74_dpmembuff]
+        mov     ebx,api74_dpmembuff.maxBlock
         ;
 api74_exit:
         pop     ds
@@ -5664,7 +5638,7 @@ FindModule      proc    near
         push    es
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
-
+        @dprintf DOPT_EXEC,<"FindModule enter, es:esi=%ls",10>,esi,es
 ;
 ;Search resident modules first.
 ;
@@ -5682,18 +5656,18 @@ FindModule      proc    near
         inc     esi
         mov     ebx,esi
         mov     ebp,ecx
-api84_5:
+api84_5:                                ;<---- next char
         inc     esi
         cmp     BYTE PTR es:[esi-1],"\"
         jnz     api84_6
-        mov     ebx,esi
+        mov     ebx,esi                 ;remember start of name
         mov     ebp,ecx
 api84_6:
-        dec     ecx
-        jnz     api84_5
+        loop    api84_5
+
         mov     esi,ebx
         ;
-api84_imp1:
+api84_imp1:                             ;<---- next PSP
         mov     ebx,esi
         mov     edx,es:EPSP_Struc.EPSP_Exports[edi] ;Point to export memory.
         or      edx,edx                 ;Any exports?
@@ -5709,8 +5683,7 @@ api84_imp2:
         jnz     api84_imp3
         inc     ebx
         inc     edx
-        dec     ecx
-        jnz     api84_imp2
+        loop    api84_imp2
         ;
         pop     esi
         jmp     api84_imp5              ;got it!
@@ -5929,6 +5902,7 @@ api84_imp5:
 ;
 ;Return module PSP address to caller.
 ;
+        @dprintf DOPT_EXEC,<"FindModule exit, module found",10>
         xor     eax,eax
         clc
         jmp     api84_imp10
@@ -5936,6 +5910,7 @@ api84_imp5:
 ;Couldn't find name so return error to caller.
 ;
 api84_error:
+        @dprintf DOPT_EXEC,<"FindModule exit, module NOT found",10>
         stc
 ;
 api84_imp10:
@@ -5949,7 +5924,6 @@ api84_imp10:
         ret
 ;
 FindModule      endp
-
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -6523,7 +6497,6 @@ api86_10:
         ret
 ;
 SearchModule    endp
-
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
@@ -7443,7 +7416,10 @@ apiEXPORT_apiData    equ 3
 
 	align 4
 
-apiExports      dd NUMEXPORTS
+;--- exports; offsets will be changed during init to linear addresses
+
+apiExports label dword
+        dd NUMEXPORTS
 ;
         dd offset apiExportName
 ;
@@ -7548,6 +7524,38 @@ __cwAPI_RelMemLinear32 proc far
 __cwAPI_RelMemLinear32 endp
 
 endif
+
+if MODULEAPI
+cwAPI_FindModule proc
+        mov     esi,[ebp].IFRM._ESI
+        call    FindModule
+        jnc     @F
+        mov     [ebp].IFRM._EAX,eax
+        jmp     exit_with_carry
+@@:
+        mov     [ebp].IFRM._EDI,edi
+        ret
+cwAPI_FindModule endp
+
+cwAPI_UnFindModule proc
+        mov     edi,[ebp].IFRM._EDI
+        call    UnFindModule
+        jc      exit_with_carry
+        ret
+cwAPI_UnFindModule endp
+
+cwAPI_FindFunction proc
+        push    ebp
+        mov     edi,[ebp].IFRM._EDI
+        mov     ebp,[ebp].IFRM._EBP
+        call    FindFunction
+        pop     ebp
+        jc      exit_with_carry
+        mov     [ebp].IFRM._EDI,edi
+        ret
+cwAPI_FindFunction endp
+endif
+
 
 ;-------------------------------------------------------------------------------
 ;

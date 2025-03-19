@@ -6,8 +6,6 @@ ifndef COPYFCBS
 COPYFCBS equ 0	;1=copy fcbs in int 21h, ax=4b00h emulation
 endif
 
-;--- todo: ah=48h: works with BX only - for 32-bit, EBX should be used for DOS/4G compatibility.
-
 ;--- macros
 ;
 
@@ -20,6 +18,7 @@ Int21h_repmovs  macro
         rep     movsb
 endm
 
+;--- clear (hiword) of p1 parameter if DOS/4G mode is on
 
 DOS4GExtend     macro p1
         local __0
@@ -92,7 +91,7 @@ Int21hTable     label dword
 
         dd Int21hAllocMem       ;48
         dd Int21hRelMem         ;49
-        dd Int21hResMem         ;4A
+        dd Int21hResizeMem      ;4A
         dd Int21hExecFile       ;4B
         DD 4Eh - ( $ - Int21hTable ) / 4 dup (0)
 
@@ -461,7 +460,6 @@ int2110_ExitCheck:
         mov     [ebp].IFRM._BX,ax
         DOS4GExtend w[ebp].IFRM._EBX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2110_9
@@ -546,7 +544,6 @@ Int21hCreateDIR proc near
         mov     bl,21h
         Sys     IntXX
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -587,7 +584,6 @@ Int21hCreateFile proc near
         mov     bl,21h
         Sys     IntXX
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -629,7 +625,6 @@ Int21hOpenFile  proc    near
         mov     bl,21h
         Sys     IntXX
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -641,6 +636,8 @@ Int21hOpenFile  endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 3F emulation.
+;DS:[E]DX -> buffer
+;CX = length; ECX = length if DOS/4G mode
 ;
 Int21hReadFile  proc    near
         mov     ds,[ebp].IFRM._DS ;Point to source.
@@ -648,11 +645,11 @@ Int21hReadFile  proc    near
         call    Int21hExtend_DS_ESI     ;Extend [E]SI.
         mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        movzx   edx,[ebp].IFRM._CX      ;Get length.
-        cmp     cs:Int21hDOS4GFlag,0
-        jz      int2114_4
         mov     edx,[ebp].IFRM._ECX     ;Get length.
-int2114_4:
+        cmp     cs:Int21hDOS4GFlag,0
+        jnz     @F
+        movzx   edx,dx
+@@:
         xor     ebx,ebx         ;Reset length read.
 int2114_0:
         mov     ecx,edx
@@ -673,7 +670,6 @@ int2114_1:
         Sys     IntXX
         pop     ebx
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al           ;Carry set?
         jz      int2114_2
@@ -719,6 +715,8 @@ Int21hReadFile  endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 40 emulation.
+;DS:[E]DX -> buffer
+;CX = length; ECX = length if DOS/4G mode
 ;
 Int21hWriteFile proc near
         mov     ds,[ebp].IFRM._DS ;Point to source.
@@ -726,11 +724,11 @@ Int21hWriteFile proc near
         call    Int21hExtend_DS_ESI     ;Extend [E]SI.
         mov     es,cs:apiDSeg32
         mov     edi,offset Int21Buffer
-        movzx   edx,[ebp].IFRM._CX      ;Get length.
-        cmp     cs:Int21hDOS4GFlag,0
-        jz      int2115_4
         mov     edx,[ebp].IFRM._ECX     ;Get length.
-int2115_4:
+        cmp     cs:Int21hDOS4GFlag,0
+        jnz     @F
+        movzx   edx,dx
+@@:
         xor     ebx,ebx         ;Reset length read.
 int2115_0:
         mov     ecx,edx
@@ -760,7 +758,6 @@ int2115_1:
         Sys     IntXX           ;Do the write.
         pop     ebx
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al           ;Carry set?
         jz      int2115_2
@@ -826,7 +823,6 @@ Int21hGetCurDir proc near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2117_9
@@ -850,14 +846,21 @@ Int21hGetCurDir endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 48 emulation.
-;BX: size in paragraphs, both for 16- and 32-bit.
-;Note: this is NOT DOS/4G compatible - DOS/4G accepts 32-bit value in EBX.
-;      Also, for DOS/4G value 0ffffh in BX has no special meaning.
+;non-DOS/4G: BX: size in paragraphs
+;DOS/4G:    EBX: size in paragraphs
+;this behavior is new for v5.0 - previously, it was always BX, even in DOS/4G mode.
 ;
 Int21hAllocMem  proc    near
+        cmp     cs:Int21hDOS4GFlag,0
+        jnz     int2118_1
         cmp     bx,-1           ;maximum free check?
         jz      int2118_AllocMuch
         movzx   ebx,bx
+        jmp     int2118_2
+int2118_1:
+        test    ebx,0f0000000h
+        jnz     int2118_AllocMuch
+int2118_2:
         shl     ebx,4           ;convert paragraphs to bytes.
         mov     dx,bx
         shr     ebx,16
@@ -875,15 +878,21 @@ int2118_AllocMuch:
         mov     bx,cx
         shl     ebx,16
         mov     bx,dx
-        cmp     ebx,0fffeh*16   ;can't report too much.
-        jc      int2118_AllocOK
-        mov     ebx,0fffeh*16
-int2118_AllocOK:
-        shr     ebx,4           ;convert to paragraphs free.
-        mov     [ebp].IFRM._BX,ax
-        DOS4GExtend w[ebp].IFRM._EBX+2
-        mov     [ebp].IFRM._AX,1
-        DOS4GExtend w[ebp].IFRM._EAX+2
+        shr     ebx,4           ;convert to paragraphs
+        cmp     cs:Int21hDOS4GFlag,0
+        jnz     int2118_isdos4g
+        cmp     ebx,0fffeh      ;can't report too much.
+        jc      @F
+        mov     ebx,0fffeh
+@@:
+        mov     [ebp].IFRM._BX,bx
+        mov     [ebp].IFRM._AX,8
+        jmp     int2118_done
+int2118_isdos4g:
+        mov     [ebp].IFRM._EBX,ebx
+        mov     [ebp].IFRM._EAX,8
+int2118_done:
+        mov     al,1
         call    Int21hAL2Carry  ;Set carry.
         ret
 Int21hAllocMem  endp
@@ -894,11 +903,12 @@ Int21hAllocMem  endp
 ;Function 49 emulation.
 ;
 Int21hRelMem    proc    near
-        mov     bx,w[ebp].IFRM._ES
-        mov     ds,[ebp].IFRM._DS
-        mov     es,[ebp].IFRM._ES
+        mov     ebx,[ebp].IFRM._ES
+;--- segment registers ds,es, gs aren't modified
+;        mov     ds,[ebp].IFRM._DS
+;        mov     es,[ebp].IFRM._ES
         mov     fs,[ebp].IFRM._FS
-        mov     gs,[ebp].IFRM._GS
+;        mov     gs,[ebp].IFRM._GS
         Sys     RelMem
         mov     [ebp].IFRM._DS,ds
         mov     [ebp].IFRM._ES,es
@@ -911,22 +921,32 @@ Int21hRelMem    endp
 ;------------------------------------------------------------------------------
 ;
 ;Function 4A emulation.
-;handles BX paragraphs only, even in 32-bit mode.
+;            ES: selector of memory block
+;non-DOS/4G: BX: new size in paragraphs
+;DOS/4G:    EBX: new size in paragraphs
 ;
-Int21hResMem    proc    near
-        movzx   ebx,[ebp].IFRM._BX
+;
+Int21hResizeMem    proc    near
+        mov     ebx,[ebp].IFRM._EBX
+        cmp     cs:Int21hDOS4GFlag,0
+        jnz     @F
+        movzx   ebx,bx
+@@:
+        mov     al,1
+        test    ebx,0f0000000h
+        jnz     int2119_9
         shl     ebx,4           ;convert paragraphs to bytes.
         mov     dx,bx
         shr     ebx,16
         mov     cx,bx
-        mov     bx,w[ebp].IFRM._ES
-        Sys     ResMem
+        mov     ebx,[ebp].IFRM._ES
+        Sys     ResMem          ;bx=selector, CX:DX=new size
         pushfd
         pop     eax
-        and     al,1
+int2119_9:
         call    Int21hAL2Carry  ;Set carry.
         ret
-Int21hResMem    endp
+Int21hResizeMem    endp
 
 
 ;------------------------------------------------------------------------------
@@ -936,7 +956,8 @@ Int21hResMem    endp
 Int21hExecFile  proc    near
         cmp     [ebp].IFRM._AL,0 ;We only support sub-function 0.
         jz      int2121_OK
-int2121_Done:
+;int2121_Done:
+        mov     al,1
         call    Int21hAL2Carry  ;Set carry.
         ret
         ;
@@ -1147,7 +1168,8 @@ medex2:
         assume ds:nothing
         popad
 ENDIF
-        push    es:RealRegsStruc.Real_Flags[edi]   ;save flags.
+        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        push    eax
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax ;store errorlevel.
         DOS4GExtend w[ebp].IFRM._EAX+2
@@ -1168,9 +1190,8 @@ int2121_Ef15:
         mov     bl,21h
         Sys     IntXX
         ;
-        pop     ax
+        pop     eax
 int2121_Ef13:
-        and     ax,1
         call    Int21hAL2Carry
         ret
 Int21hExecFile  endp
@@ -1214,7 +1235,6 @@ Int21hFindFirstFile proc near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
 
 ;       or      al,al
@@ -1250,7 +1270,6 @@ Int21hFindNextFile proc near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry         ;Set carry.
 ;       or      al,al
 ;       jnz     @@9
@@ -1334,7 +1353,6 @@ Int21hRenameFile proc near
         DOS4GExtend w[ebp].IFRM._EAX+2
 
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
 
         ret
@@ -1370,7 +1388,6 @@ Int21hCreateTemp proc near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2127_9
@@ -1412,7 +1429,6 @@ Int21hMSNet     proc    near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2128_9
@@ -1666,7 +1682,6 @@ int2129_sh0:
         DOS4GExtend w[ebp].IFRM._EAX+2
         pushfd
         pop     eax
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         ret
 endif
@@ -1709,7 +1724,6 @@ Int21hExtendOpen proc near
         mov     [ebp].IFRM._CX,ax
         DOS4GExtend w[ebp].IFRM._ECX+2
         mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        and     al,1
         call    Int21hAL2Carry  ;Set carry.
         ret
 Int21hExtendOpen endp
@@ -1852,6 +1866,7 @@ Int21hStringLen endp
 
 ;------------------------------------------------------------------------------
 Int21hAL2Carry  proc    near
+        and     al,1
         test    BYTE PTR cs:apiSystemFlags,SF_16BIT
         jz      int2136_32Bit
         or      b[ebp].IFRM.i16._fl,al

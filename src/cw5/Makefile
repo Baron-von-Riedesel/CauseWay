@@ -15,8 +15,8 @@
 # DBGOPT:   select debug displays (debug version only) 
 # DEFLOWMEM:if defined, sets default for LOWMEM in kB.
 # NOLOWMEM: if defined, VMM won't touch conv. memory, LOWMEM is a dummy.
-# NOEXPORTS:if defined, disables the kernel exports in api.inc (seems not to
-#           be used at all).
+# NOEXPORTS:if defined, disables the kernel exports in api.inc; not needed
+#           for dll support.
 # NOI21RMHOOK:if defined, removes code for real-mode int 21h hook;
 #           PERMNOEX and CAUSEWAY=NOEX are dummies then.
 # SRDPMISTATE: if defined, call save/restore DPMI state (barely useful at all)
@@ -31,12 +31,12 @@ DEBUG=0
 !endif
 
 !if $(DEBUG)
-AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG -DDBGOPT=2
+AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG -DNOEXPORTS -DDBGOPT=8
 OUTD=Debug
 DBGINC=dprint16.inc dprint32.inc vioout.inc
 !else
 OUTD=Build
-AOPT=-DNOEXPORTS -DDEFLOWMEM=256 -DKRNLDBG 
+AOPT=-DDEFLOWMEM=256 -DKRNLDBG -DNOEXPORTS
 !endif
 
 ALL	: $(OUTD) $(OUTD)\cw32.exe $(OUTD)\cwstub.exe

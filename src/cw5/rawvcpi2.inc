@@ -1887,7 +1887,7 @@ freePhys      dd ?  ;20 pages
 totalPhys     dd ?  ;24 pages
 freeAdrSpace  dd ?  ;28 pages
 swapFile      dd ?  ;32
-rsvd          dd ?,?,?
+rsvd          dd ?,?,? ;36-47
 DPMI_MINFO ends
 
         push    eax

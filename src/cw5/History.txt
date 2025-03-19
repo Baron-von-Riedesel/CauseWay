@@ -48,3 +48,8 @@
      block size.
    - fixed DPMI functions 0x10x: no selector tiling for 32-bit apps.
    - DPMI functions 0x102: expanding DOS memory block implemented for 32-bit.
+   - fixed DOS extender int 21h, ah=48h/4Ah: in DOS/4G mode, EBX is supposed
+     to hold (new) size of requested memory in paragraphs.
+   - kernel exports for dll support deactivated as default. They're no longer
+     needed, since the CauseWay API now directly supports LoadModule,
+     GetProcAddress, FreeModule.

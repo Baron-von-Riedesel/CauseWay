@@ -91,6 +91,7 @@ local   load0:LOAD3P
         mov     d[load0._Command+0],esi
         mov     w[load0._Command+4],es
         mov     [load0._Environment],cx
+        @dprintf DOPT_EXEC,<"Load3P enter",10>
         ;
         xor     eax, eax
         mov     [load0._PSP],eax
@@ -924,6 +925,7 @@ api89_imp0:
         ;
         ;Try and find the module.
         ;
+        @dprintf DOPT_EXEC,<"Load3P: calling FindModule",10>
         call    FindModule
         jc      api89_findmodule_error
         ;
@@ -1249,17 +1251,17 @@ api89_file_error:
 ;
 api89_file_error2:
         mov     eax,[load0._EntryEIP]               ;Get the relocation number.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
         mov     b[ErrorM11_0+0]," "
         mov     b[ErrorM11_0+1]," "
         mov     b[ErrorM11_0+2]," "
         mov     cl,8
         mov     edi,offset ErrorM11_1
         call    Bin2Hex
-        pop     ds
-        assume ds:GROUP32
+;        pop     ds
+;        assume ds:GROUP32
         mov     ax,2
         stc
         jmp     api89_error
@@ -1270,10 +1272,10 @@ api89_findmodule_error:
         ;
         ;ES:ESI is the name string.
         ;
-        push    ds
+;        push    ds
         push    eax
-        mov     ds,apiDSeg16
-        assume ds:GROUP16
+;        mov     ds,apiDSeg16
+;        assume ds:GROUP16
         cmp     ax,1
         jnz     api89_egm1
         mov     edi,offset ErrorM10_T
@@ -1293,8 +1295,8 @@ api89_egm0:
         mov     b[edi+3],"$"
 api89_egm1:
         pop     eax
-        pop     ds
-        assume ds:GROUP32
+;        pop     ds
+;        assume ds:GROUP32
         stc
         jmp     api89_error
 

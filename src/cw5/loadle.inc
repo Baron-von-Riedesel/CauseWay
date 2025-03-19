@@ -100,6 +100,7 @@ LoadLE  proc    near uses ds es fs gs
 local   load1:LOADLE
 local   _ebp:dword
 
+        @dprintf DOPT_EXEC,<"LoadLE enter",10>
         mov     d[load1._Name+0],edx
         mov     w[load1._Name+4],ds
         mov     [load1._Flags],ebx
@@ -849,7 +850,7 @@ load1_NextModLnk:
         ;
         ;Search for this name.
         ;
-
+        @dprintf DOPT_EXEC,<"LoadLE: calling FindModule",10>
         call    FindModule
         jc      load1_error
 
@@ -1838,17 +1839,17 @@ ENDIF
 load1_bad_fixup:
 if 0
         mov     eax,[load1._EntryEIP]   ;Get the relocation number.
-        push    ds
-        mov     ds,cs:apiDSeg16
-        assume ds:GROUP16
+;        push    ds
+;        mov     ds,cs:apiDSeg16
+;        assume ds:GROUP16
         mov     b[ErrorM11_0+0]," "
         mov     b[ErrorM11_0+1]," "
         mov     b[ErrorM11_0+2]," "
         mov     ecx,8
         mov     edi,offset ErrorM11_1
         call    Bin2Hex
-        pop     ds
-        assume ds:GROUP32
+;        pop     ds
+;        assume ds:GROUP32
 endif
         mov     ax,2
         stc

@@ -42,6 +42,7 @@ DT_GDTDESC equ 2	;GDT descriptor
 SF_16BIT   equ 0001h  ;running a 16-bit app
 SF_VMM     equ 0002h  ;VMM & swapfile present
 ;--- bits 000Ch are copied from ProtectedType
+SF_DPMI    equ 0008h  ;=PT_DPMI shl 2
 ;--- bits 0070h are copied from ProtectedFlags
 SF_GDT     equ 0080h  ;move GDT
 ;--- bit 14 is checked in api.inc, proc _SetSelector
@@ -2441,45 +2442,6 @@ endif
 ;
         mov     grp32Ofs, offset PatchExc
         call    [grp32Proc]
-
-ifndef NOEXPORTS
-;
-;Setup internaly EXPORT'ed symbols.
-;
-        push    es
-        mov     bx,Group32DS
-        mov     es,bx
-        assume es:GROUP32
-        Sys     GetSelDet32
-        mov     edi,offset apiExports  ;size of GROUP32 is < 64k
-        mov     cx,es:[di]             ;load number of exports
-        add     di,4
-        add     DWORD PTR es:[di],edx  ;export module name "CAUSEWAY_KERNAL"
-        add     di,4
-cw5_exp0:
-        mov     esi,es:[di]
-        add     DWORD PTR es:[di],edx  ;convert to linear
-        mov     ax,es:[si].EXPORTSTRUC.wSeg
-        mov     bx,CodeSegment         ;GROUP16 code selector
-        cmp     ax,0
-        jz      cw5_exp1
-        mov     bx,DataSegment         ;GROUP16 data selector
-        cmp     ax,1
-        jz      cw5_exp1
-        mov     bx,Group32CS           ;GROUP32 code selector
-        cmp     ax,2
-        jz      cw5_exp1
-        mov     bx,Group32DS           ;GROUP32 data selector
-        cmp     ax,3
-        jz      cw5_exp1
-        or      bx,-1
-cw5_exp1:
-        mov     es:[si].EXPORTSTRUC.wSeg,bx
-        add     di,4
-        loop    cw5_exp0
-        pop     es
-        assume es:nothing
-endif
 ;
 ;Get memory for new PSP.
 ;
@@ -2498,6 +2460,7 @@ endif
         rep     movsd
         pop     es
         pop     ds
+
 ;
 ;Initialise PSP fields.
 ;
@@ -2557,6 +2520,53 @@ cw5_normal:
         mov     WORD PTR es:[PSP_Struc.PSP_HandlePtr],0
         pop     es
         pop     ds
+
+ifndef NOEXPORTS
+;
+;Setup internally EXPORT'ed symbols.
+;
+        push    es
+        mov     bx,Group32DS
+        mov     es,bx
+        assume es:GROUP32
+        Sys     GetSelDet32            ;get linear address in EDX
+        mov     edi,offset apiExports  ;size of GROUP32 is < 64k, so just DI can be used below
+
+        push    ds
+        mov     ds,PSPSegment
+        lea     eax,[edx+edi]
+        mov     ds:[EPSP_Struc.EPSP_Exports],eax
+        pop     ds
+
+        mov     cx,es:[di]             ;load number of exports
+        add     di,4
+        add     es:[di],edx            ;export module name "CAUSEWAY_KERNAL"
+        add     di,4                   ;proceed to exports
+cw5_exp0:                              ;<---- next export
+        mov     esi,es:[di]
+        add     es:[di],edx            ;convert to linear
+        mov     ax,es:[si].EXPORTSTRUC.wSeg
+        mov     bx,CodeSegment         ;GROUP16 code selector
+        cmp     ax,0
+        jz      cw5_exp1
+        mov     bx,DataSegment         ;GROUP16 data selector
+        cmp     ax,1
+        jz      cw5_exp1
+        mov     bx,Group32CS           ;GROUP32 code selector
+        cmp     ax,2
+        jz      cw5_exp1
+        mov     bx,Group32DS           ;GROUP32 data selector
+        cmp     ax,3
+        jz      cw5_exp1
+        or      bx,-1
+cw5_exp1:
+        mov     es:[si].EXPORTSTRUC.wSeg,bx
+        add     di,4
+        loop    cw5_exp0
+        pop     es
+        assume es:nothing
+endif
+
 ;
 ;Setup transfer buffer and selector.
 ;
