@@ -5,7 +5,7 @@
 	.386
 	.model flat
 ;	.dosseg
-	.const  ;without this wlink may put CONST after STACK
+	.const  ;to ensure that wlink puts CONST before STACK
 	.stack
 
 cwFindModule   equ 0ff33h
@@ -53,7 +53,7 @@ local hModule:dword
 	sys cwFindModule
 	.if !CARRY?
 		mov hModule, edi
-		mov edx,CStr("Module dll1.dll loaded sucessfully",13,10,'$')
+		mov edx,CStr("dllapp2: Module dll1.dll loaded sucessfully",13,10,'$')
 		mov ah,9
 		int 21h
 		mov edi,hModule
@@ -69,7 +69,7 @@ local hModule:dword
 			call pProc
 			add esp,4
 		.else
-			mov edx,CStr("CW API FindFunction '_SayHello' failed",13,10,'$')
+			mov edx,CStr("dllapp2: CW API FindFunction '_SayHello' failed",13,10,'$')
 			mov ah,9
 			int 21h
 		.endif
@@ -77,12 +77,12 @@ local hModule:dword
 		mov edi, hModule
 		sys cwUnFindModule
 		.if !CARRY?
-			mov edx, CStr("dll1.dll unloaded",13,10,'$')
+			mov edx, CStr("dllapp2: dll1.dll unloaded",13,10,'$')
 			mov ah,9
 			int 21h
 		.endif
 	.else
-		mov edx, CStr("CW API FindModule failed for dll1",13,10,'$')
+		mov edx, CStr("dllapp2: CW API FindModule failed for dll1",13,10,'$')
 		mov ah,9
 		int 21h
 	.endif

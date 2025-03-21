@@ -1,8 +1,9 @@
 
-;--- dll in assembly
+;--- CauseWay dll in assembly
 
     .386
     .model flat
+    option casemap:none
 
 CStr macro text:vararg
 local sym
@@ -14,20 +15,26 @@ endm
 
     .code
 
-main proc c reason:dword
+LibMain proc c reason:dword
 
     cmp reason,0
     jnz @F
+    mov edx, CStr("dll1.LibMain: start (reason == 0)",13,10,'$')
+    mov ah,9
+    int 21h
     mov eax,0
     ret
 @@:
+    mov edx, CStr("dll1.LibMain: exit (reason != 0)",13,10,'$')
+    mov ah,9
+    int 21h
     mov eax,0
     ret
-main endp
+LibMain endp
 
 
 SayHello proc c pMsg:ptr
-    mov edx, CStr("Received DLL Message: $")
+    mov edx, CStr("dll1.SayHello: received message: $")
     mov ah,9
     int 21h
     mov edx, pMsg
@@ -42,4 +49,13 @@ SayHello proc c pMsg:ptr
     ret
 SayHello endp
 
-    end
+;--- in CauseWay, ds & es hold the PSP selector on entry; ss=flat 4G
+
+start:
+    mov edx,ss
+    mov ds,edx
+    mov es,edx
+    invoke LibMain, eax
+    retd
+
+    end start

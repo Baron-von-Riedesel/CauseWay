@@ -5,7 +5,7 @@
 	.386
 	.model flat
 ;	.dosseg
-	.const  ;without this wlink may put CONST after STACK
+	.const  ;ensures that wlink puts CONST before STACK
 	.stack
 
 LoadModule     proto c :ptr
@@ -30,7 +30,7 @@ local hModule:dword
 	invoke LoadModule, CStr("dll1")
 	.if eax
 		mov hModule, eax
-		mov edx,CStr("Module dll1.dll loaded sucessfully",13,10,'$')
+		mov edx,CStr("dllapp1: Module dll1.dll loaded sucessfully",13,10,'$')
 		mov ah,9
 		int 21h
 		invoke GetProcAddress, hModule, CStr("_SayHello")
@@ -40,19 +40,19 @@ local hModule:dword
 			call pProc
 			add esp,4
 		.else
-			mov edx,CStr("GetProcAddress('_SayHello') failed",13,10,'$')
+			mov edx,CStr("dllapp1: GetProcAddress('_SayHello') failed",13,10,'$')
 			mov ah,9
 			int 21h
 		.endif
 
 		invoke FreeModule, hModule
-		mov edx, CStr("dll1.dll unloaded",13,10,'$')
+		mov edx, CStr("dllapp1: dll1.dll unloaded",13,10,'$')
 		mov ah,9
 		int 21h
 
 	.else
 
-		mov edx, CStr("Failed to load dll1.dll",13,10,'$')
+		mov edx, CStr("dllapp1: Failed to load dll1.dll",13,10,'$')
 		mov ah,9
 		int 21h
 	.endif

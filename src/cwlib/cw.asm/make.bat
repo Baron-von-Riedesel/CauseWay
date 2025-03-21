@@ -1,2 +1,3 @@
 @echo off
-jwasm -c -Cx -nologo *.asm
+if not exist Build\NUL mkdir Build
+jwasm -nologo -c -Cx -FoBuild\ *.asm

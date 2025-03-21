@@ -50,6 +50,7 @@ $(OUTD):
 
 ..\cw.lib: $(MODS:./=Build\)
 	@cd $(OUTD)
+	@del ..\..\cw.lib
 	@$(LIBBIN) ..\..\cw.lib @<<
 $(MODS:./=+);
 <<
