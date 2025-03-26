@@ -5,6 +5,7 @@
 ifndef COPYFCBS
 COPYFCBS equ 0	;1=copy fcbs in int 21h, ax=4b00h emulation
 endif
+TRANSLATEREMAPFUNC equ 1	;1=translate function address returned by int 21h, ah=38h
 
 ;--- macros
 ;
@@ -27,6 +28,21 @@ DOS4GExtend     macro p1
         mov     p1,0
 __0:
 endm
+
+CTRYINFO struct
+wDateFmt	dw ?
+szCurrency  db 5 dup (?)
+szTSep      db 2 dup (?)
+szDecSep    db 2 dup (?)
+szDateSep   db 2 dup (?)
+szTimeSep   db 2 dup (?)
+bCurrFmt    db ?	;currency format
+bNumDgt     db ?	;number of digits after decimal in currency
+bTimeFmt    db ?
+pfCaseMap   dd ?	;FAR16 case map routine
+szSepDL     db 2 dup (?)
+            db 10 dup (?)  ;reserved
+CTRYINFO ends
 
 _DATA32 segment
 
@@ -433,11 +449,9 @@ Int21hGetVect   endp
 Int21hGetSetCountry proc near
         test    BYTE PTR cs:apiSystemFlags,SF_16BIT ;16 or 32-bit -1 check?
         jz      int2110_32Bit0
-        cmp     dx,-1           ;Setting code?
-        jmp     int2110_ExitCheck               ;pass to old handler?
+        db 66h                     ;change "cmp edx,-1" to "cmp dx,-1"
 int2110_32Bit0:
         cmp     edx,-1
-int2110_ExitCheck:
         jz      Int21hNotOurs   ;Go through normal stuff for SET.
         ;
         ;Call the real mode handler to take care of things.
@@ -459,8 +473,8 @@ int2110_ExitCheck:
         mov     eax,es:RealRegsStruc.Real_EBX[edi]
         mov     [ebp].IFRM._BX,ax
         DOS4GExtend w[ebp].IFRM._EBX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
-        call    Int21hAL2Carry  ;Set carry.
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
+        call    Int21hAL2Carry  ;Set carry status in stack copy of flags
         or      al,al
         jnz     int2110_9
         ;
@@ -471,29 +485,34 @@ int2110_ExitCheck:
         call    Int21hExtend_ES_EDI     ;Extend [E]DI.
         mov     ds,fs:[EPSP_Struc.EPSP_TransProt]
         xor     esi,esi
-        mov     ecx,22h
+if TRANSLATEREMAPFUNC
+        ;v5.0: this translation didn't work previously due to a bug.
+        ;      DOS/4GW translates the remap function address, so CauseWay
+        ;      should do as well.
+        mov     eax,cs
+        shl     eax,16
+        mov     ax,lowword offset int2110_RemapCall
+        xchg    eax,[esi].CTRYINFO.pfCaseMap
+else
+        mov     eax,[esi].CTRYINFO.pfCaseMap
+endif
+        mov     ecx,sizeof CTRYINFO
+        cld
         rep     movsb
+if TRANSLATEREMAPFUNC
         ;
-        ;Get re-map function address.
+        ;store real-mode re-map function address in RMCS for country info.
         ;
         mov     es,cs:apiDSeg32
-        mov     edi,offset Int21hCountryTab
-        xor     esi,esi
-        mov     ax,w[esi+12h]   ;Fetch offset.
-        mov     es:RealRegsStruc.Real_IP[edi],ax
-        mov     ax,w[esi+14h]   ;Fetch selector.
-        mov     es:RealRegsStruc.Real_CS[edi],ax
-        ;
-        ;Set new re-map function address.
-        ;
-        mov     eax,offset int2110_RemapCall
-        mov     w[esi+12h],ax
-        mov     w[esi+14h],cs
+        mov     es:Int21hCountryTab.Real_CSIP,eax
+endif
         ;
 int2110_9:
         ret
+
+if TRANSLATEREMAPFUNC
 ;
-;The remap handler.
+;The remap handler - a FAR16 proc! Was never called prior to v5.0!
 ;
 int2110_RemapCall:
         push    edi
@@ -509,8 +528,8 @@ int2110_RemapCall:
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         pop     es
         pop     edi
-        db 66h
-        retf
+        retw
+endif
 Int21hGetSetCountry endp
 
 
@@ -543,7 +562,7 @@ Int21hCreateDIR proc near
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
         Sys     IntXX
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -583,7 +602,7 @@ Int21hCreateFile proc near
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
         Sys     IntXX
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -624,7 +643,7 @@ Int21hOpenFile  proc    near
         mov     es:RealRegsStruc.Real_DS[edi],ax
         mov     bl,21h
         Sys     IntXX
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;Get return code.
         mov     [ebp].IFRM._AX,ax
@@ -669,7 +688,7 @@ int2114_1:
         mov     bl,21h
         Sys     IntXX
         pop     ebx
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         or      al,al           ;Carry set?
         jz      int2114_2
@@ -757,7 +776,7 @@ int2115_1:
         mov     bl,21h
         Sys     IntXX           ;Do the write.
         pop     ebx
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         or      al,al           ;Carry set?
         jz      int2115_2
@@ -822,7 +841,7 @@ Int21hGetCurDir proc near
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2117_9
@@ -1087,7 +1106,7 @@ int2121_3:
         mov     bl,21h
         Sys     IntXX           ;allocate this memory.
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;get segment address.
-        test    es:RealRegsStruc.Real_Flags[edi],1      ;alloc failed?
+        test    es:RealRegsStruc.Real_FlagsL[edi],1     ;alloc failed?
         mov     di,ax
         mov     al,1
         jnz     int2121_Ef13                            ;error
@@ -1168,7 +1187,7 @@ medex2:
         assume ds:nothing
         popad
 ENDIF
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         push    eax
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax ;store errorlevel.
@@ -1234,7 +1253,7 @@ Int21hFindFirstFile proc near
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
 
 ;       or      al,al
@@ -1269,7 +1288,7 @@ Int21hFindNextFile proc near
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry         ;Set carry.
 ;       or      al,al
 ;       jnz     @@9
@@ -1352,7 +1371,7 @@ Int21hRenameFile proc near
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
 
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
 
         ret
@@ -1387,7 +1406,7 @@ Int21hCreateTemp proc near
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2127_9
@@ -1428,7 +1447,7 @@ Int21hMSNet     proc    near
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
         mov     [ebp].IFRM._AX,ax
         DOS4GExtend w[ebp].IFRM._EAX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         or      al,al
         jnz     int2128_9
@@ -1459,7 +1478,7 @@ Int21hSetHandles proc near
         mov     es:RealRegsStruc.Real_EBX[edi],eax
         mov     bl,21h
         Sys     IntXX
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         jz      int2129_0
         mov     al,1
         call    Int21hAL2Carry  ;Set carry.
@@ -1583,7 +1602,7 @@ int2129_shb0:
         Sys     IntXX
         mov     ebx,ecx
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         jnz     int2129_sh0             ;no can do!
         ;
         ;We managed to set the new number with DOS, now try and get the
@@ -1723,7 +1742,7 @@ Int21hExtendOpen proc near
         mov     eax,es:RealRegsStruc.Real_ECX[edi]
         mov     [ebp].IFRM._CX,ax
         DOS4GExtend w[ebp].IFRM._ECX+2
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     al,es:RealRegsStruc.Real_FlagsL[edi]
         call    Int21hAL2Carry  ;Set carry.
         ret
 Int21hExtendOpen endp

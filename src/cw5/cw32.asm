@@ -24,9 +24,9 @@ w       equ <word ptr>
 d       equ <dword ptr>
 
 ;--- values for variable ProtectedType
-PT_RAWXMS equ 0
-PT_VCPI   equ 1
-PT_DPMI   equ 2
+PTYP_RAWXMS equ 0
+PTYP_VCPI   equ 1
+PTYP_DPMI   equ 2
 
 ;--- bits in variable ProtectedFlags
 PF_DPMI   equ 1     ;DPMI host detected
@@ -42,13 +42,21 @@ DT_GDTDESC equ 2	;GDT descriptor
 SF_16BIT   equ 0001h  ;running a 16-bit app
 SF_VMM     equ 0002h  ;VMM & swapfile present
 ;--- bits 000Ch are copied from ProtectedType
-SF_DPMI    equ 0008h  ;=PT_DPMI shl 2
+SF_DPMI    equ 0008h  ;=PTYP_DPMI shl 2
 ;--- bits 0070h are copied from ProtectedFlags
 SF_GDT     equ 0080h  ;move GDT
 ;--- bit 14 is checked in api.inc, proc _SetSelector
 ;--- "dual" mode bit seems to be bit 16
 ;SF_??????  equ 4000h  ;bit 14 set to 1 by WL32 if binary has no 32-bit segments
 SF_PM      equ 8000h  ;running in protected-mode
+
+;--- bits in page table entries
+;--- bits 9-11 in PTEs are free to use.
+PT_PRESBIT  equ 0      ;1 = page is present
+PT_DIRTYBIT equ 6      ;1 = page content has been modified
+PT_PBLKBIT  equ 9      ;1 = it's the start of a mapping (PDEs for physical mappings only)
+PT_VCPIBIT  equ 10     ;1 = source of page is VCPI
+PT_SWAPBIT  equ 11     ;1 = page has been written to swapfile
 
 A20_DISABLE equ 0
 A20_ENABLE  equ 1
@@ -73,6 +81,7 @@ endif
 ifndef EARLYKDINIT
 EARLYKDINIT      equ 1	;1=init KD very early after switch to protected-mode
 endif
+STDKERNELSS      equ 0	;1=D bit of KernalSS and KernalSS0 depend on app bitness
 ;DPMIDBG          equ 1	;1=emulate DPMI initial switch to pm to allow DEBUG to intrude in raw/vcpi mode
 
 IRET16 struc
@@ -498,7 +507,7 @@ chk386:
 ;
 ;now see about type specific initialisations.
 ;
-        cmp     ProtectedType,PT_DPMI
+        cmp     ProtectedType,PTYP_DPMI
         jz      cw5_InitDPMI
 ;
 ;Get SDA address so VMM can change BREAK state;
@@ -888,7 +897,7 @@ endif
 ;
         mov     esi,400h
         mov     ecx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,Kernal40h
         call    MakeDesc
@@ -898,7 +907,7 @@ endif
         movzx   esi,KernalTSSReal
         shl     esi,4
         mov     ecx,size TSSFields+2-1  ; uses an extra word for end of IOPB, but this is used only if IOPL=0
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+Desc386Tss
         mov     di,KernalTS
         call    MakeDesc
@@ -911,9 +920,13 @@ endif
 
 ;        mov     ecx,65535
         mov     ecx,tPL0StackSize-1
+if STDKERNELSS
         mov     al,b[SystemFlags]
         xor     al,1
         shl     al,6
+else
+        mov     al,1 shl 6
+endif
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
         mov     di,KernalSS0
         call    MakeDesc
@@ -925,7 +938,7 @@ if 0
 ;        shl     esi,4
 ;        add     esi,TSSFields.tPL1Stack
         mov     ecx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
         mov     di,KernalSS0Switch
         call    MakeDesc
@@ -935,7 +948,7 @@ endif
 ;
         xor     esi,esi
         xor     ecx,ecx
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescLDT
         mov     di,KernalLDT
         call    MakeDesc
@@ -947,7 +960,7 @@ endif
         mov     esi,GROUP16
         shl     esi,4
         mov     cx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL0+DescMemory+DescERCode
         mov     di,KernalCS0
         call    MakeDesc
@@ -973,9 +986,13 @@ endif
         shl     esi,4
 ;        mov     ecx,[]65535
         mov     ecx,RawStackTotal-1
+if STDKERNELSS
         mov     al,b[SystemFlags]
         xor     al,1
         shl     al,6
+else
+        mov     al,1 shl 6
+endif
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,KernalSS
         call    MakeDesc
@@ -984,7 +1001,7 @@ endif
 ;
         xor     ecx,ecx
         mov     esi,KernalCS0
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+Desc386Call
         mov     di,KernalPL3toPL0
         call    MakeDesc
@@ -1013,7 +1030,7 @@ endif
 ;
         xor     ecx,ecx
         mov     esi,DpmiEmuCS0
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+Desc386Call
         mov     di,DpmiEmuPL3toPL0
         call    MakeDesc
@@ -1022,7 +1039,7 @@ endif
 ;
         xor     esi,esi
         or      ecx,-1
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,KernalZero
         call    MakeDesc
@@ -1042,7 +1059,7 @@ endif
         movzx   esi,RealENVSegment
         shl     esi,4
         mov     ecx,0FFFFh
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,MainEnv
         call    MakeDesc
@@ -1062,7 +1079,7 @@ endif
 ;--- use the main SS also for mode switches
 ;--- it needs no space in raw mode, and just a few dwords in vcpi mode
         mov     ecx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
         mov     di,KernalSS0Switch
         call    MakeDesc
@@ -1071,7 +1088,7 @@ endif
 ;
         mov     esi,d GDTVal+2
         mov     ecx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         mov     di,GDTData
         call    MakeDesc
@@ -1171,7 +1188,7 @@ endif
 ;
 ;Now patch RAW specific calls.
 ;
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jz      cw5_VCPI
 ;
 ;Use RAW method to switch to protected mode.
@@ -1341,7 +1358,7 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         call    fPhysicalGetPage
         jc      InitError
         and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
+        shl     cx,PT_VCPIBIT
         and     dx,0F000h               ;clear bits 0-11.
 
         or      dx,111b                 ;present+user+write.
@@ -1761,7 +1778,7 @@ if VIDEOGDTSELS
         mov     di,KernalB000
         mov     esi,0b0000h
         mov     ecx,65535
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         ;
@@ -1793,7 +1810,7 @@ cw5_LDT:
         mov     esi,MDTLinear
         mov     di,KernalLDT
         mov     ecx,8192*8-1
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescLDT
         call    MakeDesc
         pop     es
@@ -1818,7 +1835,7 @@ cw5_LDT:
         mov     esi,PTMAPADDR
         mov     eax, d GDTVal+2
         shr     eax, 12
-        btr     w es:[esi+eax*4],10
+        btr     w es:[esi+eax*4],PT_VCPIBIT
         jnc     @F
         mov     eax,es:[esi+eax*4]
         mov     [bx], eax
@@ -1826,7 +1843,7 @@ cw5_LDT:
 @@:
         mov     eax, PageDirLinear
         shr     eax, 12
-        btr     w es:[esi+eax*4],10
+        btr     w es:[esi+eax*4],PT_VCPIBIT
         jnc     @F
         mov     eax,es:[esi+eax*4]
         mov     [bx], eax
@@ -1835,7 +1852,7 @@ cw5_LDT:
 ifdef KRNLDBG ; release page for IDT in real-mode only, so KD can run till final switch to real-mode
         mov     eax, d[IDTVal+2]
         shr     eax, 12
-        btr     w es:[esi+eax*4],10
+        btr     w es:[esi+eax*4],PT_VCPIBIT
         jnc     @F
         mov     eax,es:[esi+eax*4]
         mov     [bx], eax
@@ -1843,14 +1860,14 @@ ifdef KRNLDBG ; release page for IDT in real-mode only, so KD can run till final
 @@:
 endif
         mov     esi, PageDirLinear
-        btr     w es:[esi+4],10
+        btr     w es:[esi+4],PT_VCPIBIT
         jnc     @F
         mov     eax,es:[esi+4]
         mov     [bx], eax
         add     bx, 4
 @@:
 if MOVEPT0TOEXT
-        btr     w es:[esi+0],10
+        btr     w es:[esi+0],PT_VCPIBIT
         jnc     @F
         mov     eax,es:[esi+0]
         mov     [bx], eax
@@ -2011,7 +2028,7 @@ med5a1:
         xor     cx,cx
         mov     ax,300h
         int     31h
-        test    BYTE PTR RealRegsStruc.Real_Flags[di],1
+        test    RealRegsStruc.Real_FlagsL[di],1
         mov     ax,RealRegsStruc.Real_AX[di]
         pop     di
         jz      cw5_v8
@@ -2230,7 +2247,7 @@ endif
         mov     edi,offset dpmiSelBuffer
         xor     esi,esi
         or      ecx,-1
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         mov     ax,000ch
@@ -2345,7 +2362,7 @@ cw5_InProtected:
 ;
         add     bx, 8
         mov     Group32DS,bx
-        xor     al,al
+        mov     al,0
         mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
         call    MakeDesc
         mov     ax,000ch
@@ -2637,7 +2654,7 @@ getandmappage:
         jc      InitError
         mov     CurrPhysPage,edx        ;store physical address.
         and     cx,1                    ;put user bits in useful place.
-        shl     cx,10
+        shl     cx,PT_VCPIBIT
         and     dx,0f000h
         or      dx,111b                 ;present+user+write.
         or      dx,cx                   ;set use flags.
@@ -2719,7 +2736,7 @@ cw6_noAPI:
         add     dl,'0'
         mov     b[IErrorM00n+1],dl
 
-        cmp     ProtectedType,PT_DPMI
+        cmp     ProtectedType,PTYP_DPMI
         jz      cw6_DPMI
 
         mov     ax,KernalZero
@@ -3433,15 +3450,15 @@ GetProtectedType proc near
 cw14_NoDPMIForce:
         test    BYTE PTR ProtectedFlags,4  ; XMS/RAW available?
         jz      cw14_1
-        mov     ax,PT_RAWXMS               ; Use raw mode.
+        mov     ax,PTYP_RAWXMS             ; Use raw mode.
         ret
 cw14_1:
         test    BYTE PTR ProtectedFlags,2  ; VCPI available?
         jz      cw14_2
-        mov     ax,PT_VCPI
+        mov     ax,PTYP_VCPI
         ret
 cw14_2:
-        mov     ax,PT_DPMI
+        mov     ax,PTYP_DPMI
         ret
 GetProtectedType endp
 
@@ -3682,16 +3699,16 @@ MakeDesc        proc    near
         shr     ecx,12                  ; div by 4096
         or      al,80h                  ; set g bit
 cw18_0:
-        mov     es:[di+0],cx            ;store low word of limit.
-        mov     es:[di+2],si            ;store low word of linear base.
+        mov     es:[di].Desc.Limit,cx   ;low word of limit.
+        mov     es:[di].Desc.Base_l,si  ;low word of linear base.
         shr     ecx,16
         shr     esi,16
         or      al,cl
         mov     bx,si
-        mov     es:[di+4],bl            ;store mid byte of linear base.
-        mov     es:[di+5],ah            ;store pp/dpl/dt/type bits.
-        mov     es:[di+6],al            ;store high bits of limit and gran/code size bits.
-        mov     es:[di+7],bh            ;store high byte of linear base.
+        mov     es:[di].Desc.Base_m,bl  ;mid byte of linear base.
+        mov     es:[di].Desc.Access,ah  ;pp/dpl/dt/type bits.
+        mov     es:[di].Desc.Gran,al    ;high bits of limit and gran/code size bits.
+        mov     es:[di].Desc.Base_H,bh  ;high byte of linear base.
         popad
         ret
 MakeDesc        endp

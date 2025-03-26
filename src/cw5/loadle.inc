@@ -579,51 +579,15 @@ load1_bad_entry:
         pop     ecx
 
 IFDEF DEBUGLE
-        push    eax
-        push    ebx
-        push    ecx
-        push    edx
-        push    ds
-        push    cs
-        pop     ds
         cmp     bl,4
         jae     debugf2ae10
-        mov     edx,OFFSET debugf2textl10
-        jmp     debugf2loop2
+        @dprintf -1,<"LoadLE: <10",10>
+        jmp     debugf2b
 debugf2ae10:
-        mov     edx,OFFSET debugf2textae10
-debugf2loop2:
-        cmp     BYTE PTR ds:[edx],0
-        je      debugf2b
-        mov     ecx,1
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        inc     edx
-        jmp     debugf2loop2
+        @dprintf -1,<"LoadLE: >=10",10>
 debugf2b:
-        mov     edx,OFFSET debugf2textcrlf
-        push    cs
-        pop     ds
-        mov     ecx,2
-        mov     bx,1
-        mov     ah,40h
-        int     21h
-        pop     ds
-        pop     edx
-        pop     ecx
-        pop     ebx
-        pop     eax
-        jmp     debugf2out
-
-debugf2textl10  DB      '<10',0
-debugf2textae10 DB      '>=10',0
-debugf2textcrlf DB      13,10
-
-debugf2out:
         jmp     load1_bad_fixup2
 ENDIF
-
         jmp     load1_bad_fixup
         ;
 load1_exp_16bit:
@@ -1787,13 +1751,15 @@ load1_exit:
 ;
 load1_mem_error:
 
+        @dprintf DOPT_MEM,<"LoadLE: out of memory",10>
         mov     ax,3
         stc
         jmp     load1_error
 ;
-;Couldn't find the file.
+;Couldn't open the file.
 ;
 load1_no_file_error:
+        @dprintf -1,<"LoadLE: file open error",10>
         mov     ax,1
         stc
         jmp     load1_error
@@ -1828,12 +1794,12 @@ load1_bad_fixup8:
 load1_bad_fixup9:
         push edx
         movzx edx,dh
-        @dprintf -1,<"4X">,edx
+        @dprintf -1,<"%4X ">,edx
         pop edx
         push    9
 load1_bad_fixupx:
         pop     eax
-        @dprintf -1,<" Bad fixup: %u",10>,eax
+        @dprintf -1,<"LoadLE: bad fixup: %u",10>,eax
 ENDIF
 
 load1_bad_fixup:
@@ -1859,9 +1825,7 @@ endif
 ;Corrupt file or file we don't understand.
 ;
 load1_file_error:
-IFDEF DEBUGLE
-        @dprintf -1,<"File error type 1",10>
-ENDIF
+        @dprintf -1,<"LoadLE: file error type 1",10>
         mov     ax,2
         stc
         jmp     load1_error

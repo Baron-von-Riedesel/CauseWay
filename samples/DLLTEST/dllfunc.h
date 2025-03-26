@@ -13,7 +13,7 @@
 ;Handles returned by this function should always be released via FreeLibrary()
 ;
 ;***************************************************************************/
-extern void* _cdecl LoadLibrary(void *);
+extern void* _cdecl LoadLibrary(const char *);
 
 
 /****************************************************************************
@@ -46,7 +46,7 @@ extern void _cdecl FreeLibrary(void *);
 ;Handles returned by this function should always be released via FreeModule()
 ;
 ******************************************************************************/
-extern void* _cdecl LoadModule(void *);
+extern void* _cdecl LoadModule(const char *);
 
 
 /****************************************************************************
@@ -77,7 +77,5 @@ extern void _cdecl FreeModule(void *);
 ;module_name is a standard zero terminated string.
 ;
 ******************************************************************************/
-extern void* _cdecl GetProcAddress(void *,void *);
-
-
+extern void* _cdecl GetProcAddress(void *,const char *);
 

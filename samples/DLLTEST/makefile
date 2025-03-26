@@ -4,13 +4,14 @@
 # because the API directly supports FindModule, UnFindModule, FindFunction.
 #
 OBJDIR=..\..\obj
-
 #IMPORTS=$(OBJDIR)\cwapi.obj
+# calltype (r=register based - DLLR, s=stack based - DLLS)
+# switch CALLCONV in dlltest.c must be set accordingly!
+CALLTYPE=r
 
 all: dlltest.exe dlls.dll dllr.dll
 
-dlltest.exe : dlltest.c dllfunc.h $(IMPORTS) $(OBJDIR)\dllfunc.obj
-	wcc386 /q /s /4s /d2 dlltest.c
+dlltest.exe : dlltest.obj $(IMPORTS) $(OBJDIR)\dllfunc.obj
 	wlink @<<
 name DLLTEST
 debug all
@@ -19,6 +20,9 @@ file dlltest.obj
 libfile {$(OBJDIR)\dllfunc.obj $(IMPORTS) }
 op q,m
 <<
+
+dlltest.obj : dlltest.c dllfunc.h
+	wcc386 /q /s /4$(CALLTYPE) /d2 dlltest.c
 
 dlls.dll : dll.c
 	wcc386 /q /s /4s /bd dll.c /fo=dlls.obj

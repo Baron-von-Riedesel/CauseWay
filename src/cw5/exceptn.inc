@@ -43,6 +43,10 @@ DebugExceptionCode  dd 0
 INFOLISTSIZE    EQU $ - offset DebugBuffer  ; should be 108 (44+20+14+24+6)
 ;DebugCR4        dd 0
 
+DebugFlags      dd ?
+TotalLinearMem  dd 0,0,0
+TotalSelectors  dd 0
+
 NUMEXC equ 16
 
 	align 4
@@ -54,8 +58,6 @@ if EXC16INCS16
 cs16sel         dw 0    ;16-bit CS alias
 endif
 exc22_Handle    dd ?    ;file handle for DebugDisplay
-TotalLinearMem  dd 0,0,0
-TotalSelectors  dd 0
 InExcep         db 0
 DumpAsciiFlag   DB ?
 EnableDebugDump DB 1       ; may be set/reset by int 31h, ax=0ff30h
@@ -170,39 +172,40 @@ SizeCopyright equ $ - offset Copyright - 1
 SELECTTEXT = 1
         include texts.inc
 
-	align 4
+bofs1 macro ofs
+	exitm <offset ofs - offset DebugBuffer>
+endm
 
-stdregdump label dword
-    dd offset DebugExceptionIndex
-    dd offset DebugExceptionCode
-    dd offset DebugBuffer._eax
-    dd offset DebugBuffer._ebx
-    dd offset DebugBuffer._ecx
-    dd offset DebugBuffer._edx
-    dd offset DebugBuffer._esi
-    dd offset DebugBuffer._edi
-    dd offset DebugBuffer._ebp
-    dd offset DebugESP
-    dd offset DebugEIP
-    dd offset DebugEFL
-    dd offset DebugCS,        offset DebugCSApp
-    dd offset DebugBuffer._ds,offset DebugDSApp
-    dd offset DebugBuffer._es,offset DebugESApp
-    dd offset DebugBuffer._fs,offset DebugFSApp
-    dd offset DebugBuffer._gs,offset DebugGSApp
-    dd offset DebugSS,        offset DebugSSApp
-    dd offset DebugCR0
-    dd offset DebugCR2
-    dd offset DebugCR3
-    dd offset DebugTR
-    dd offset apiSystemFlags
-
-TotalMemParms label dword
-    dd offset TotalLinearMem+0
-    dd offset TotalLinearMem+4
-    dd offset TotalLinearMem+8
-TotalSelsParms label dword
-    dd offset TotalSelectors
+stdregdump label byte
+    db bofs1(DebugExceptionIndex)
+    db bofs1(DebugExceptionCode)
+    db bofs1(DebugBuffer._eax)
+    db bofs1(DebugBuffer._ebx)
+    db bofs1(DebugBuffer._ecx)
+    db bofs1(DebugBuffer._edx)
+    db bofs1(DebugBuffer._esi)
+    db bofs1(DebugBuffer._edi)
+    db bofs1(DebugBuffer._ebp)
+    db bofs1(DebugESP)
+    db bofs1(DebugEIP)
+    db bofs1(DebugEFL)
+    db bofs1(DebugCS),        bofs1(DebugCSApp)
+    db bofs1(DebugBuffer._ds),bofs1(DebugDSApp)
+    db bofs1(DebugBuffer._es),bofs1(DebugESApp)
+    db bofs1(DebugBuffer._fs),bofs1(DebugFSApp)
+    db bofs1(DebugBuffer._gs),bofs1(DebugGSApp)
+    db bofs1(DebugSS),        bofs1(DebugSSApp)
+    db bofs1(DebugCR0)
+    db bofs1(DebugCR2)
+    db bofs1(DebugCR3)
+    db bofs1(DebugTR)
+    db bofs1(DebugFlags)
+TotalMemParms label byte
+    db bofs1(TotalLinearMem+0)
+    db bofs1(TotalLinearMem+4)
+    db bofs1(TotalLinearMem+8)
+TotalSelsParms label byte
+    db bofs1(TotalSelectors)
 
 	align 4
 
@@ -215,6 +218,7 @@ intstuff label dword
     dd offset PIntHeader, PIntHeaderLen, 256, 4
     dd offset EIntHeader, EIntHeaderLen,  32, 4
     dd offset RIntHeader, RIntHeaderLen, 256, 2
+
 ;
 ;-------------1----1----0----0
 ;-------------5----0----5----0
@@ -239,7 +243,7 @@ ExcepOpen       proc    far
 if EXC16INCS16
         push    ebp
         mov     ebp, cs
-        cmp     ProtectedType,PT_DPMI
+        cmp     ProtectedType,PTYP_DPMI
         jnz     @F
         test    byte ptr apiSystemFlags,SF_16BIT
         jz      @F
@@ -825,8 +829,9 @@ nextchar:
         lodsb
         sub al,'0'
         movzx ecx,al
-        mov edx,[edi]
-        add edi,4
+        movzx edx,byte ptr [edi]
+        inc edi
+        add edx,offset DebugBuffer
         mov ax,[edx]
         cmp cl,2
         jz dispnum
@@ -941,6 +946,8 @@ exc22_NoFile:
         ;
         ;Now print the results.
         ;
+        mov     eax,d apiSystemFlags
+        mov     DebugFlags,eax
         mov     esi,offset DebugHeader
         mov     edi,offset stdregdump
         call    myprintf
@@ -1391,38 +1398,28 @@ exc22_s1:
         ;
         ;Have a look in the MCB list.
         ;
-        cmp     fs:[EPSP_Struc.EPSP_mcbHead],0
-        jz      exc22_nomcbsel
         mov     esi,fs:[EPSP_Struc.EPSP_mcbHead]
-exc22_mcbs0:
+        jmp     exc22_mcbchk
+exc22_mcbs0:                          ;<---- next McbChunkStruc
         mov     edi,esi
         add     esi,MCBCHUNKLEN
-exc22_mcbs1:
-        mov     eax,esi
-        add     eax,MCBLEN
+exc22_mcbs1:                          ;<---- next McbStruc
+        lea     eax,[esi+MCBLEN]
         cmp     ebx,eax
-        jnz     exc22_mcbs2
-        clc
-        jmp     exc22_s3
-exc22_mcbs2:
+        jz      exc22_s3              ;found!
         cmp     es:[esi].McbStruc.mcbNext,"M"
-        jz      exc22_mcbs3
-        mov     esi,es:[edi].McbChunkStruc.mcbChunkNext
-        or      esi,esi
-        jz      exc22_nomcbsel
-        jmp     exc22_mcbs0
-exc22_mcbs3:
+        jnz     exc22_mcbs3
         movzx   eax,es:[esi].McbStruc.mcbNextSize
-        add     eax,MCBLEN
-        add     esi,eax
+        lea     esi,[esi+eax+MCBLEN]
         jmp     exc22_mcbs1
-
-exc22_nomcbsel:
+exc22_mcbs3:
+        mov     esi,es:[edi].McbChunkStruc.mcbChunkNext
+exc22_mcbchk:
+        or      esi,esi
+        jnz     exc22_mcbs0
         stc
-
 exc22_s3:
         popad
-
         jc      exc22_r4
         ;
         mov     b[edi],'Y'

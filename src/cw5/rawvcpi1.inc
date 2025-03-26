@@ -1,18 +1,12 @@
-;
-;The RAW/VCPI specific 16-bit code, remains resident.
-;
-        .386p
 
-;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
-;Main (Kernal) section for RAW/VCPI stuff. This holds the mode switch, interrupt
-;simulator and low level memory managers etc.
+;The RAW/VCPI specific 16-bit code, remains resident in conv. memory.
 ;
-_cwRaw  segment para public 'raw kernal code' use16
-
-        assume ds:GROUP16
+        .386P
 
 PAGESTACKSIZE   equ 32
+
+_cwRaw  segment para public 'raw kernal code' use16
 
 _cwRaw$1 segment dword public 'raw kernal data' use16
 ;
@@ -23,28 +17,29 @@ InWindows       db 0      ; 1 while "enhanced Windows" is running
 VMMName db '?:\',128 dup (0)
 ;
 	align 2
-ProposedPresentFlag db 0
-ProposedRecentFlag db 0
+ProposedPresentFlag db 0	;memory.inc - used by UnmapPhysical()
+ProposedRecentFlag db 0		;memory.inc - used by UnmapPhysical()
 	align 4
-ProposedPage    dd 0
-CompareCount    dd 0
-NoneLockedPages dd 0
-RecentMapStack  dd PAGESTACKSIZE dup (0)
-;
-PageingPointer  dd 0	;see memory.inc
-SwapFileLength  dd 0
-;
-FreePages       dd 1
-medAllocPages   dd 0
-TotalPages      dd 1
+ProposedPage    dd 0	;memory.inc - used by UnmapPhysical()
+CompareCount    dd 0	;memory.inc - used by UnmapPhysical()
+PageingPointer  dd 0	;memory.inc - used by UnmapPhysical()
+
+FreePages       dd 1	;memory.inc - free virtual pages
+AllocedPages    dd 0	;memory.inc - allocated virtual pages
+UnLockedPages   dd 0	;memory.inc - unlocked physical pages
+TotalPages      dd 1	;memory.inc - total virtual pages
+
+RecentMapStack  dd PAGESTACKSIZE dup (0)	;memory.inc
+;_LM_BlockBase   dd ?	;memory.inc - used by Raw[Un]LockMemory
+;_LM_BlockEnd    dd ?	;memory.inc
+;_LM_Needed      dd ?	;memory.inc
+_LM_Got         dd ?	;memory.inc
 TotalPhysical   dd 0
+;
+SwapFileLength  dd 0
 ;
 RawSelBuffer    Desc <>
 ;
-_LM_BlockBase   dd ?	;used by Raw[Un]LockMemory; see memory.inc
-_LM_BlockEnd    dd ?
-_LM_Needed      dd ?
-_LM_Got         dd ?
 ;
 XMSMEMITEM struc
 wHdl     dw ?
@@ -180,22 +175,6 @@ Int2CallCheck label byte
 CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0,0,0>)
 ;ALLCallBack     dw ?
 ;ALLICallBack    dw ?
-_cwRaw$1 ends
-
-	align 2
-CallBackList    label byte
-ICallBackList   label byte
-;; MED 02/16/96
-;;      rept 16+4
-        rept 16+3       ; callbacks for 16 IRQs and Int 1Ch, 23h, 24h
-        call    RawICallBack
-        endm
-        rept 16 ;MaxCallBacks
-        call    RawCallBack
-        endm
-CallBackSize    equ     ($-CallBackList)/MaxCallBacks
-
-_cwRaw$1 segment
 ;
 VDiskSig        db 'VDISK V'
 VDiskSigLen     equ     $-VDiskSig
@@ -242,6 +221,7 @@ rv31_zero        dd 0
 rvsp_dsreg    dw ?
 rvsp_esreg    dw ?
 rvsp_csreg    dw ?
+wP2LIndex     dw DETINDEX   ;current bottom PD index for Phys2Linear mappings
 
 ITABSTRUC struct
 dwOldVec dd ?
@@ -249,10 +229,24 @@ dwMemSiz dd ?
 ITABSTRUC ends
 
 	align 4
-Int15Jump     dd ?
+Int15Jump     PF16 ?
 ITable  ITABSTRUC INT15ITEMS dup (<0,0>)
 ILevel  dw 0
 _cwRaw$1 ends
+
+        assume ds:GROUP16
+
+CallBackList    label byte
+ICallBackList   label byte
+;; MED 02/16/96
+;;      rept 16+4
+        rept 16+3       ; callbacks for 16 IRQs and Int 1Ch, 23h, 24h
+        call    RawICallBack
+        endm
+        rept 16 ;MaxCallBacks
+        call    RawCallBack
+        endm
+CallBackSize    equ     ($-CallBackList)/MaxCallBacks
 
 ;-------------------------------------------------------------------------------
 
@@ -516,9 +510,9 @@ E801Done:
         ;
 Int15Old:
         mov     esi,cs:[si].ITABSTRUC.dwOldVec
-        mov     DWORD PTR cs:[Int15Jump],esi
+        mov     cs:[Int15Jump],esi
         pop     esi
-        jmp     DWORD PTR cs:[Int15Jump]        ;pass to old handler.
+        jmp     cs:[Int15Jump]          ;pass to old handler.
 
         assume ds:GROUP16
 
@@ -622,26 +616,28 @@ endif
 ;-------------------------------------------------------------------------------
 ;
 ;Release any VCPI memory aquired.
+;Still in protected mode.
+;DS=GROUP16
 ;
 VCPIRelExtended proc near
 
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jnz     rv12_9
         ;
+        mov     ax,KernalZero
+        mov     es,ax
         cmp     PageDETLinear,0
         jz      rv12_NoDET
         ;
         ;Release DET pages.
         ;
-        mov     ax,KernalZero
-        mov     es,ax
         mov     cx,1024
         mov     esi,PageDETLinear
 rv12_d0:
-        btr     w es:[esi],0
+        btr     w es:[esi],PT_PRESBIT
         jnc     rv12_d1
         mov     edx,es:[esi]
-        test    dx,1 shl 10                     ;VCPI bit set?
+        test    dx,1 shl PT_VCPIBIT    ;VCPI bit set?
         jz      rv12_d1
         and     dx,0F000h
 if VCPIPMCALL
@@ -657,31 +653,30 @@ rv12_NoDET:
         ;
         ;Release normal memory.
         ;
-        mov     ax,KernalZero
-        mov     es,ax
         mov     esi,PageDirLinear
-        mov     cx,1024-2               ;don't scan the last 2 regions (page table mappings)
+        mov     cx,1024-2               ;don't check the last 2 PDEs (page table mappings, page details)
         mov     edi,PTMAPADDR           ;base of page alias's.
-rv12_0:                                 ;<--- next page table
-        test    b es:[esi],1            ;Page table present?
-        jz      rv12_1
+rv12_0:                                 ;<--- next PDE
+        mov     eax,es:[esi]
+        test    al,1 shl PT_PRESBIT     ;Page table present?
+        jz      rv12_4
 
         push    cx
         push    edi
         mov     cx,1024
         cmp     edi,PTMAPADDR           ; see if 0th page table
         jne     rv12_2                  ; no
-        movzx   eax,FirstUninitPage     ; don't scan pages reserved for VCPI host
+        movzx   eax,FirstUninitPage     ; don't scan pages reserved by VCPI host
         add     edi,eax
         shr     ax,2
         sub     cx,ax
 rv12_2:                                 ;<--- next PTE
         mov     edx,es:[edi]
-        test    dl,1                    ;Page present?
+        test    dl,1 shl PT_PRESBIT     ;Page present?
         jz      rv12_3
-        test    dx,1 shl 10             ;VCPI bit set?
+        test    dx,1 shl PT_VCPIBIT     ;VCPI bit set?
         jz      rv12_3
-        and     b es:[edi],not 1        ;mark as no longer present.
+        and     b es:[edi],not (1 shl PT_PRESBIT)  ;reset present bit
         and     dx,0F000h
 if VCPIPMCALL
         mov     ax, offset freevcpi
@@ -694,11 +689,11 @@ rv12_3:
         loop    rv12_2
         pop     edi
         pop     cx
-
+rv12_4:
         mov     edx,es:[esi]
-        test    dx,1 shl 10             ;VCPI bit set?
+        test    dx,1 shl PT_VCPIBIT     ;VCPI bit set?
         jz      rv12_1
-        and     b es:[esi],not 1        ;mark as no longer present.
+        and     b es:[esi],not (1 shl PT_PRESBIT)       
         and     dx,0F000h
 if VCPIPMCALL
         mov     ax, offset freevcpi
@@ -721,7 +716,7 @@ VCPIRelExtended endp
 ;ES=zero-based flat
 ;
 Int15Rel        proc    near
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jnc     rv15_9      ; skip if VCPI or DPMI
         cmp     XMSPresent,0
         jnz     rv15_9
@@ -739,7 +734,6 @@ rv15_1:
 rv15_9:
         ret
 Int15Rel        endp
-
 
 ;-------------------------------------------------------------------------------
 ;
@@ -765,7 +759,7 @@ RawReal2Prot    proc    near
         mov     CR3Sav,eax
         mov     eax,cr0
         mov     CR0Sav,eax
-        mov     eax,vcpi._CR3   ;PageDirLinear
+        mov     eax,vcpi._CR3   ;physical address page directory
         mov     cr3,eax         ;set page dir address.
 
 ; MED 10/15/96
@@ -1005,18 +999,17 @@ StateSavePM   proc    far
         push    KernalDS
         pop     ds
         assume ds:GROUP16
-        push    edi
         test    BYTE PTR SystemFlags,SF_16BIT
         jz      @F
+        push    edi
         movzx   edi,di
-@@:
         call    ssproc
-        test    BYTE PTR SystemFlags,SF_16BIT
         pop     edi
         pop     ds
-        jz      @F
         retw
 @@:
+        call    ssproc
+        pop     ds
         retd
         ;
 StateSavePM   endp
@@ -1036,22 +1029,18 @@ StateSaveRM   endp
         assume ds:GROUP16
 
 ssproc proc        
-        push    eax
         cmp     al,0
         jz      sspm_Save
         cmp     al,1
         jz      sspm_Restore
-        jmp     sspm_Done
-        ;
+        ret
 sspm_Save:
-        mov     eax,[RawStackPos]
-        stosd   es:[edi]
-        jmp     sspm_Done
+        push    [RawStackPos]
+        pop     d es:[edi]
+        ret
 sspm_Restore:
-        mov     eax,es:[edi]
-        mov     [RawStackPos],eax
-sspm_Done:
-        pop     eax
+        push    d es:[edi]
+        pop     [RawStackPos]
         ret
 ssproc endp
 
@@ -1203,7 +1192,7 @@ Int2FPatch      endp
 ;
 A20Handler      proc    near
         assume ds:GROUP16
-        cmp     ProtectedType,PT_RAWXMS
+        cmp     ProtectedType,PTYP_RAWXMS
         jnz     rv34_A20DoneOther
         cmp     XMSPresent,0
         jz      rv34_A20Raw

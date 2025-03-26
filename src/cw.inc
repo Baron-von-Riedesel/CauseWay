@@ -1283,7 +1283,10 @@ union
 Real_EAX	dd ?	;EAX
 Real_AX		dw ?
 ends
+union
 Real_Flags	dw ?	;FLAGS
+Real_FlagsL	db ?
+ends
 Real_ES	dw ?	;ES
 Real_DS	dw ?	;DS
 Real_FS	dw ?	;FS

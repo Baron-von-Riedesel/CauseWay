@@ -1,5 +1,6 @@
 
 #include <stdio.h>
+#include <stdlib.h>
 
 int main(int reason)
 {
@@ -24,7 +25,7 @@ int main(int reason)
 }
 
 
-void __export _cdecl SayHello( char * message)
+void __export SayHello( char * message)
 {
     printf("Received DLL Message: ");
     printf(message);

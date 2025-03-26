@@ -73,7 +73,7 @@ endif
         pop     ecx
         mov     eax,RealRegsStruc.Real_EAX[edi] ;get result.
         mov     ebx,RealRegsStruc.Real_EBX[edi]
-        test    RealRegsStruc.Real_Flags[edi],1
+        test    RealRegsStruc.Real_FlagsL[edi],1
         jz      mem19_1
 if ADD1PARA
         or      bx,bx           ;nothing available?
@@ -257,7 +257,7 @@ endif
         call    RawSimulateInt
         mov     eax,RealRegsStruc.Real_EAX[edi]
         mov     ebx,RealRegsStruc.Real_EBX[edi]
-        test    RealRegsStruc.Real_Flags[edi],1
+        test    RealRegsStruc.Real_FlagsL[edi],1
         pop     edx
         pop     ecx
         jnz     mem20_err        ;DOS failed it!

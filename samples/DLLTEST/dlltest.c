@@ -9,9 +9,16 @@
 // Need function definitions
 #include "dllfunc.h"
 
+#define CALLCONV 1 /* 0=stack based, 1=register based */
 
 // Name the module. DLLS for stack version and DLLR for register
-char ModuleName[]={"DLLR"};
+#if CALLCONV
+const char ModuleName[]={"DLLR"};
+const char ProcName[]={"SayHello_"};
+#else
+const char ModuleName[]={"DLLS"};
+const char ProcName[]={"SayHello"};
+#endif
 
 
 //
@@ -19,20 +26,17 @@ char ModuleName[]={"DLLR"};
 //
 int main()
 {
-    unsigned char *DLL;
-    void _cdecl (*DLLFunction)(char *);
+    void *DLL;
+    void (*DLLFunction)(char *);
 
     // Try and load the module.
     DLL=LoadModule(ModuleName);
     if (DLL) {
 
-        printf("Module ");
-        printf(ModuleName);
-        printf(" loaded sucessfully\n");
+        printf("Module %s loaded sucessfully\n", ModuleName);
 
         // Fetch the test function address
-        DLLFunction=GetProcAddress(DLL,"_SayHello");
-
+        DLLFunction=GetProcAddress(DLL,ProcName);
         if (DLLFunction) {
 
             // Give the test function a shout
@@ -40,22 +44,17 @@ int main()
 
         } else {
 
-            printf("GetProcAddress('_SayHello') failed\n");
+            printf("GetProcAddress('%s') failed\n", ProcName);
 
         }
 
         // Lose the module again
         FreeModule(DLL);
 
-        printf("Module ");
-        printf(ModuleName);
-        printf(" discarded\n");
+        printf("Module %s discarded\n", ModuleName);
 
     } else {
-
-        printf("Failed to load ");
-        printf(ModuleName);
-        printf(" module...\n");
+        printf("Failed to load %s module...\n", ModuleName);
 
     }
 

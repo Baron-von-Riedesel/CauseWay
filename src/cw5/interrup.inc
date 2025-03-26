@@ -16,6 +16,7 @@ ISEXCEPTION	equ 10000h	;cw uses RF in eflags to internally indicate exception
 _cwDPMIEMU$1 segment
 	align 4
 ;
+ExcFields label byte
 DpmiEmuSystemFlags dw 0,0
 ;
 ; do NOT change order of these variables (you can add at the end), MED 01/08/96
@@ -114,32 +115,36 @@ ExceptionHeader label byte
     db 'SystemFlags=%8',13,10
     db 13,10,'$',0
 ;
-	align 4
+bofs macro ofs
+	exitm <offset ofs - offset ExcFields>
+endm
 
-stdregdump2 label dword
-    dd offset ExceptionIndex
-    dd offset ExceptionCode
-    dd offset ExceptionRegs._eax
-    dd offset ExceptionRegs._ebx
-    dd offset ExceptionRegs._ecx
-    dd offset ExceptionRegs._edx
-    dd offset ExceptionRegs._esi
-    dd offset ExceptionRegs._edi
-    dd offset ExceptionRegs._ebp
-    dd offset ExceptionESP
-    dd offset ExceptionEIP
-    dd offset ExceptionEFL
-    dd offset ExceptionCS
-    dd offset ExceptionRegs._ds
-    dd offset ExceptionRegs._es
-    dd offset ExceptionRegs._fs
-    dd offset ExceptionRegs._gs
-    dd offset ExceptionSS
-    dd offset ExceptionCR0
-    dd offset ExceptionCR2
-    dd offset ExceptionCR3
-    dd offset ExceptionTR
-    dd offset DpmiEmuSystemFlags
+stdregdump2 label byte
+    db bofs(ExceptionIndex)
+    db bofs(ExceptionCode)
+    db bofs(ExceptionRegs._eax)
+    db bofs(ExceptionRegs._ebx)
+    db bofs(ExceptionRegs._ecx)
+    db bofs(ExceptionRegs._edx)
+    db bofs(ExceptionRegs._esi)
+    db bofs(ExceptionRegs._edi)
+    db bofs(ExceptionRegs._ebp)
+    db bofs(ExceptionESP)
+    db bofs(ExceptionEIP)
+    db bofs(ExceptionEFL)
+    db bofs(ExceptionCS)
+    db bofs(ExceptionRegs._ds)
+    db bofs(ExceptionRegs._es)
+    db bofs(ExceptionRegs._fs)
+    db bofs(ExceptionRegs._gs)
+    db bofs(ExceptionSS)
+    db bofs(ExceptionCR0)
+    db bofs(ExceptionCR2)
+    db bofs(ExceptionCR3)
+    db bofs(ExceptionTR)
+    db bofs(DpmiEmuSystemFlags)
+
+	align 4
 
 ;-------------------------------------------------------------------------------
 ;
@@ -1209,8 +1214,9 @@ nextchar:
         lodsb
         sub al,'0'
         movzx ecx,al
-        mov edx,[ebx]
-        add ebx,4
+        movzx edx,byte ptr [ebx]
+        inc ebx
+        lea edx,[edx+offset ExcFields]
         mov eax,[edx]
 dispnum:
         call Bin2HexE

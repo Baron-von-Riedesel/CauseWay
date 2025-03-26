@@ -1,10 +1,14 @@
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ;
-;Second level section for RAW/VCPI stuff. This holds the higher level management
-;code like interrupt/exception handlers, memory management and DPMI emulation.
-;This gets moved into extended memory during initialisation to keep conventional
-;memory foot print down.
+;32-bit segment of RAW/VCPI stuff. This installs the basic DPMI emulation
+;code: mode switches, physical memory. The rest of the DPMI emulation is:
+; - interrup.inc  interrupt/exception handlers; get/set int/exc vectors
+; - ldt.inc       LDT management
+; - memory.inc    extended memory management; map/unmap physical memory
+; - dosmem.inc    DOS memory management
+;All of this gets moved into extended memory during initialisation to keep
+;conventional memory foot print down.
 ;
 
 DbgStruc struc
@@ -1519,14 +1523,14 @@ rv46_1:
         cmp     al,01h
         ja      rv46_0902
         jz      rv46_0901
-rv46_0900:                      ;disable virtual IF
-        btr     d[ebp],9
+rv46_0900:
+        btr     d[ebp],9        ;disable virtual IF
         jmp     rv46_3
-rv46_0901:                      ;enable virtual IF
-        bts     d[ebp],9
+rv46_0901:
+        bts     d[ebp],9        ;enable virtual IF
         jmp     rv46_3
-rv46_0902:                      ;get virtual IF
-        bt      d[ebp],9
+rv46_0902:
+        bt      d[ebp],9        ;get virtual IF
 rv46_3:
         setc    al
         pop     ebp
@@ -1912,7 +1916,7 @@ rv46_0:
         assume ds:GROUP16
 
         call PhysicalGetPages           ;get number of un-claimed pages.
-        add     edx,NoneLockedPages     ;include currently un-locked pages.
+        add     edx,UnLockedPages       ;include currently un-locked pages.
         mov eax,edx
         shr eax,10                      ;work out page tables needed for this.
         shl eax,1                       ;2 pages per table.
@@ -1929,7 +1933,7 @@ rv46_500_0:
 ;       shr     eax,12
 ;       mov     es:d[edi+0ch],eax
 
-        mov     eax,NoneLockedPages
+        mov     eax,UnLockedPages
         mov     es:[edi].DPMI_MINFO.unlocked,eax
 
         ;
@@ -2009,12 +2013,12 @@ med2:
 ; MED 01/25/96
 ;       mov     es:d[edi+1ch],edx
         mov     eax,es:[edi].DPMI_MINFO.totalAdrSpace
-        sub     eax,medAllocPages
+        sub     eax,AllocedPages
 
 ; MED 02/15/96
         mov     edx,MaxMemLin
         shr     edx,12
-        sub     edx,medAllocPages
+        sub     edx,AllocedPages
         cmp     eax,edx                         ; see if greater than MAXMEM choke-off point
         jbe     med3
         mov     eax,edx
@@ -2233,7 +2237,7 @@ GetVCPIPage     proc    near
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jnz     rv52_9
 if VCPIPMCALL
         mov     ax, lowword offset allocvcpi
@@ -2291,7 +2295,7 @@ GetVCPIPages    proc    near
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jnz     rv53_9
 if VCPIPMCALL
         mov     ax, lowword offset getfreevcpipages
@@ -2514,7 +2518,7 @@ GetXMSPages     proc    near
         mov     [XMSTotal],0
 
 ; MED, 11/11/99
-;       cmp     ProtectedType,PT_VCPI
+;       cmp     ProtectedType,PTYP_VCPI
         cmp     VCPIHasNoMem,0  ; see if VCPI provided no memory, bail if it did
 
         jz      rv55_9
@@ -2751,7 +2755,7 @@ use88h2:
         mov     RealRegsStruc.Real_SSSP[edi],0
         call    RawSimulateInt
 
-        test    BYTE PTR RealRegsStruc.Real_Flags[edi],1        ; see if carry returned
+        test    RealRegsStruc.Real_FlagsL[edi],1 ; see if carry returned
         je      GIProcess2      ; nope
         cmp     Big1Flag,0
         je      GIProcess2      ; not using alternate extended memory, process anyway
@@ -2917,7 +2921,7 @@ GetINT15Pages   proc    near
         assume ds:GROUP16
         mov     [INT15hTotal],0
         ;
-        cmp     ProtectedType,PT_VCPI
+        cmp     ProtectedType,PTYP_VCPI
         jnc     rv57_9
         cmp     XMSPresent,0
         jnz     rv57_9
@@ -2939,7 +2943,7 @@ use88h1:
         mov     RealRegsStruc.Real_SSSP[edi],0
         call    RawSimulateInt
 
-        test    BYTE PTR RealRegsStruc.Real_Flags[edi],1        ; see if carry returned
+        test    RealRegsStruc.Real_FlagsL[edi],1 ; see if carry returned
         je      GIProcess1      ; nope
         cmp     Big1Flag,0
         je      GIProcess1      ; not using alternate extended memory, process anyway
@@ -3144,7 +3148,7 @@ GetCONVPage     proc    near
         mov     bl,21h
         call    RawSimulateInt
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;get segment address.
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         pop     ebp
         pop     edi
         pop     esi
@@ -3176,7 +3180,7 @@ rv58_0:
         mov     es:RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    RawSimulateInt
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         pop     edi
         pop     esi
         pop     ecx
@@ -3227,7 +3231,7 @@ rv58_2:
         mov     bl,21h
         call    RawSimulateInt
         pop     esi
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         jnz     rv58_9
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;get segment address.
         mov     [esi].DOSMEMITEM.wAddr,ax               ;store it in the table.
@@ -3335,7 +3339,7 @@ GetCONVPages    proc    near
         mov     bl,21h
         call    RawSimulateInt
         mov     eax,es:RealRegsStruc.Real_EAX[edi]      ;get segment address.
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         pop     edi
         pop     esi
         pop     edx
@@ -3380,7 +3384,7 @@ rv59_0:
         pop     esi
         pop     ecx
         pop     ebx
-        test    es:RealRegsStruc.Real_Flags[edi],1
+        test    es:RealRegsStruc.Real_FlagsL[edi],1
         jnz     rv59_2
         ;
         mov     eax,es:RealRegsStruc.Real_EAX[edi]
