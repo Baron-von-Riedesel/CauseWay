@@ -24,24 +24,6 @@ if @Model ne 7
 DGROUP group _TEXT, _DATA, _BSS, STACK
 endif
 
-	.const
-
-ifdef _DEBUG
-@dbgmsg macro text:vararg
-local sym
-	.const
-sym db text,'$'
-	.code
-    pushad
-    mov edx, offset sym
-    mov ah,9
-    int 21h
-    popad
-endm
-else
-@dbgmsg textequ <;>
-endif
-
 	.data
 
 psp dd ?		; PSP linear address
@@ -54,17 +36,18 @@ ERR_ALREADY3P equ 26
 
 ErrorNumber	dw 0
 ;
-ErrorMessages	dd Errorm0,Errorm1,Errorm2,Errorm3,Errorm4,Errorm5,Errorm6,Errorm7
-	dd Errorm8,ErrorM9,ErrorM10,ErrorM11,ErrorM12,ErrorM13,ErrorM14,ErrorM15
-	dd ErrorM16,ErrorM17,ErrorM18,ErrorM19,ErrorM20,ErrorM21,ErrorM22,ErrorM23
-	dd ErrorM24,ErrorM25,ErrorM26,ErrorM27,ErrorM0,ErrorM0
-	dd ErrorM0,ErrorM0,ErrorM32,ErrorM33,ErrorM34,ErrorM35,ErrorM36,ErrorM37
-	dd ErrorM38,ErrorM39,ErrorM40,ErrorM41,ErrorM42,ErrorM43
+ErrorMessages label dword
+	dd Errorm0, Errorm1, Errorm2, Errorm3, Errorm4, Errorm5, Errorm6, Errorm7    ;0-7
+	dd Errorm8, ErrorM9, ErrorM10,ErrorM11,ErrorM12,ErrorM13,ErrorM14,ErrorM15   ;8-15
+	dd ErrorM16,ErrorM17,ErrorM18,ErrorM19,ErrorM20,ErrorM21,ErrorM22,ErrorM23   ;16-23
+	dd ErrorM24,ErrorM25,ErrorM26,ErrorM27,ErrorM0, ErrorM0                      ;24-29
+	dd ErrorM0, ErrorM0, ErrorM32,ErrorM33,ErrorM34,ErrorM35,ErrorM36,ErrorM37   ;30-37
+	dd ErrorM38,ErrorM39,ErrorM40,ErrorM41,ErrorM42,ErrorM43                     ;38-43
 ;
 Errorm0	db 'Operation completed successfully...',13,10,13,10,'$'
 Errorm1	db 'Unable to resize memory block, this should never happen...',10,13,'$'
 Errorm2	db 'Insufficient memory available...',13,10,'$'
-Errorm3	db ' Syntax is:- CW Options FileName Options',13,10
+Errorm3	db ' Syntax is:- CWEM Options FileName Options',13,10
 	db 13,10
 	db '   Options:-',13,10
 	db 13,10
@@ -141,7 +124,7 @@ GenerateExeText db 'Generating new executable file.',13,10,0
 CarriageReturn	db 13,10,0
 CarriageReturn2 db 13,10,"$"
 ;
-ConfigName	db 'cw.cfg',0
+ConfigName	db 'cwem.cfg',0
 CWStubName	db "CWSTUB.EXE",0
 ConfigHandle	dw 0
 SHELLHandle	dw 0
@@ -349,6 +332,15 @@ P3Offset	dd 0
 
 HiThere	 db 'CauseWay EXE maker v2.02.',13,10,'$'
 
+ifdef _DEBUG
+        include dprintf.inc
+ ifndef DBGOPT
+DBGOPT = -1
+ endif
+else
+@dprintf equ <;>
+endif
+
 ifndef CWAPP
  if @Model ne 7
 start32:
@@ -401,7 +393,7 @@ endif
 	cmp	ax,1
 	jc	System		;need at least 2 names.
 	mov	ErrorNumber,5
-	@dbgmsg "debug messages ON",13,10
+	@dprintf 1,<"debug messages ON",10>
 	cmp	w[OptionTable+128],0	;get file name mask.
 	jz	System		;must have a name.
 	cmp	OptionTable+'N',0
@@ -496,6 +488,7 @@ nextchar:
 	call	OpenFile		;Open the .EXE file.
 	mov	ErrorNumber,6	;default to not found.
 	jc	System
+	@dprintf 1,<"Entry: open file %s ok",10>,edx
 	mov	EXEHandle,ax
 	mov	bx,ax
 	;
@@ -580,6 +573,7 @@ if 0 ; exehdr was already read
 else
 	cmp exehdr.Signature,'P3'   ;is .EXE a plain 3P file without MZ header?
 	jnz @@DoExe
+	@dprintf 1,<"Entry: file in 3P format, displaying info",10>
 	mov	ErrorNumber,0
 	call NewExeInfo
 	jmp	System
@@ -619,7 +613,7 @@ medexe2:
 	;
 @@Reset:
 	mov	bx,EXEHandle
-	mov	ax,3e00h
+	mov	ah,3eh
 	int	21h
 	mov	ErrorNumber,0
 	;
@@ -1150,11 +1144,13 @@ Write3PFile	proc	near
 	;Load the extender stub CWSTUB.EXE
 	;
 	mov	edx,offset SHELLFileName	; get extender stub CWSTUB.EXE
+	@dprintf 1,<"Write3PFile: open stub %s",10>,edx
 	call	LEOpenFile
-	mov	ErrorNumber,42
+	mov	ErrorNumber,42              ;open error
 	jc	@@9
 	mov	edx,offset exehdr
 	mov	ecx,sizeof MZHdr
+	@dprintf 1,<"Write3PFile: read header",10>
 	call	LEReadFile
 	jc	@@9
 	cmp	eax,ecx
@@ -1200,6 +1196,7 @@ medexe4:
 	;Create the output file.
 	;
 	mov	edx,offset TEMPFileName
+	@dprintf 1,<"Write3PFile: create temp file %s",10>,edx
 	call	LECreateFile
 	mov	ErrorNumber,37
 	jc	@@9
@@ -1377,7 +1374,7 @@ Create3PHeader	endp
 ;Create a 3P format relocation table from the LE fixup tables.
 ;
 CreateRelocations proc near
-	@dbgmsg "CreateRelocations start",13,10
+	@dprintf 1,<"CreateRelocations enter",10>
 	mov	esi,offset BuildRelocsText
 	call	LEPrintString
 	;
@@ -1760,7 +1757,7 @@ AddRelocationEntry endp
 ;Create 3P version of LE file in memory.
 ;
 Create3PFile	proc	near
-	@dbgmsg "Create3PFile enter",13,10
+	@dprintf 1,<"Create3PFile enter",10>
 	mov	esi,offset BuildImageText
 	call	LEPrintString
 	;
@@ -1896,7 +1893,7 @@ Create3PFile	endp
 ;Fetch the specified LE file, just the LE bit not its stub.
 ;
 FetchLEFile	proc	near
-	@dbgmsg "FetchLEFile enter",13,10
+	@dprintf 1,<"FetchLEFile enter",10>
 	mov	esi,offset ReadingLEText
 	call	LEPrintString
 	;
@@ -2250,7 +2247,7 @@ NewCauseWay	proc	near
 ;
 ;Write new CauseWay loader to a 3P file.
 ;
-	@dbgmsg <"NewCauseWay enter",13,10>
+	@dprintf 1,<"NewCauseWay enter",10>
 	mov	bx,EXEHandle
 	call	CloseFile
 	mov	edx,offset EXEFileName
@@ -2355,7 +2352,7 @@ medexe5:
 	cmp	eax,ebx		;did we write enough?
 	jnz	@@9
 
-	@dbgmsg <"At memory release",13,10>
+	@dprintf 1,<"NewCauseWay: at memory release",10>
 
 ;	sys	RelMemNear		;release memory now.
 	call	RelMemLinear32
@@ -2416,7 +2413,7 @@ medexe6:
 	shl	ebx,16
 	mov	bx,ax
 
-	@dbgmsg <'At get memory',13,10>
+	@dprintf 1,<'NewCauseWay: at get memory',10>
 
 ;	push	ebx
 ;	sys	GetMemNear		;get some memory for it.
@@ -2469,13 +2466,7 @@ medexe6:
 	mov	SHELLHandle,0
 	;
 
-IFDEF _DEBUG
-	@dbgmsg <"File:">
-	mov edx,OFFSET EXEFileName
-	mov ah,9
-	int 21h
-	@dbgmsg <13,10>
-ENDIF
+	@dprintf 1,<"NewCauseWay: File %s",10>,offset EXEFileName
 
 	;Delete origional .EXE
 	;
@@ -2486,7 +2477,7 @@ ENDIF
 	jc	@@9
 	;
 
-	@dbgmsg <'At rename',13,10>
+	@dprintf 1,<'NewCauseWay: at rename',10>
 
 	;now rename it.
 	;
@@ -2573,6 +2564,7 @@ SetSystemConfig endp
 
 ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 ExeAndMap2NewExe proc near
+	@dprintf 1,<"ExeAndMap2NewExe entry",10>
 	;
 	;Setup hard wired flags, like 16/32 bit etc.
 	;
@@ -3142,7 +3134,7 @@ ProcessFile	proc	near
 ;
 ;Generate new style relocation table and write new .EXE file.
 ;
-	@dbgmsg "ProcessFile start",13,10
+	@dprintf 1,<"ProcessFile start",10>
 	mov	bx,EXEHandle
 	call	CloseFile
 	mov	edx,offset EXEFileName
@@ -3185,7 +3177,7 @@ ProcessFile	proc	near
 	jnz	@@9
 	cmp	exehdr.Signature,'ZM'	;Correct ID?
 	jnz	@@9
-	@dbgmsg "ProcessFile - stub file exists and has correct header",13,10
+	@dprintf 1,<"ProcessFile - stub file exists and has correct header",10>
 	;
 	mov	ax,exehdr._Length+2	;get length in 512 byte blocks
 	cmp	exehdr._Length,0
@@ -3223,7 +3215,7 @@ medexe8:
 	call	GetMemLinear32
 	mov	ErrorNumber,2
 	jc	@@9
-	@dbgmsg "ProcessFile - memory alloc ok",13,10
+	@dprintf 1,<"ProcessFile - memory alloc ok",10>
 	;
 	;Read shell into memory.
 	;
@@ -3237,7 +3229,7 @@ medexe8:
 	jc	@@9
 	cmp	eax,ebx		;did we read enough?
 	jnz	@@9
-	@dbgmsg "ProcessFile - stub read ok",13,10
+	@dprintf 1,<"ProcessFile - stub read ok",10>
 	pushm	ebx,esi
 	;
 	;Write shell to temp.
@@ -3253,7 +3245,7 @@ medexe8:
 	jnz	@@9
 ;	sys	RelMemNear		;release memory now.
 	call	RelMemLinear32
-	@dbgmsg "ProcessFile - stub write to tmp file ok",13,10
+	@dprintf 1,<"ProcessFile - stub write to tmp file ok",10>
 
 	;
 @@NoBind:	;Process .EXE relocation table and produce new format header.
@@ -3271,7 +3263,7 @@ medexe8:
 	cmp	exehdr.Signature,'ZM'	;Correct ID?
 	jnz	@@9
 
-	@dbgmsg "ProcessFile - .exe read ok",13,10
+	@dprintf 1,<"ProcessFile - .exe read ok",10>
 	;
 	;Get header size in bytes.
 	;
@@ -3623,11 +3615,11 @@ medexe9:
 	;
 	mov	ErrorNumber,0
 	xor	ax,ax
-	@dbgmsg "ProcessFile exit, ax=0 (ok)",13,10
+	@dprintf 1,<"ProcessFile exit, ax=0 (ok)",10>
 	ret
 	;
 @@9:
-	@dbgmsg "ProcessFile exit, ax=-1 (error)",13,10
+	@dprintf 1,<"ProcessFile exit, ax=-1 (error)",10>
 	mov	ax,-1
 	or	ax,ax
 	ret
@@ -3639,6 +3631,7 @@ ReadMapFile	proc	near
 ;
 ;Convert the input files.
 ;
+	@dprintf 1,<"ReadMapFile enter",10>
 	;
 	;Get memory for segment list.
 	;
@@ -4086,7 +4079,7 @@ ReadMapFile	proc	near
 @@SameBase3:
 	pushm	eax,ecx,esi,ebp
 
-	if	0
+if	0
 	mov	eax,esi		;get current pointer.
 	sub	eax,SegmentList
 	xor	edx,edx
@@ -4109,7 +4102,7 @@ ReadMapFile	proc	near
 	call	Bin2Hex
 	mov	edx,offset SegSamet
 	call	StringPrint
-	endif
+endif
 
 	mov	edx,offset SegSamet
 	call	StringPrint
@@ -4131,6 +4124,7 @@ ReadMapFile	proc	near
 	pop	eax
 	jmp	@@SameBase4
 @@NoBaseChk:	;
+	@dprintf 1,<"ReadMapFile exit, ok",10>
 	mov	ErrorNumber,0
 	xor	ax,ax
 	ret
@@ -4143,7 +4137,9 @@ ReadMapFile	proc	near
 	mov	edx,offset CarriageReturn
 	call	StringPrint
 	;
-@@9:	mov	ax,-1
+@@9:
+	@dprintf 1,<"ReadMapFile exit, error",10>
+	mov	ax,-1
 	or	ax,ax
 	ret
 _BSS segment
@@ -4275,18 +4271,21 @@ endif
 	cmp	b[edi],0		;blank line?
 	jz	@@Read
 	;
-@@0:	mov	ErrorNumber,15
+@@0:
+	mov	ErrorNumber,15
 	cmp	ds:d[ebp],-1		;end of the list?
 	jz	@@90
 	mov	esi,ds:[ebp]		;get text pointer.
 	mov	edi,edx		;source data.
 	;
-@@1:	cmp	b[edi],'='		;end of the string?
+@@1:
+	cmp	b[edi],'='		;end of the string?
 	jnz	@@3
 	cmp	b[esi],0		;end of our version as well?
 	jz	@@4
 	;
-@@3:	mov	ErrorNumber,15
+@@3:
+	mov	ErrorNumber,15
 	cmp	b[edi],0		;end of the line?
 	jz	@@90
 	;
@@ -4301,39 +4300,47 @@ endif
 	cmp	al,ah		;match?
 	jz	@@2
 	;
-@@5:	add	ebp,16		;next variable.
+@@5:
+	add	ebp,16		;next variable.
 	jmp	@@0
 	;
-@@2:	inc	esi
+@@2:
+	inc	esi
 	inc	edi
 	jmp	@@1
 	;
-@@4:	inc	edi
+@@4:
+	inc	edi
 	call	ds:d[ebp+4]		;call the handler code.
 	jz	@@Read
 	mov	ErrorNumber,16	;invalid setting.
 	jmp	@@90
 	;
-@@7:	mov	bx,ConfigHandle	;close the file again.
+@@7:
+	mov	bx,ConfigHandle	;close the file again.
 	call	CloseFile
 	mov	ConfigHandle,0
 	jmp	@@10
 	;
-@@8:	mov	edx,offset InternalConfig
+@@8:
+	mov	edx,offset InternalConfig
 	call	StringPrint
 	;
-@@10:	mov	ErrorNumber,0
+@@10:
+	mov	ErrorNumber,0
 	xor	ax,ax
 	ret
 	;
-@@90:	mov	edx,offset CarriageReturn
+@@90:
+	mov	edx,offset CarriageReturn
 	call	StringPrint
 	mov	edx,offset LineBuffer
 	call	StringPrint
 	mov	edx,offset CarriageReturn
 	call	StringPrint
 	;
-@@9:	mov	ax,-1
+@@9:
+	mov	ax,-1
 	or	ax,ax
 	ret
 ReadConfig	endp
@@ -4352,7 +4359,8 @@ WhiteSpaceString proc near
 	cmp	b[edi-1],-1		;first time?
 	mov	b[edi-1],0
 	jz	@@AtStart
-@@30:	mov	al,[edi]
+@@30:
+	mov	al,[edi]
 	or	al,al
 	jz	@@AtStart
 	inc	edi
@@ -4362,7 +4370,8 @@ WhiteSpaceString proc near
 	inc	edi
 	;
 	xor	ah,ah		;clear spacing flag.
-@@0:	lodsb
+@@0:
+	lodsb
 	cmp	al,'\'		;line continuation?
 	jnz	@@5
 	;
@@ -4380,7 +4389,8 @@ WhiteSpaceString proc near
 	jnc	@@9
 	;
 	mov	esi,d[@@Source]
-@@6:	lodsb
+@@6:
+	lodsb
 	cmp	al,' '
 	jz	@@6
 	cmp	al,9
@@ -4391,7 +4401,8 @@ WhiteSpaceString proc near
 	xor	ah,ah
 	jmp	@@0		;start reading again.
 	;
-@@5:	stosb
+@@5:
+	stosb
 	cmp	b[esi-1],0		;end of the string?
 	jz	@@1
 	cmp	b[esi-1],' '		;need multiple space check?
@@ -4401,28 +4412,33 @@ WhiteSpaceString proc near
 	xor	ah,ah		;clear spacing flag.
 	jmp	@@0
 	;
-@@2:	or	ah,ah		;this part 2?
+@@2:
+	or	ah,ah		;this part 2?
 	jnz	@@3
 	mov	b[edi-1],' '		;make sure its a space.
 	mov	ah,1		;signal spacing start.
 	jmp	@@0
 	;
-@@3:	dec	edi		;move back to last one.
+@@3:
+	dec	edi		;move back to last one.
 	jmp	@@0
 	;
-@@1:	dec	edi		;back to terminator.
+@@1:
+	dec	edi		;back to terminator.
 	cmp	edi,ds:[ebp+8]	;back at the start yet?
 	jz	@@4
 	cmp	b[edi-1],' '		;trailing space?
 	jnz	@@4
 	dec	edi
 @@4:	;
-@@7:	mov	b[edi],0		;terminate the line.
+@@7:
+	mov	b[edi],0		;terminate the line.
 	;
 	xor	ax,ax
 	ret
 	;
-@@9:	mov	ax,-1
+@@9:
+	mov	ax,-1
 	or	ax,ax
 	ret
 _BSS segment
@@ -4439,23 +4455,28 @@ SegFormatCode	proc near
 	mov	edx,edi		;get source address.
 	mov	edi,ds:[ebp+8]	;get target address.
 	;
-@@5:	mov	esi,edx
+@@5:
+	mov	esi,edx
 	cmp	b[esi],0		;end of input?
 	jz	@@6
 	;
 	mov	ebp,offset SegFormatTexts	;list of strings to match against.
-@@0:	mov	ErrorNumber,16	;syntax error.
+@@0:
+	mov	ErrorNumber,16	;syntax error.
 	cmp	ds:d[ebp],-1		;end of the list?
 	jz	@@9		;not a valid statement then.
 	mov	ebx,ds:[ebp]		;get variable text.
 	mov	esi,edx		;get source string.
-@@1:	cmp	b[esi],0		;line end?
+@@1:
+	cmp	b[esi],0		;line end?
 	jz	@@7
 	cmp	b[esi],' '		;seperator?
 	jnz	@@3
-@@7:	cmp	b[ebx],0		;end of variable text as well?
+@@7:
+	cmp	b[ebx],0		;end of variable text as well?
 	jz	@@4		;looks like we've got a match.
-@@3:	cmp	b[esi],' '		;seperator?
+@@3:
+	cmp	b[esi],' '		;seperator?
 	jz	@@2		;next variable text.
 	cmp	b[ebx],0		;end of variable text?
 	jz	@@2		;next variable text.
@@ -4470,10 +4491,12 @@ SegFormatCode	proc near
 	inc	ebx
 	jmp	@@1		;keep looking till something happens.
 	;
-@@2:	add	ebp,4		;next string.
+@@2:
+	add	ebp,4		;next string.
 	jmp	@@0
 	;
-@@4:	sub	ebp,offset SegFormatTexts	;get index *4
+@@4:
+	sub	ebp,offset SegFormatTexts	;get index *4
 	shr	ebp,2		;get operation type.
 	mov	eax,ebp
 	mov	b[edi],al		;put it in the destination.
@@ -4487,11 +4510,13 @@ SegFormatCode	proc near
 	inc	edx		;skip space seperator.
 	jmp	@@5		;scan the rest of the line.
 	;
-@@6:	mov	b[edi],-1		;terminate the list.
+@@6:
+	mov	b[edi],-1		;terminate the list.
 	mov	esi,offset SegFormatSlots+1	;point at slot table. (ignore NULL entry)
 	mov	ecx,3		;only 3 types at the moment.
 	mov	ErrorNumber,16	;default to syntax error.
-@@8:	lodsb
+@@8:
+	lodsb
 	or	al,al		;this entry used?
 	jz	@@9		;ALL positions have to be defined.
 	loop	@@8		;do them all.
@@ -4499,7 +4524,8 @@ SegFormatCode	proc near
 	xor	ax,ax
 	ret
 	;
-@@9:	mov	ax,-1
+@@9:
+	mov	ax,-1
 	or	ax,ax
 	ret
 SegFormatCode	endp
@@ -4565,7 +4591,7 @@ GetMemLinear32 ENDP
 ;--- free linear memory block
 ;--- in: address in ESI
 
-RelMemLinear32 PROC uses di
+RelMemLinear32 PROC uses edi
 	push esi
 	pop di
 	pop si
@@ -4577,7 +4603,7 @@ RelMemLinear32 ENDP
 ;--- resize linear memory block
 ;--- in: address in ESI, new size in ECX
 
-ResMemLinear32 PROC uses ecx di bx
+ResMemLinear32 PROC uses ecx edi ebx
 	push esi
 	pop di
 	pop si

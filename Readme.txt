@@ -18,10 +18,10 @@
 
  The main source parts are:
 
- CW    : CauseWay EXE maker
- CW5   : CauseWay Extender v5 ( origin: v4.05 - supplied with Open Watcom )
- CWD   : the CauseWay Debugger
- CWL   : (internal) CauseWay Linker - obsolete
+ CW32  : CauseWay Extender v5 ( origin: v4.05 - supplied with Open Watcom )
  CWC   : CauseWay File Compressor
+ CWD   : CauseWay Debugger
+ CWEM  : CauseWay EXE maker
+ CWL   : (internal) CauseWay Linker - obsolete
  CWLIB : library modules to support CauseWay assembly programs
 

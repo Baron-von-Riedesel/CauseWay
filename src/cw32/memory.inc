@@ -61,6 +61,7 @@ endm
 ;-------------------------------------------------------------------------------
 ;
 ;Get memory using RAW/VCPI. The worker behind int 31h, ax=501h
+;Also called by RawResizeMemory.
 ;
 ;On Entry:-
 ;
@@ -242,6 +243,7 @@ mem1_MarkMemRet:
         ;Now return details to caller.
         ;
         shl     esi,12          ;Convert back to a real address.
+        @dprintf DOPT_MEM or DOPT_STACK,<"RawGetMemory exit, base=%lX",10>,esi
         mov     di,si
         shr     esi,16
         mov     cx,di

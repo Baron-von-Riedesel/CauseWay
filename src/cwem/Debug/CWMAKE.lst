@@ -1,0 +1,1049 @@
+Microsoft (R) Macro Assembler Version 6.15.8803		    03/27/25 11:39:27
+CWMAKE.asm						     Page 1 - 1
+
+
+				
+				;--- reads cwem.exe
+				;--- writes cwem.cw
+				;--- expects cwem.exe as CauseWay app ( with DOS extender stub ).
+				
+					.model small
+					.stack 400h
+					.386
+				
+					include general.inc
+			      C 
+ = byte ptr		      C b	equ	byte ptr
+ = word ptr		      C w	equ	word ptr
+ = dword ptr		      C d	equ	dword ptr
+			      C ;f	equ	fword ptr
+			      C 
+			      C Pushm	MACRO	R1,R2,R3,R4,R5,R6,R7,R8,R9,R10
+			      C 	IRP	X,<R1,R2,R3,R4,R5,R6,R7,R8,R9,R10>
+			      C 	IFNB	<X>			;IF THIS PARM NOT BLANK
+			      C 	PUSH	X			;SAVE THE REGISTER
+			      C 	ENDIF				;END IFNB
+			      C 	ENDM				;END IRP
+			      C ENDM
+			      C 
+			      C Popm	macro	R1,R2,R3,R4,R5,R6,R7,R8,R9,R10
+			      C 	IRP	X,<R10,R9,R8,R7,R6,R5,R4,R3,R2,R1> ;REPEAT FOR EACH PARM
+			      C 	IFNB	<X>				;IF THIS PARM NOT BLANK
+			      C 	POP	X				;POP THE REGISTER
+			      C 	ENDIF					;END IFNB
+			      C 	ENDM					;END IRP
+			      C ENDM
+			      C 
+			      C 
+					include ..\strucs.inc
+			      C ;------------------------------------------------------------------------------
+			      C ;
+			      C 
+ 000C			      C ResHead struc
+ 0000  00000000		      C ResHead_Prev    dd 0
+ 0004  00000000		      C ResHead_Next    dd 0
+ 0008  00000000		      C ResHead_Handle  dd 0
+			      C ResHead ends
+			      C 
+ = 1000			      C ResSize     equ 4096    ;Size of resource block.
+			      C ;ResHead    equ 16      ;Size of main header.
+ = 0010			      C ResHeadSize equ 16      ;Size of main header.
+ = 0330			      C ResNum      equ ((((4096-ResHeadSize)/5) shr 2) shl 2)  ;Number of entries.
+ = 032C			      C ResCount    equ ResNum-4        ;count for free entry checking.
+			      C 
+			      C ;--- resource types
+ = 0000			      C Res_NULL        equ 0   ;MUST be zero.
+ = 0001			      C Res_PSP         equ 1   ;single entry.
+ = 0002			      C Res_SEL         equ 2   ;single entry.
+ = 0003			      C Res_MEM         equ 3   ;3 entries.
+ = 0004			      C Res_LOCK        equ 4   ;2 entries.
+ = 0005			      C Res_DOSMEM      equ 5   ;?
+ = 0006			      C Res_CALLBACK    equ 6   ;3 entries.
+ = 00FE			      C Res_NOTHING     equ 254
+ = 00FF			      C Res_CHAIN       equ 255 ;single entry.
+			      C 
+			      C ;--- fields for page details ( 4 MB region )
+			      C ;--- an "allocated" memory region start with a MEM_START, the rest is MEM_END
+ = 0000			      C MEM_FREE    equ 0   ;Free page.
+ = 0001			      C MEM_START   equ 1   ;Used page, start of block.
+ = 0002			      C MEM_END     equ 2   ;Used page, end of block.
+ = 0003			      C MEM_MASK    equ 11b ;just bits 0 & 1
+			      C ;
+			      C ;--- bits 2-5 are lock count
+ = 0004			      C MEM_LOCK	equ	4	;Start of lock count.
+ = 000F			      C MEM_LOCK_MASK	equ	15	;4 bit lock count.
+ = 0002			      C MEM_LOCK_SHIFT	equ	2
+			      C ;
+ = 0020			      C MEM_PHYS	equ	32	;physical mapping - not used (and should be 64, since bit 5 is used by lock cnt)
+			      C ;
+ = 003D			      C MEM_FILL	equ	(MEM_LOCK_MASK shl MEM_LOCK_SHIFT)+MEM_START
+			      C 
+			      C ;
+ = B003			      C KernalB000		equ	0b000h+3
+ = B803			      C KernalB800		equ	0b800h+3
+ = A003			      C KernalA000		equ	0a000h+3
+			      C 
+			      C ;
+ 0008			      C Desc		struc
+ 0000  0000		      C Limit		dw 0		;+0 Offset of last byte.
+ 0002  0000		      C Base_l		dw 0		;+2 Low 16 bits of 32-bit address.
+ 0004  00		      C Base_m		db 0		;+4 Bits 16-23 of base.
+ 0005  00		      C Access		db 0		;+5 Access priviledge level.
+ 0006  00		      C Gran		db 0		;+6 Granularity and limit.
+ 0007  00		      C Base_H		db 0		;+7 bits 24-31 of base.
+			      C Desc		ends
+			      C 
+ = 0080			      C DescPresent		equ	1 shl 7	;Segment is present.
+ = 0040			      C Desc32Bit		equ	1 shl 6	;Segment is 32 bit (not 16!).
+ = 0010			      C DescAvailable	equ	1 shl 4	;Available for our use.
+			      C ;
+ = 0000			      C DescPL0		equ	0 shl 5	;PL0
+ = 0020			      C DescPL1		equ	1 shl 5	;PL1
+ = 0040			      C DescPL2		equ	2 shl 5	;PL2
+ = 0060			      C DescPL3		equ	3 shl 5	;PL3
+			      C ;
+ = 0010			      C DescMemory		equ	1 shl 4	;Segment is memory (not system gate etc.)
+			      C ;
+ = 0000			      C DescRData		equ	0	;Read only data segment. (eg, ROM)
+ = 0002			      C DescRWData		equ	2	;Read/Write data.
+ = 0004			      C DescRDataDown	equ	4	;Read only expand down data segment.
+ = 0006			      C DescRWDataDown	equ	6	;Read/write expand down data segment.
+ = 0008			      C DescECode		equ	8	;Execute only code.
+ = 000A			      C DescERCode		equ	10	;Execute/read code.
+ = 000C			      C DescECCode		equ	12	;Execute only conforming code.
+ = 000E			      C DescERCCode		equ	14	;Execute/read conforming code.
+			      C ;
+ = 0001			      C Desc286Tss		equ	1	;Available 286 TSS.
+ = 0002			      C DescLDT		equ	2	;LDT.
+ = 0003			      C Desc286TssB		equ	3	;Busy 286 TSS.
+ = 0004			      C Desc286Call		equ	4	;286 call gate.
+ = 0005			      C DescTssGate		equ	5	;TSS gate.
+ = 0006			      C Desc286Int		equ	6	;286 interupt gate.
+ = 0007			      C Desc286Trap		equ	7	;286 trap gate.
+ = 0009			      C Desc386Tss		equ	9	;Available 386 TSS.
+ = 000B			      C Desc386TssB		equ	11	;Busy 386 TSS.
+ = 000C			      C Desc386Call		equ	12	;386 call gate.
+ = 000E			      C Desc386Int		equ	14	;386 interupt gate.
+ = 000F			      C Desc386Trap		equ	15	;386 trap gate.
+			      C 
+ 0008			      C GATE struc
+ 0000  0000		      C OfsLow	dw ?
+ 0002  0000		      C sel		dw ?
+ 0004  0000		      C attr	dw ?
+ 0006  0000		      C OfsHigh	dw ?
+			      C GATE ends
+			      C 
+			      C ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+ 0068			      C TSSFields	struc
+			      C ;
+			      C ;Task segment structure.
+			      C ;
+ 0000  0000 0000	      C Back	dw ?,?  	;Back link to any previous TSS.
+ 0004  00000000		      C ESP0	dd ?		;SP for level 0 interupt.
+ 0008  0000 0000	      C SS0		dw ?,?
+ 000C  00000000		      C ESP1	dd ?		;Level 1 interupt handlers stack.
+ 0010  0000 0000	      C SS1		dw ?,?
+ 0014  00000000		      C ESP2	dd ?		;Level 2 interupt handlers stack.
+ 0018  0000 0000	      C SS2		dw ?,?
+ 001C  00000000		      C tCR3	dd ?		;CR3 value.
+ 0020  00000000		      C tEIP	dd ?		;Instruction pointer.
+ 0024  00000000		      C tEFlags	dd ?		;EFlags.
+ 0028  00000000		      C tEAX	dd ?		;AX for init.
+ 002C  00000000		      C tECX	dd ?		;CX for init.
+ 0030  00000000		      C tEDX	dd ?		;DX for init.
+ 0034  00000000		      C tEBX	dd ?
+ 0038  00000000		      C tESP	dd ?
+ 003C  00000000		      C tEBP	dd ?
+ 0040  00000000		      C tESI	dd ?
+ 0044  00000000		      C tEDI	dd ?
+ 0048  00000000		      C tES		dd ?
+ 004C  00000000		      C tCS		dd ?
+ 0050  00000000		      C tSS		dd ?
+ 0054  00000000		      C tDS		dd ?
+ 0058  00000000		      C tFS		dd ?
+ 005C  00000000		      C tGS		dd ?
+ 0060  0000		      C tLDT	dw ?
+ 0062  0000		      C 		dw ?		;reserved.
+ 0064  0000		      C 		dw ?		;reserved.
+ 0066  0000		      C IOMap	dw ?		;displacement to I/O map.
+			      C ;
+			      C ifdef tPL2StackSize
+			      C endif
+			      C ifdef tPL1StackSize
+			      C endif
+			      C ifdef tPL0StackSize
+			      C endif
+			      C ;tPL0Stack	dw ?
+			      C TSSFields	ends
+			      C 
+ 0040			      C NewHeaderStruc	struc
+ 0000  0001 [		      C NewID		db '3P'	;+0 identifier.
+        33 50
+       ]
+ 0002  00000000		      C NewSize		dd ?		;+2 byte size of 3P section of file.
+ 0006  00000000		      C NewLength		dd ?		;+6  byte size of exe image data.
+ 000A  00000000		      C NewAlloc		dd ?		;+10 byte size of program.
+ 000E  0000		      C NewSegments		dw ?		;+14 number of segment definitions.
+ 0010  00000000		      C NewRelocs		dd ?		;+16 number of relocation table entries.
+ 0014  00000000		      C NewEntryEIP		dd ?		;+20 entry offset.
+ 0018  0000		      C NewEntryCS		dw ?		;+24 segment list entry number for entry CS.
+ 001A  00000000		      C NewEntryESP		dd ?		;+26 ESP offset.
+ 001E  0000		      C NewEntrySS		dw ?		;+30 segment list entry number for SS.
+ 0020  00000000		      C NewFlags		dd ?		;+32 Control flags.
+ 0024  00000000		      C NewAutoStack		dd ?		;+36 Auto stack size.
+ 0028  0000		      C NewAutoDS		dw ?		;+40 Auto DS segment number +1
+ 002A  00000000		      C NewExports		dd ?		;+42 Length of EXPORT section.
+ 002E  00000000		      C NewImports		dd ?		;+46 Length of IMPORT section.
+ 0032  00000000		      C NewImportModCnt	dd ?		;+50 Number of IMPORT modules.
+			      C ;NewReserved		db 64-NewReserved dup (?)
+ 0036  000A [		      C NewReserved		db 64-$ dup (?)
+        00
+       ]
+			      C NewHeaderStruc	ends
+			      C ;
+			      C ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+			      C 
+			      C ifndef CW3
+ = 0001			      C LE_OBJ_Flags_Read       equ 1   ;Readable.
+ = 0002			      C LE_OBJ_Flags_Write      equ 2   ;Writeable.
+ = 0004			      C LE_OBJ_Flags_Exec       equ 4   ;Executable.
+ = 0008			      C LE_OBJ_Flags_Res        equ 8   ;Resource.
+ = 0010			      C LE_OBJ_Flags_Discard    equ 16  ;Discardable.
+ = 0020			      C LE_OBJ_Flags_Shared     equ 32  ;Shared.
+ = 0040			      C LE_OBJ_Flags_PreLoad    equ 64  ;Preload.
+ = 0080			      C LE_OBJ_Flags_Invalid    equ 128 ;Invalid.
+ = 0300			      C LE_OBJ_Flags_FillMsk    equ 256+512     ;Mask for fill type bits.
+ = 0000			      C LE_OBJ_Flags_Normal     equ 0   ;Normal fill type.
+ = 0100			      C LE_OBJ_Flags_Zero       equ 256 ;Zero filled.
+ = 0200			      C LE_OBJ_Flags_Res1       equ 512 ;resident.
+ = 0300			      C LE_OBJ_Flags_Res2       equ 256+512     ;resident/contiguous.
+ = 0400			      C LE_OBJ_Flags_LongLoc    equ 1024        ;long lockable.
+ = 1000			      C LE_OBJ_Flags_16Alias    equ 4096        ;16:16_ALIAS
+ = 2000			      C LE_OBJ_Flags_Big        equ 8192        ;"BIG" (Huge: 32-bit)
+ = 4000			      C LE_OBJ_Flags_Conform    equ 16384       ;Conforming.
+ = 8000			      C LE_OBJ_Flags_IOPriv     equ 32768       ;"OBJECT_I/O_PRIVILEGE_LEVEL
+			      C endif
+			      C 
+			      C ;
+			      C ;LE header format.
+			      C ;
+ 00C4			      C LE_Header               struc
+ 0000  0000		      C LE_ID           dw ?    ;"LE" text identifier.
+ 0002  00		      C LE_ByteOrder            db ?    ;byte order, 0=little-endian, none-zero=big.
+ 0003  00		      C LE_WordOrder            db ?    ;word order.
+ 0004  00000000		      C LE_Format               dd ?    ;format level.
+			      C ;
+ 0008  0000		      C LE_CPU          dw ?    ;CPU type.
+ = 0001			      C LE_CPU_286              equ 1
+ = 0002			      C LE_CPU_386              equ 2
+ = 0003			      C LE_CPU_486              equ 3
+ = 0004			      C LE_CPU_586              equ 4
+ = 0020			      C LE_CPU_i860             equ 20h
+ = 0021			      C LE_CPU_N11              equ 21h
+ = 0040			      C LE_CPU_R2000            equ 40h
+ = 0041			      C LE_CPU_R6000            equ 41h
+ = 0042			      C LE_CPU_R4000            equ 42h
+			      C ;
+ 000A  0000		      C LE_OS           dw ?    ;Target operating system.
+ = 0001			      C LE_OS_OS2               equ 1
+ = 0002			      C LE_OS_Windows           equ 2
+ = 0003			      C LE_OS_DOS4              equ 3
+ = 0004			      C LE_OS_Win386            equ 4
+			      C ;
+ 000C  00000000		      C LE_Version              dd ?    ;Module version.
+			      C ;
+ 0010  00000000		      C LE_Type         dd ?    ;Module type.
+ = 0004			      C LE_Type_InitPer equ 1 shl 2     ;initialise per process.
+ = 0010			      C LE_Type_IntFixup        equ 1 shl 4     ;no internal fixups.
+ = 0020			      C LE_Type_ExtFixup        equ 1 shl 5     ;no external fixups.
+ = 2000			      C LE_Type_NoLoad          equ 1 shl 13    ;module not loadable.
+ = 8000			      C LE_Type_DLL             equ 1 shl 15    ;DLL
+			      C ;
+ 0014  00000000		      C LE_Pages                dd ?    ;number of memory pages.
+ 0018  00000000		      C LE_EntryCS              dd ?    ;Entry CS object.
+ 001C  00000000		      C LE_EntryEIP             dd ?    ;Entry EIP.
+ 0020  00000000		      C LE_EntrySS              dd ?    ;Entry SS object.
+ 0024  00000000		      C LE_EntryESP             dd ?    ;Entry ESP.
+ 0028  00000000		      C LE_PageSize             dd ?    ;Page size.
+ 002C  00000000		      C LE_LastBytes            dd ?    ;Bytes on last page.
+ 0030  00000000		      C LE_FixupSize            dd ?    ;fixup section size.
+ 0034  00000000		      C LE_FixupChk             dd ?    ;fixup section check sum.
+ 0038  00000000		      C LE_LoaderSize           dd ?    ;loader section size.
+ 003C  00000000		      C LE_LoaderChk            dd ?    ;loader section check sum.
+ 0040  00000000		      C LE_ObjOffset            dd ?    ;offset of object table.
+ 0044  00000000		      C LE_ObjNum               dd ?    ;object table entries
+ 0048  00000000		      C LE_PageMap              dd ?    ;object page map table offset.
+ 004C  00000000		      C LE_IterateMap           dd ?    ;object iterate data map offset.
+ 0050  00000000		      C LE_Resource             dd ?    ;resource table offset
+ 0054  00000000		      C LE_ResourceNum          dd ?    ;resource table entries.
+ 0058  00000000		      C LE_ResidentNames        dd ?    ;resident names table offset.
+ 005C  00000000		      C LE_EntryTable           dd ?    ;entry table offset.
+ 0060  00000000		      C LE_Directives           dd ?    ;module directives table offset.
+ 0064  00000000		      C LE_DirectivesNum        dd ?    ;module directives entries.
+ 0068  00000000		      C LE_Fixups               dd ?    ;fixup page table offset.
+ 006C  00000000		      C LE_FixupsRec            dd ?    ;fixup record table offset.
+ 0070  00000000		      C LE_ImportModNames       dd ?    ;imported module name table offset.
+ 0074  00000000		      C LE_ImportModNum dd ?    ;imported modules count.
+ 0078  00000000		      C LE_ImportNames          dd ?    ;imported procedures name table offset.
+ 007C  00000000		      C LE_PageChk              dd ?    ;per-page checksum table offset.
+ 0080  00000000		      C LE_Data         dd ?    ;data pages offset.
+ 0084  00000000		      C LE_PreLoadNum           dd ?    ;pre-load page count.
+ 0088  00000000		      C LE_NoneRes              dd ?    ;non-resident names table offset.
+ 008C  00000000		      C LE_NoneResSize          dd ?    ;non-resident names table length.
+ 0090  00000000		      C LE_NoneResChk           dd ?    ;non-resident names checksum.
+ 0094  00000000		      C LE_AutoDS               dd ?    ;automatic data object.
+ 0098  00000000		      C LE_Debug                dd ?    ;debug information offset.
+ 009C  00000000		      C LE_DebugSize            dd ?    ;debug information size.
+ 00A0  00000000		      C LE_PreLoadInstNum       dd ?    ;pre-load instance pages number.
+ 00A4  00000000		      C LE_DemandInstNum        dd ?    ;demand instance pages number.
+ 00A8  00000000		      C LE_HeapExtra            dd ?    ;extra heap alloction.
+ 00AC  0014 [		      C LE_Reserved             db 20 dup (?) ;reserved.
+        00
+       ]
+ 00C0  0000		      C LE_DeviceID             dw ?    ;device ID (Windows VxD only).
+ 00C2  0000		      C LE_DDK          dw ?    ;DDK version number.
+			      C LE_Header               ends
+			      C 
+			      C 
+ 0100			      C PSP_Struc		struc
+			      C ;
+			      C ;First the standard DOS PSP structure. Won't use any of existing entries for
+			      C ;extended info incase currently un-used entries get used at a later data.
+			      C ;
+ 0000  0000		      C  PSP_INT20		dw ?		;INT 20 instruction for CP/M CALL 0 program
+			      C 				;termination the CDh 20h here is often used as a
+			      C 				;signature for a valid PSP
+ 0002  0000		      C  PSP_MemTop		dw ?		;segment of first byte beyond memory allocated to
+			      C 				;program. N/A
+ 0004  00		      C  PSP_Filler1		db ?		;unused filler
+			      C 
+ 0005  00		      C  PSP_CPM		db ?		;CP/M CALL 5 service request (FAR JMP to 000C0h)
+			      C 				;BUG: (DOS 2+) PSPs created by INT 21/AH=4Bh
+			      C 				;point at 000BEh
+ 0006  0000		      C 		dw ?		;CP/M compatibility--size of first segment for
+			      C 				;.COM files
+ 0008  0000		      C 		dw ?		;remainder of FAR JMP at 05h
+ 000A  00000000		      C  PSP_INT22		dd ?		;stored INT 22 termination address
+ 000E  00000000		      C  PSP_INT23		dd ?		;stored INT 23 control-Break handler address
+ 0012  00000000		      C  PSP_INT24		dd ?		;DOS 1.1+ stored INT 24 critical error handler
+			      C 				;address
+ 0016  0000		      C  PSP_Parent		dw ?		;segment of parent PSP
+ 0018  0014 [		      C  PSP_HandleList	db 20 dup (?) ;DOS 2+ Job File Table, one byte per file
+        00
+       ]
+			      C 				;handle, FFh = closed
+ 002C  0000		      C  PSP_Environment	dw ?		;segment of environment for process
+ 002E  00000000		      C  PSP_INT21SSSP	dd ?		;N/A
+ 0032  0000		      C  PSP_Handles		dw ?		;DOS 3+ number of entries in JFT (default 20)
+ 0034  00000000		      C  PSP_HandlePtr	dd ?		;DOS 3+ pointer to JFT (default PSP:0018h)
+ 0038  00000000		      C  PSP_Previous	dd ?		;DOS 3+ pointer to previous PSP (default
+			      C 				;FFFFFFFFh in 3.x) used by SHARE in DOS 3.3.
+ 003C  00000000		      C  PSP_Filler2		dd ?		;unused by DOS versions <= 6.00
+			      C 				;reportedly used by Novell NetWare shell 3.x
+ 0040  0000		      C  PSP_DOSVersion	dw ?		;DOS 5+ version to return on INT 21/AH=30h
+ 0042  0000		      C  PSP_NextPSP		dw ?		;(MSWin3) selector of next PSP (PDB) in linked
+			      C 				;list Windows keeps a linked list of Windows
+			      C 				;programs only
+ 0044  00000000		      C  PSP_Filler3		dd ?		;unused by DOS versions <= 6.00
+ 0048  00		      C  PSP_WinOldAp	db ?		;(MSWindows3) bit 0 set if non-Windows
+			      C 				;application (WINOLDAP)
+ 0049  0007 [		      C  PSP_Filler4		db 7 dup (?) ;unused by DOS versions <= 6.00
+        00
+       ]
+ 0050  0003 [		      C  PSP_INT21		db 3 dup (?) ;DOS 2+ service request (INT 21/RETF instructions)
+        00
+       ]
+ 0053  0009 [		      C  PSP_Filler5		db 9 dup (?) ;unused in DOS versions <= 6.00
+        00
+       ]
+ 005C  0010 [		      C  PSP_FCB1		db 16 dup (?) ;first default FCB, filled in from first
+        00
+       ]
+			      C 				;commandline argument overwrites second FCB if
+			      C 				;opened
+ 006C  0010 [		      C  PSP_FCB2		db 16 dup (?) ;second default FCB, filled in from second
+        00
+       ]
+			      C 				;commandline argument overwrites beginning of
+			      C 				;commandline if opened
+ 007C  00000000		      C  PSP_Filler6		dd ?		;unused
+ 0080  0080 [		      C  PSP_CommandTail	db 128 dup (?) ;commandline / default DTA
+        00
+       ]
+			      C 				;command tail is BYTE for length of tail, N BYTEs
+			      C 				;for the tail, followed by a BYTE containing 0Dh
+			      C PSP_Struc		ends
+			      C 
+			      C 
+			      C 
+			      C 
+			      C 
+				
+ 001B				MZHdr struct
+ 0000  0000			Signature	dw ?	;00 Identifier text 'MZ', '3P'.
+ 0002  0000			_Length		dw ?	;02 Length of file MOD 512
+ 0004  0000						dw ?	;04 Length of file in 512 byte blocks.
+ 0006  0000			RelocNum	dw ?	;06 Number of relocation items.
+ 0008  0000			HeaderSize	dw ?	;08 Length of header in 16 byte paragraphs.
+ 000A  0000			MinAlloc	dw ?	;0A Minimum number of para's needed above program.
+ 000C  0000			MaxAlloc	dw ?	;0C Maximum number of para's needed above program.
+ 000E  0000			StackSeg	dw ?	;0E Segment displacement of stack module.
+ 0010  0000			EntrySP		dw ?	;10 value for SP at entry.
+ 0012  0000			CheckSum	dw ?	;12 Check sum...
+ 0014  0000			EntryIP	dw ?	;14 Contents of IP at entry.
+ 0016  0000			EntryCS	dw ?	;16 Segment displacement of CS at entry.
+ 0018  0000			RelocFirst	dw ?	;18 First relocation item offset.
+ 001A  00			OverlayNum	db ?	;1A Overlay number.
+				MZHdr ends
+				
+ 0000					.data
+				;
+ 0000 0000			PSPSegment	dw ?
+				;
+ 0002 63 77 65 6D 2E 65		InFileName	db 'cwem.exe',0
+       78 65 00
+ 000B 0000			InFileHandle	dw ?
+ 000D 63 77 65 6D 2E 63		OutFileName	db 'cwem.cw',0
+       77 00
+ 0015 0000			OutFileHandle	dw ?
+					even
+				
+ 0018 0000 0000 0000 0000	exehdr MZHDR <>
+       0000 0000 0000
+       0000 0000 0000
+       0000 0000 0000 00
+					even
+				;
+ 0034 0000 0000			ExeSize1	dw ?,?	;Header size
+ 0038 0000 0000			ExeSize2	dw ?,?	;Real file size.
+				;
+ 003C  0001 [			NewHeader	NewHeaderStruc <>	;make space for a header.
+        33 50
+       ] 00000000
+       00000000 00000000
+       0000 00000000
+       00000000 0000
+       00000000 0000
+       00000000 00000000
+       0000 00000000
+       00000000 00000000
+       000A [
+        00
+       ]
+				;
+ 007C 00000000			DataSegBase	dd 0
+ 0080 003FFFFF			DataSegLimit	dd 0fffffh+(1 shl 20)+(1 shl 21)
+ 0084 00000000			CodeSegBase	dd 0
+ 0088 00000000			CodeSegLimit	dd ?
+				;
+ 008C 0000			RelocSegment	dw 0
+ 008E 0000			EXESegment	dw 0
+ 0090 00000000			Real3POffset	dd 0
+				;
+ 0000					.code
+				
+				;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+ 0000				Start	proc	near
+ 0000  B8 ---- R			mov	ax,DGROUP
+ 0003  8E D8				mov	ds,ax
+ 0005  8C 06 0000 R			mov	PSPSegment,es
+					;
+ 0009  8B CC				mov	cx,sp
+ 000B  C1 E9 04				shr	cx,4
+ 000E  41				inc	cx
+ 000F  8C C0				mov	ax,es
+ 0011  8C D3				mov	bx,ss		;Get program end segment.
+ 0013  03 D9				add	bx,cx
+ 0015  2B D8				sub	bx,ax		;Size program.
+ 0017  B4 4A				mov	ah,4ah
+ 0019  CD 21				int	21h		;Re-size memory block.
+					;
+ 001B  E8 0005				call	ProcessFile
+					;
+ 001E  B8 4C00				mov	ax,4c00h
+ 0021  CD 21				int	21h
+ 0023				Start	endp
+				
+				
+				;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+ 0023				ProcessFile	proc	near
+ 0023  BA 0002 R			mov	dx,offset InFileName
+ 0026  B8 3D00				mov	ax,3d00h
+ 0029  CD 21				int	21h
+ 002B  0F 82 0282			jc	@@9
+ 002F  A3 000B R			mov	InFileHandle,ax
+					;
+ 0032  BA 000D R			mov	dx,offset OutFileName
+ 0035  B8 3C00				mov	ax,3c00h
+ 0038  B9 0000				mov	cx,0
+ 003B  CD 21				int	21h
+ 003D  0F 82 0270			jc	@@9
+ 0041  A3 0015 R			mov	OutFileHandle,ax
+					;
+					;Process .EXE relocation table and produce new format header.
+					;
+ 0044  BA 0018 R			mov	dx,offset exehdr
+ 0047  B9 001B				mov	cx,sizeof exehdr
+ 004A  8B 1E 000B R			mov	bx,InFileHandle
+ 004E  B4 3F				mov	ah,3fh
+ 0050  CD 21				int	21h		;read the .EXE header.
+ 0052  0F 82 025B			jc	@@9
+ 0056  83 F8 1B				cmp	ax,sizeof exehdr
+ 0059  0F 85 0254			jnz	@@9
+ 005D  81 3E 0018 R 5A4D		cmp	[exehdr.Signature],'ZM'	;Correct ID?
+ 0063  0F 85 024A			jnz	@@9
+					;
+					;Get header size in bytes.
+					;
+ 0067  8B 1E 0020 R			mov	bx,[exehdr.HeaderSize]	;Work out header size.
+ 006B  33 C9				xor	cx,cx		;/
+ 006D  03 DB				add	bx,bx		;/
+ 006F  83 D1 00				adc	cx,0		;/
+ 0072  03 DB				add	bx,bx		;/
+ 0074  83 D1 00				adc	cx,0		;/
+ 0077  03 DB				add	bx,bx		;/
+ 0079  83 D1 00				adc	cx,0		;/
+ 007C  03 DB				add	bx,bx		;/
+ 007E  83 D1 00				adc	cx,0		;/
+ 0081  89 1E 0034 R			mov	w[ExeSize1+0],bx	;/
+ 0085  89 0E 0036 R			mov	w[ExeSize1+2],cx	;/
+					;
+					;Get exe image size in bytes.
+					;
+ 0089  A1 001C R			mov	ax,w[exehdr._Length+2]	;get length in 512 byte blocks
+ 008C  48				dec	ax		;lose 1 cos its rounded up
+ 008D  03 C0				add	ax,ax		;mult by 2
+ 008F  B6 00				mov	dh,0
+ 0091  8A D4				mov	dl,ah
+ 0093  8A E0				mov	ah,al
+ 0095  8A C6				mov	al,dh		;mult by 256=*512
+ 0097  03 06 001A R			add	ax,w[exehdr._Length]	;add length mod 512
+ 009B  83 D2 00				adc	dx,0		;add any carry to dx
+ 009E  2B C3				sub	ax,bx		;remove header total size.
+ 00A0  1B D1				sbb	dx,cx		;/
+ 00A2  A3 0038 R			mov	w[ExeSize2+0],ax	;/
+ 00A5  89 16 003A R			mov	w[ExeSize2+2],dx	;/
+					;
+ 00A9  66| C1 E2 10			shl	edx,16
+ 00AD  8B D0				mov	dx,ax
+ 00AF  BE 003C R			mov	si,offset NewHeader
+ 00B2  66| 89 94 0042 R			mov	NewHeader.NewLength[si],edx	;store EXE image length in the header.
+					;
+ 00B7  66| 52				push	edx
+ 00B9  66| 81 FA 00100000		cmp	edx,100000h
+ 00C0  72 12				jc	@@0
+ 00C2  66| 81 C2 00000FFF		add	edx,4095
+ 00C9  66| C1 EA 0C			shr	edx,12		;lose bottom bits.
+ 00CD  66| 81 CA 00100000		or	edx,1 shl 20		;Set our version of the G bit.
+ 00D4  66| 89 16 0088 R		@@0:	mov	CodeSegLimit,edx
+ 00D9  66| 5A				pop	edx
+					;
+ 00DB  66| 81 C2 00000400		add	edx,1024
+ 00E2  66| 89 94 0046 R			mov	NewHeader.NewAlloc[si],edx
+ 00E7  66| 83 E2 FC			and	edx,0ffffffffh-3
+ 00EB  66| 89 94 0056 R			mov	NewHeader.NewEntryESP[si],edx
+ 00F0  C7 84 004A R 0002		mov	NewHeader.NewSegments[si],2
+ 00F6  66| 0F B7 06 001E R		movzx	eax,exehdr.RelocNum
+ 00FC  66| 89 84 004C R			mov	NewHeader.NewRelocs[si],eax
+ 0101  66| 0F B7 06 002C R		movzx	eax,exehdr.EntryIP
+ 0107  66| 89 84 0050 R			mov	NewHeader.NewEntryEIP[si],eax	;setup entry offset.
+ 010C  C7 84 0054 R 0001		mov	NewHeader.NewEntryCS[si],1
+ 0112  C7 84 005A R 0000		mov	NewHeader.NewEntrySS[si],0
+					;
+					;Read relocation table.
+					;
+ 0118  8B 1E 001E R			mov	bx,exehdr.RelocNum	;get number of relocation items.
+ 011C  0B DB				or	bx,bx
+ 011E  74 3F				jz	@@NoRelocMem
+ 0120  C1 E3 02				shl	bx,2
+ 0123  C1 EB 04				shr	bx,4
+ 0126  43				inc	bx
+ 0127  B4 48				mov	ah,48h
+ 0129  CD 21				int	21h
+ 012B  0F 82 0182			jc	@@9
+ 012F  A3 008C R			mov	RelocSegment,ax	;stow the memory address.
+					;
+ 0132  8B 16 0030 R			mov	dx,exehdr.RelocFirst
+ 0136  B9 0000				mov	cx,0
+ 0139  8B 1E 000B R			mov	bx,InFileHandle
+ 013D  B8 4200				mov	ax,4200h
+ 0140  CD 21				int	21h		;move to relocation table.
+					;
+ 0142  8B 0E 001E R			mov	cx,exehdr.RelocNum
+ 0146  C1 E1 02				shl	cx,2
+ 0149  8B 1E 000B R			mov	bx,InFileHandle
+ 014D  1E				push	ds
+ 014E  8E 1E 008C R			mov	ds,RelocSegment
+ 0152  BA 0000				mov	dx,0
+ 0155  B8 3F00				mov	ax,3f00h
+ 0158  CD 21				int	21h
+ 015A  1F				pop	ds
+ 015B  0F 82 0152			jc	@@9
+					;
+ 015F				@@NoRelocMem:	;Get some memory for the exe image.
+					;
+ 015F  66| 8B 1E 0038 R			mov	ebx,d[ExeSize2]	;get exe image size.
+ 0164  66| C1 EB 04			shr	ebx,4
+ 0168  43				inc	bx
+ 0169  B4 48				mov	ah,48h
+ 016B  CD 21				int	21h
+ 016D  0F 82 0140			jc	@@9
+ 0171  A3 008E R			mov	EXESegment,ax
+					;
+ 0174  8B 16 0034 R			mov	dx,w[ExeSize1]	;get image file offset.
+ 0178  8B 0E 0036 R			mov	cx,w[ExeSize1+2]
+ 017C  8B 1E 000B R			mov	bx,InFileHandle
+ 0180  B8 4200				mov	ax,4200h
+ 0183  CD 21				int	21h		;move to start of exe image.
+ 0185  0F 82 0128			jc	@@9
+ 0189  8B 1E 000B R			mov	bx,InFileHandle
+ 018D  8B 0E 0038 R			mov	cx,w[ExeSize2]
+ 0191  8B 16 003A R			mov	dx,w[ExeSize2+2]
+ 0195  1E				push	ds
+ 0196  8E 1E 008E R			mov	ds,EXESegment
+ 019A  BA 0000				mov	dx,0
+ 019D  B4 3F				mov	ah,3fh
+ 019F  CD 21				int	21h
+ 01A1  1F				pop	ds
+ 01A2  0F 82 010B			jc	@@9
+					;
+ 01A6  8B 1E 0015 R			mov	bx,OutFileHandle
+ 01AA  B9 0000				mov	cx,0
+ 01AD  BA 0000				mov	dx,0
+ 01B0  B8 4201				mov	ax,4201h
+ 01B3  CD 21				int	21h
+ 01B5  66| C1 E2 10			shl	edx,16
+ 01B9  8B D0				mov	dx,ax
+ 01BB  66| 89 16 0090 R			mov	Real3POffset,edx
+					;
+					;Update exe image with real segment numbers.
+					;
+ 01C0  8B 0E 001E R			mov	cx,exehdr.RelocNum	;number of entries.
+ 01C4  E3 44				jcxz	@@NoReloc
+ 01C6  8E 06 008C R			mov	es,RelocSegment	;the relocations.
+ 01CA  BE 0000				mov	si,0
+ 01CD  26: 8B 3C		@@3:	mov	di,es:[si]
+ 01D0  26: 8B 44 02			mov	ax,es:[si+2]
+ 01D4  03 06 008E R			add	ax,EXESegment
+ 01D8  8E E0				mov	fs,ax
+ 01DA  64: C7 05 0000			mov	fs:w[di],0
+ 01DF  83 C6 04				add	si,4		;next relocation entry.
+ 01E2  E2 E9				loop	@@3
+					;
+					;Convert relocation table to linear offsets.
+					;
+ 01E4  8B 0E 001E R			mov	cx,exehdr.RelocNum	;number of entries.
+ 01E8  8E 06 008C R			mov	es,RelocSegment	;list of relocations.
+ 01EC  BE 0000				mov	si,0
+ 01EF  66| 26: 0F B7 44		@@1:	movzx	eax,es:w[si+2]	;get segment offset.
+       02
+ 01F5  66| C1 E0 04			shl	eax,4		;make it linear.
+ 01F9  66| 26: 0F B7 1C			movzx	ebx,es:w[si+0]	;get offset.
+ 01FE  66| 03 C3			add	eax,ebx		;add in offset.
+ 0201  66| 26: 89 04			mov	es:d[si],eax		;store linear offset.
+ 0205  83 C6 04				add	si,4
+ 0208  E2 E5				loop	@@1
+ 020A				@@NoReloc:	;
+					;Write main header.
+					;
+ 020A  BA 003C R			mov	dx,offset NewHeader	;write the header to make space.
+ 020D  8B 1E 0015 R			mov	bx,OutFileHandle
+ 0211  B9 0040				mov	cx,size NewHeaderStruc
+ 0214  B4 40				mov	ah,40h
+ 0216  CD 21				int	21h
+					;
+					;Write segment definitions.
+					;
+ 0218  BA 007C R			mov	dx,offset DataSegBase
+ 021B  B9 0010				mov	cx,8+8
+ 021E  8B 1E 0015 R			mov	bx,OutFileHandle
+ 0222  B4 40				mov	ah,40h
+ 0224  CD 21				int	21h
+					;
+					;Write relocation table.
+					;
+ 0226  8B 0E 001E R			mov	cx,exehdr.RelocNum	;number of entries.
+ 022A  C1 E1 02				shl	cx,2
+ 022D  8B 1E 0015 R			mov	bx,OutFileHandle
+ 0231  1E				push	ds
+ 0232  8E 1E 008C R			mov	ds,RelocSegment	;where they are.
+ 0236  BA 0000				mov	dx,0
+ 0239  B4 40				mov	ah,40h
+ 023B  CD 21				int	21h
+ 023D  1F				pop	ds
+ 023E  72 71				jc	@@9
+					;
+					;Write exe image.
+					;
+ 0240  8B 0E 0038 R			mov	cx,w[ExeSize2]
+ 0244  8B 16 003A R			mov	dx,w[ExeSize2+2]
+ 0248  8B 1E 0015 R			mov	bx,OutFileHandle
+ 024C  1E				push	ds
+ 024D  8E 1E 008E R			mov	ds,ExeSegment
+ 0251  BA 0000				mov	dx,0
+ 0254  B4 40				mov	ah,40h
+ 0256  CD 21				int	21h
+ 0258  1F				pop	ds
+ 0259  72 56				jc	@@9
+					;
+					;Calculate file size.
+					;
+ 025B  8B 1E 0015 R			mov	bx,OutFileHandle
+ 025F  B9 0000				mov	cx,0
+ 0262  BA 0000				mov	dx,0
+ 0265  B8 4201				mov	ax,4201h
+ 0268  CD 21				int	21h
+ 026A  66| C1 E2 10			shl	edx,16
+ 026E  8B D0				mov	dx,ax
+ 0270  66| 2B 16 0090 R			sub	edx,Real3POffset
+ 0275  BE 003C R			mov	si,offset NewHeader
+ 0278  66| 89 94 003E R			mov	NewHeader.NewSize[si],edx
+					;
+					;Now go back and write the real header.
+					;
+ 027D  66| 8B 16 0090 R			mov	edx,Real3POffset
+ 0282  8B CA				mov	cx,dx
+ 0284  66| C1 EA 10			shr	edx,16
+ 0288  87 CA				xchg	cx,dx
+ 028A  8B 1E 0015 R			mov	bx,OutFileHandle
+ 028E  B8 4200				mov	ax,4200h
+ 0291  CD 21				int	21h
+ 0293  BA 003C R			mov	dx,offset NewHeader	;write the header to make space.
+ 0296  8B 1E 0015 R			mov	bx,OutFileHandle
+ 029A  B9 0040				mov	cx,size NewHeaderStruc
+ 029D  B4 40				mov	ah,40h
+ 029F  CD 21				int	21h
+					;
+ 02A1  8B 1E 000B R			mov	bx,InFileHandle
+ 02A5  B4 3E				mov	ah,3eh
+ 02A7  CD 21				int	21h
+ 02A9  8B 1E 0015 R			mov	bx,OutFileHandle
+ 02AD  B4 3E				mov	ah,3eh
+ 02AF  CD 21				int	21h
+					;
+ 02B1  C3			@@9:	ret
+ 02B2				ProcessFile	endp
+				
+					end	Start
+Microsoft (R) Macro Assembler Version 6.15.8803		    03/27/25 11:39:27
+CWMAKE.asm						     Symbols 2 - 1
+
+
+
+
+Macros:
+
+                N a m e                 Type
+
+Popm . . . . . . . . . . . . . .	Proc
+Pushm  . . . . . . . . . . . . .	Proc
+
+
+Structures and Unions:
+
+                N a m e                  Size
+                                         Offset      Type
+
+Desc . . . . . . . . . . . . . .	 0008
+  Limit  . . . . . . . . . . . .	 0000	     Word
+  Base_l . . . . . . . . . . . .	 0002	     Word
+  Base_m . . . . . . . . . . . .	 0004	     Byte
+  Access . . . . . . . . . . . .	 0005	     Byte
+  Gran . . . . . . . . . . . . .	 0006	     Byte
+  Base_H . . . . . . . . . . . .	 0007	     Byte
+GATE . . . . . . . . . . . . . .	 0008
+  OfsLow . . . . . . . . . . . .	 0000	     Word
+  sel  . . . . . . . . . . . . .	 0002	     Word
+  attr . . . . . . . . . . . . .	 0004	     Word
+  OfsHigh  . . . . . . . . . . .	 0006	     Word
+LE_Header  . . . . . . . . . . .	 00C4
+  LE_ID  . . . . . . . . . . . .	 0000	     Word
+  LE_ByteOrder . . . . . . . . .	 0002	     Byte
+  LE_WordOrder . . . . . . . . .	 0003	     Byte
+  LE_Format  . . . . . . . . . .	 0004	     DWord
+  LE_CPU . . . . . . . . . . . .	 0008	     Word
+  LE_OS  . . . . . . . . . . . .	 000A	     Word
+  LE_Version . . . . . . . . . .	 000C	     DWord
+  LE_Type  . . . . . . . . . . .	 0010	     DWord
+  LE_Pages . . . . . . . . . . .	 0014	     DWord
+  LE_EntryCS . . . . . . . . . .	 0018	     DWord
+  LE_EntryEIP  . . . . . . . . .	 001C	     DWord
+  LE_EntrySS . . . . . . . . . .	 0020	     DWord
+  LE_EntryESP  . . . . . . . . .	 0024	     DWord
+  LE_PageSize  . . . . . . . . .	 0028	     DWord
+  LE_LastBytes . . . . . . . . .	 002C	     DWord
+  LE_FixupSize . . . . . . . . .	 0030	     DWord
+  LE_FixupChk  . . . . . . . . .	 0034	     DWord
+  LE_LoaderSize  . . . . . . . .	 0038	     DWord
+  LE_LoaderChk . . . . . . . . .	 003C	     DWord
+  LE_ObjOffset . . . . . . . . .	 0040	     DWord
+  LE_ObjNum  . . . . . . . . . .	 0044	     DWord
+  LE_PageMap . . . . . . . . . .	 0048	     DWord
+  LE_IterateMap  . . . . . . . .	 004C	     DWord
+  LE_Resource  . . . . . . . . .	 0050	     DWord
+  LE_ResourceNum . . . . . . . .	 0054	     DWord
+  LE_ResidentNames . . . . . . .	 0058	     DWord
+  LE_EntryTable  . . . . . . . .	 005C	     DWord
+  LE_Directives  . . . . . . . .	 0060	     DWord
+  LE_DirectivesNum . . . . . . .	 0064	     DWord
+  LE_Fixups  . . . . . . . . . .	 0068	     DWord
+  LE_FixupsRec . . . . . . . . .	 006C	     DWord
+  LE_ImportModNames  . . . . . .	 0070	     DWord
+  LE_ImportModNum  . . . . . . .	 0074	     DWord
+  LE_ImportNames . . . . . . . .	 0078	     DWord
+  LE_PageChk . . . . . . . . . .	 007C	     DWord
+  LE_Data  . . . . . . . . . . .	 0080	     DWord
+  LE_PreLoadNum  . . . . . . . .	 0084	     DWord
+  LE_NoneRes . . . . . . . . . .	 0088	     DWord
+  LE_NoneResSize . . . . . . . .	 008C	     DWord
+  LE_NoneResChk  . . . . . . . .	 0090	     DWord
+  LE_AutoDS  . . . . . . . . . .	 0094	     DWord
+  LE_Debug . . . . . . . . . . .	 0098	     DWord
+  LE_DebugSize . . . . . . . . .	 009C	     DWord
+  LE_PreLoadInstNum  . . . . . .	 00A0	     DWord
+  LE_DemandInstNum . . . . . . .	 00A4	     DWord
+  LE_HeapExtra . . . . . . . . .	 00A8	     DWord
+  LE_Reserved  . . . . . . . . .	 00AC	     Byte
+  LE_DeviceID  . . . . . . . . .	 00C0	     Word
+  LE_DDK . . . . . . . . . . . .	 00C2	     Word
+MZHdr  . . . . . . . . . . . . .	 001B
+  Signature  . . . . . . . . . .	 0000	     Word
+  _Length  . . . . . . . . . . .	 0002	     Word
+  RelocNum . . . . . . . . . . .	 0006	     Word
+  HeaderSize . . . . . . . . . .	 0008	     Word
+  MinAlloc . . . . . . . . . . .	 000A	     Word
+  MaxAlloc . . . . . . . . . . .	 000C	     Word
+  StackSeg . . . . . . . . . . .	 000E	     Word
+  EntrySP  . . . . . . . . . . .	 0010	     Word
+  CheckSum . . . . . . . . . . .	 0012	     Word
+  EntryIP  . . . . . . . . . . .	 0014	     Word
+  EntryCS  . . . . . . . . . . .	 0016	     Word
+  RelocFirst . . . . . . . . . .	 0018	     Word
+  OverlayNum . . . . . . . . . .	 001A	     Byte
+NewHeaderStruc . . . . . . . . .	 0040
+  NewID  . . . . . . . . . . . .	 0000	     Byte
+  NewSize  . . . . . . . . . . .	 0002	     DWord
+  NewLength  . . . . . . . . . .	 0006	     DWord
+  NewAlloc . . . . . . . . . . .	 000A	     DWord
+  NewSegments  . . . . . . . . .	 000E	     Word
+  NewRelocs  . . . . . . . . . .	 0010	     DWord
+  NewEntryEIP  . . . . . . . . .	 0014	     DWord
+  NewEntryCS . . . . . . . . . .	 0018	     Word
+  NewEntryESP  . . . . . . . . .	 001A	     DWord
+  NewEntrySS . . . . . . . . . .	 001E	     Word
+  NewFlags . . . . . . . . . . .	 0020	     DWord
+  NewAutoStack . . . . . . . . .	 0024	     DWord
+  NewAutoDS  . . . . . . . . . .	 0028	     Word
+  NewExports . . . . . . . . . .	 002A	     DWord
+  NewImports . . . . . . . . . .	 002E	     DWord
+  NewImportModCnt  . . . . . . .	 0032	     DWord
+  NewReserved  . . . . . . . . .	 0036	     Byte
+PSP_Struc  . . . . . . . . . . .	 0100
+  PSP_INT20  . . . . . . . . . .	 0000	     Word
+  PSP_MemTop . . . . . . . . . .	 0002	     Word
+  PSP_Filler1  . . . . . . . . .	 0004	     Byte
+  PSP_CPM  . . . . . . . . . . .	 0005	     Byte
+  PSP_INT22  . . . . . . . . . .	 000A	     DWord
+  PSP_INT23  . . . . . . . . . .	 000E	     DWord
+  PSP_INT24  . . . . . . . . . .	 0012	     DWord
+  PSP_Parent . . . . . . . . . .	 0016	     Word
+  PSP_HandleList . . . . . . . .	 0018	     Byte
+  PSP_Environment  . . . . . . .	 002C	     Word
+  PSP_INT21SSSP  . . . . . . . .	 002E	     DWord
+  PSP_Handles  . . . . . . . . .	 0032	     Word
+  PSP_HandlePtr  . . . . . . . .	 0034	     DWord
+  PSP_Previous . . . . . . . . .	 0038	     DWord
+  PSP_Filler2  . . . . . . . . .	 003C	     DWord
+  PSP_DOSVersion . . . . . . . .	 0040	     Word
+  PSP_NextPSP  . . . . . . . . .	 0042	     Word
+  PSP_Filler3  . . . . . . . . .	 0044	     DWord
+  PSP_WinOldAp . . . . . . . . .	 0048	     Byte
+  PSP_Filler4  . . . . . . . . .	 0049	     Byte
+  PSP_INT21  . . . . . . . . . .	 0050	     Byte
+  PSP_Filler5  . . . . . . . . .	 0053	     Byte
+  PSP_FCB1 . . . . . . . . . . .	 005C	     Byte
+  PSP_FCB2 . . . . . . . . . . .	 006C	     Byte
+  PSP_Filler6  . . . . . . . . .	 007C	     DWord
+  PSP_CommandTail  . . . . . . .	 0080	     Byte
+ResHead  . . . . . . . . . . . .	 000C
+  ResHead_Prev . . . . . . . . .	 0000	     DWord
+  ResHead_Next . . . . . . . . .	 0004	     DWord
+  ResHead_Handle . . . . . . . .	 0008	     DWord
+TSSFields  . . . . . . . . . . .	 0068
+  Back . . . . . . . . . . . . .	 0000	     Word
+  ESP0 . . . . . . . . . . . . .	 0004	     DWord
+  SS0  . . . . . . . . . . . . .	 0008	     Word
+  ESP1 . . . . . . . . . . . . .	 000C	     DWord
+  SS1  . . . . . . . . . . . . .	 0010	     Word
+  ESP2 . . . . . . . . . . . . .	 0014	     DWord
+  SS2  . . . . . . . . . . . . .	 0018	     Word
+  tCR3 . . . . . . . . . . . . .	 001C	     DWord
+  tEIP . . . . . . . . . . . . .	 0020	     DWord
+  tEFlags  . . . . . . . . . . .	 0024	     DWord
+  tEAX . . . . . . . . . . . . .	 0028	     DWord
+  tECX . . . . . . . . . . . . .	 002C	     DWord
+  tEDX . . . . . . . . . . . . .	 0030	     DWord
+  tEBX . . . . . . . . . . . . .	 0034	     DWord
+  tESP . . . . . . . . . . . . .	 0038	     DWord
+  tEBP . . . . . . . . . . . . .	 003C	     DWord
+  tESI . . . . . . . . . . . . .	 0040	     DWord
+  tEDI . . . . . . . . . . . . .	 0044	     DWord
+  tES  . . . . . . . . . . . . .	 0048	     DWord
+  tCS  . . . . . . . . . . . . .	 004C	     DWord
+  tSS  . . . . . . . . . . . . .	 0050	     DWord
+  tDS  . . . . . . . . . . . . .	 0054	     DWord
+  tFS  . . . . . . . . . . . . .	 0058	     DWord
+  tGS  . . . . . . . . . . . . .	 005C	     DWord
+  tLDT . . . . . . . . . . . . .	 0060	     Word
+  IOMap  . . . . . . . . . . . .	 0066	     Word
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_DATA  . . . . . . . . . . . . .	16 Bit	 0094	  Word	  Public  'DATA'	
+STACK  . . . . . . . . . . . . .	16 Bit	 0400	  Para	  Stack	  'STACK'	 
+_TEXT  . . . . . . . . . . . . .	16 Bit	 02B2	  Word	  Public  'CODE'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+ProcessFile  . . . . . . . . . .	P Near	 0023	  _TEXT	Length= 028F Public
+  @@0  . . . . . . . . . . . . .	L Near	 00D4	  _TEXT	
+  @@NoRelocMem . . . . . . . . .	L Near	 015F	  _TEXT	
+  @@3  . . . . . . . . . . . . .	L Near	 01CD	  _TEXT	
+  @@1  . . . . . . . . . . . . .	L Near	 01EF	  _TEXT	
+  @@NoReloc  . . . . . . . . . .	L Near	 020A	  _TEXT	
+  @@9  . . . . . . . . . . . . .	L Near	 02B1	  _TEXT	
+Start  . . . . . . . . . . . . .	P Near	 0000	  _TEXT	Length= 0023 Public
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0000h	 
+@Model . . . . . . . . . . . . .	Number	 0002h	 
+@code  . . . . . . . . . . . . .	Text   	 _TEXT
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+CodeSegBase  . . . . . . . . . .	DWord	 0084	  _DATA	
+CodeSegLimit . . . . . . . . . .	DWord	 0088	  _DATA	
+DataSegBase  . . . . . . . . . .	DWord	 007C	  _DATA	
+DataSegLimit . . . . . . . . . .	DWord	 0080	  _DATA	
+Desc286Call  . . . . . . . . . .	Number	 0004h	 
+Desc286Int . . . . . . . . . . .	Number	 0006h	 
+Desc286Trap  . . . . . . . . . .	Number	 0007h	 
+Desc286TssB  . . . . . . . . . .	Number	 0003h	 
+Desc286Tss . . . . . . . . . . .	Number	 0001h	 
+Desc32Bit  . . . . . . . . . . .	Number	 0040h	 
+Desc386Call  . . . . . . . . . .	Number	 000Ch	 
+Desc386Int . . . . . . . . . . .	Number	 000Eh	 
+Desc386Trap  . . . . . . . . . .	Number	 000Fh	 
+Desc386TssB  . . . . . . . . . .	Number	 000Bh	 
+Desc386Tss . . . . . . . . . . .	Number	 0009h	 
+DescAvailable  . . . . . . . . .	Number	 0010h	 
+DescECCode . . . . . . . . . . .	Number	 000Ch	 
+DescECode  . . . . . . . . . . .	Number	 0008h	 
+DescERCCode  . . . . . . . . . .	Number	 000Eh	 
+DescERCode . . . . . . . . . . .	Number	 000Ah	 
+DescLDT  . . . . . . . . . . . .	Number	 0002h	 
+DescMemory . . . . . . . . . . .	Number	 0010h	 
+DescPL0  . . . . . . . . . . . .	Number	 0000h	 
+DescPL1  . . . . . . . . . . . .	Number	 0020h	 
+DescPL2  . . . . . . . . . . . .	Number	 0040h	 
+DescPL3  . . . . . . . . . . . .	Number	 0060h	 
+DescPresent  . . . . . . . . . .	Number	 0080h	 
+DescRDataDown  . . . . . . . . .	Number	 0004h	 
+DescRData  . . . . . . . . . . .	Number	 0000h	 
+DescRWDataDown . . . . . . . . .	Number	 0006h	 
+DescRWData . . . . . . . . . . .	Number	 0002h	 
+DescTssGate  . . . . . . . . . .	Number	 0005h	 
+EXESegment . . . . . . . . . . .	Word	 008E	  _DATA	
+ExeSize1 . . . . . . . . . . . .	Word	 0034	  _DATA	
+ExeSize2 . . . . . . . . . . . .	Word	 0038	  _DATA	
+InFileHandle . . . . . . . . . .	Word	 000B	  _DATA	
+InFileName . . . . . . . . . . .	Byte	 0002	  _DATA	
+KernalA000 . . . . . . . . . . .	Number	 A003h	 
+KernalB000 . . . . . . . . . . .	Number	 B003h	 
+KernalB800 . . . . . . . . . . .	Number	 B803h	 
+LE_CPU_286 . . . . . . . . . . .	Number	 0001h	 
+LE_CPU_386 . . . . . . . . . . .	Number	 0002h	 
+LE_CPU_486 . . . . . . . . . . .	Number	 0003h	 
+LE_CPU_586 . . . . . . . . . . .	Number	 0004h	 
+LE_CPU_N11 . . . . . . . . . . .	Number	 0021h	 
+LE_CPU_R2000 . . . . . . . . . .	Number	 0040h	 
+LE_CPU_R4000 . . . . . . . . . .	Number	 0042h	 
+LE_CPU_R6000 . . . . . . . . . .	Number	 0041h	 
+LE_CPU_i860  . . . . . . . . . .	Number	 0020h	 
+LE_OBJ_Flags_16Alias . . . . . .	Number	 1000h	 
+LE_OBJ_Flags_Big . . . . . . . .	Number	 2000h	 
+LE_OBJ_Flags_Conform . . . . . .	Number	 4000h	 
+LE_OBJ_Flags_Discard . . . . . .	Number	 0010h	 
+LE_OBJ_Flags_Exec  . . . . . . .	Number	 0004h	 
+LE_OBJ_Flags_FillMsk . . . . . .	Number	 0300h	 
+LE_OBJ_Flags_IOPriv  . . . . . .	Number	 8000h	 
+LE_OBJ_Flags_Invalid . . . . . .	Number	 0080h	 
+LE_OBJ_Flags_LongLoc . . . . . .	Number	 0400h	 
+LE_OBJ_Flags_Normal  . . . . . .	Number	 0000h	 
+LE_OBJ_Flags_PreLoad . . . . . .	Number	 0040h	 
+LE_OBJ_Flags_Read  . . . . . . .	Number	 0001h	 
+LE_OBJ_Flags_Res1  . . . . . . .	Number	 0200h	 
+LE_OBJ_Flags_Res2  . . . . . . .	Number	 0300h	 
+LE_OBJ_Flags_Res . . . . . . . .	Number	 0008h	 
+LE_OBJ_Flags_Shared  . . . . . .	Number	 0020h	 
+LE_OBJ_Flags_Write . . . . . . .	Number	 0002h	 
+LE_OBJ_Flags_Zero  . . . . . . .	Number	 0100h	 
+LE_OS_DOS4 . . . . . . . . . . .	Number	 0003h	 
+LE_OS_OS2  . . . . . . . . . . .	Number	 0001h	 
+LE_OS_Win386 . . . . . . . . . .	Number	 0004h	 
+LE_OS_Windows  . . . . . . . . .	Number	 0002h	 
+LE_Type_DLL  . . . . . . . . . .	Number	 8000h	 
+LE_Type_ExtFixup . . . . . . . .	Number	 0020h	 
+LE_Type_InitPer  . . . . . . . .	Number	 0004h	 
+LE_Type_IntFixup . . . . . . . .	Number	 0010h	 
+LE_Type_NoLoad . . . . . . . . .	Number	 2000h	 
+MEM_END  . . . . . . . . . . . .	Number	 0002h	 
+MEM_FILL . . . . . . . . . . . .	Number	 003Dh	 
+MEM_FREE . . . . . . . . . . . .	Number	 0000h	 
+MEM_LOCK_MASK  . . . . . . . . .	Number	 000Fh	 
+MEM_LOCK_SHIFT . . . . . . . . .	Number	 0002h	 
+MEM_LOCK . . . . . . . . . . . .	Number	 0004h	 
+MEM_MASK . . . . . . . . . . . .	Number	 0003h	 
+MEM_PHYS . . . . . . . . . . . .	Number	 0020h	 
+MEM_START  . . . . . . . . . . .	Number	 0001h	 
+NewHeader  . . . . . . . . . . .	NewHeaderStruc  003C	 _DATA	
+OutFileHandle  . . . . . . . . .	Word	 0015	  _DATA	
+OutFileName  . . . . . . . . . .	Byte	 000D	  _DATA	
+PSPSegment . . . . . . . . . . .	Word	 0000	  _DATA	
+Real3POffset . . . . . . . . . .	DWord	 0090	  _DATA	
+RelocSegment . . . . . . . . . .	Word	 008C	  _DATA	
+ResCount . . . . . . . . . . . .	Number	 032Ch	 
+ResHeadSize  . . . . . . . . . .	Number	 0010h	 
+ResNum . . . . . . . . . . . . .	Number	 0330h	 
+ResSize  . . . . . . . . . . . .	Number	 1000h	 
+Res_CALLBACK . . . . . . . . . .	Number	 0006h	 
+Res_CHAIN  . . . . . . . . . . .	Number	 00FFh	 
+Res_DOSMEM . . . . . . . . . . .	Number	 0005h	 
+Res_LOCK . . . . . . . . . . . .	Number	 0004h	 
+Res_MEM  . . . . . . . . . . . .	Number	 0003h	 
+Res_NOTHING  . . . . . . . . . .	Number	 00FEh	 
+Res_NULL . . . . . . . . . . . .	Number	 0000h	 
+Res_PSP  . . . . . . . . . . . .	Number	 0001h	 
+Res_SEL  . . . . . . . . . . . .	Number	 0002h	 
+_DEBUG . . . . . . . . . . . . .	Text   	 
+b  . . . . . . . . . . . . . . .	Text   	 byte ptr
+d  . . . . . . . . . . . . . . .	Text   	 dword ptr
+exehdr . . . . . . . . . . . . .	MZHdr	 0018	  _DATA	
+w  . . . . . . . . . . . . . . .	Text   	 word ptr
+
+	   0 Warnings
+	   0 Errors

@@ -1048,6 +1048,7 @@ ssproc endp
 ;--- ax=ds, cx=es, dx:bx=ss:sp, si:di=cs:ip
 
 SwitchProcPM   proc    far
+        pushf
         cli
         push    KernalDS
         pop     ds
@@ -1056,18 +1057,21 @@ SwitchProcPM   proc    far
 ;--- Protected2Real expects new ss:sp in CX:DX
         mov     cx,dx
         mov     dx,bx
+        pop     bx
         call    [Protected2Real]
         mov     es,[rvsp_esreg]
         mov     ds,[rvsp_dsreg]
+        push    bx
         push    si
         push    di
-        retf
+        iret
 SwitchProcPM   endp
 
 ;--- raw switch to protected-mode
 ;--- ax=ds, cx=es, dx:(e)bx=ss:(e)sp, si:(e)di=cs:(e)ip
 
 SwitchProcRM   proc    far
+        pushf
         cli
         push    cs
         pop     ds
@@ -1082,6 +1086,7 @@ SwitchProcRM   proc    far
         movzx   edx,dx
         movzx   edi,di
 @@:
+        pop     bx
         push    KernalCS
         call    [Real2Protected]
         mov     es,[rvsp_esreg]
@@ -1089,6 +1094,10 @@ SwitchProcRM   proc    far
         mov     ds,[rvsp_dsreg]
         push    esi
         push    edi
+        test    bh,2
+        jz      @F
+        sti
+@@:
         retd
 SwitchProcRM   endp
 

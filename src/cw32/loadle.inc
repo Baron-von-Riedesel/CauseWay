@@ -244,7 +244,7 @@ ENDIF
 ;        xor     ebp,ebp                 ;reset entry count.
         mov     _ebp,0                  ;reset entry count.
         mov     edi,4                   ;reset bytes required.
-load1_ge0:
+load1_ge0:                              ;<----
         mov     edx,offset LETemp
         mov     ecx,1
         mov     ah,3fh
@@ -269,7 +269,7 @@ load1_ge0:
         jc      load1_file_error
         cmp     ax,cx
         jnz     load1_file_error
-        jmp     load1_ge0               ;fetch all names.
+        jmp     load1_ge0               ;---->
         ;
         ;Allocate EXPORT table memory.
         ;
@@ -282,7 +282,7 @@ load1_ge1:
         mov     es,[load1._PSP]
         mov     es:[EPSP_Struc.EPSP_Exports],esi
         pop     es
-        mov     edi,_ebp                 ;get number of entries.
+        mov     edi,_ebp                ;get number of entries.
         shl     edi,2                   ;dword per entry.
         add     edi,4                   ;allow for count dword.
         add     edi,esi                 ;point to target memory.
@@ -304,7 +304,7 @@ load1_ge1:
         ;
         ;Read all the names again.
         ;
-load1_ge2:
+load1_ge2:                              ;<----
 ;        or      ebp,ebp                 ;done all names?
         cmp     _ebp,0                  ;done all names?
         jz      load1_ge3
@@ -346,7 +346,7 @@ load1_ge2:
         rep     movsb                   ;copy EXPORT name.
         pop     esi
         dec     _ebp
-        jmp     load1_ge2
+        jmp     load1_ge2               ;---->
 load1_ge3:
         dec     DWORD PTR es:[esi]      ;lose module name from the count.
 ;
@@ -356,8 +356,8 @@ load1_NoExports:
         mov     eax,size LE_OBJ         ;length of an object entry.
         mul     [LEHeader.LE_ObjNum]    ;number of objects.
         mov     ecx,eax
-        Sys     GetMemLinear32          ;Get memory.
-        jc      load1_mem_error         ;Not enough memory.
+        Sys     GetMemLinear32          ;Get memory for object table
+        jc      load1_mem_error
         mov     [load1._ObjMem],esi
 ;
 ;Read object definitions.
@@ -390,22 +390,21 @@ load1_NoExports:
         assume es:GROUP16
         mov     es,es:RealSegment
         assume es:nothing
-        mov     ecx,[LEHeader.LE_ObjNum] ;number of objects.
+        mov     ecx,[LEHeader.LE_ObjNum];number of objects.
         mov     esi,[load1._ObjMem]
-;        xor     ebp,ebp                 ;clear memory requirement.
-        mov     _ebp,0                   ;clear memory requirement.
-load1_objup0:
+;        xor     ebp,ebp
+        mov     _ebp,0                  ;clear memory requirement.
+load1_objup0:                           ;<----
         mov     eax,es:LE_OBJ.LE_OBJ_Size[esi]
         add     eax,4095
-;        and     eax,not 4095            ;page align objects
         and     ax,0f000h               ;page align objects
         mov     es:LE_OBJ.LE_OBJ_Size[esi],eax
-        add     _ebp,eax                 ;update program memory length.
+        add     _ebp,eax                ;update program memory length.
         add     esi,size LE_OBJ
         dec     ecx
-        jnz     load1_objup0
+        jnz     load1_objup0            ;---->
 ;
-;Get programs memory block.
+;alloc one memory block for all objects
 ;
         mov     ecx,_ebp
         Sys     GetMemLinear32          ;Get memory.
@@ -418,12 +417,11 @@ load1_objup0:
         mov     edx,[load1._ProgMem+0]    ;reset load offset.
         mov     ecx,[LEHeader.LE_ObjNum]  ;number of objects.
         mov     esi,[load1._ObjMem]
-load1_objup1:
+load1_objup1:                             ;<----
         mov     es:LE_OBJ.LE_OBJ_Base[esi],edx  ;set load address.
         add     edx,es:LE_OBJ.LE_OBJ_Size[esi]  ;update with object length.
         add     esi,size LE_OBJ
-        dec     ecx
-        jnz     load1_objup1
+        loop    load1_objup1              ;---->
 ;
 ;Get selectors.
 ;
@@ -460,7 +458,7 @@ load1_objup1:
         mov     es,[load1._PSP]
         mov     eax,es:[EPSP_Struc.EPSP_Exports]
         pop     es
-        cmp     DWORD PTR es:[eax],0                    ;just a module name?
+        cmp     DWORD PTR es:[eax],0           ;just a module name?
         jz      load1_NoEntries
         ;
         ;Move file pointer to start of entry table.
@@ -518,7 +516,7 @@ load1_exp0:
         mov     _ebp,eax
 
         dec     _ebp
-load1_exp1:
+load1_exp1:                             ;<----
         mov     bh,es:[edx]             ;get bundle count.
         or      bh,bh
         jz      load1_bad_entry
@@ -546,7 +544,7 @@ load1_exp1:
 load1_exp2:
 load1_exp3:
         or      bh,bh
-        jz      load1_exp1              ;end of this bundle.
+        jz      load1_exp1              ;end of this bundle ---->
 ;        or      ebp,ebp                 ;our ordinal?
         cmp     _ebp,0                  ;our ordinal?
         jz      load1_exp4
@@ -625,7 +623,7 @@ load1_exp8:
         pop     ecx
         add     esi,4
         dec     ecx
-        jnz     load1_exp0
+        jnz     load1_exp0                      ;---->
         ;
         mov     esi,edx
         Sys     RelMemLinear32
@@ -638,7 +636,7 @@ load1_NoEntries:
         mov     _ebp,eax
         mov     esi,[load1._ObjMem]
 
-load1_load0:
+load1_load0:                                    ;<----
         mov     eax,es:LE_OBJ.LE_OBJ_Flags[esi] ;get objects flags.
         and     eax,LE_OBJ_Flags_FillMsk        ;isolate fill type.
         cmp     eax,LE_OBJ_Flags_Zero           ;zero filled?
@@ -739,7 +737,7 @@ load1_load4:
 load1_loadz:
         add     esi,size LE_OBJ
         dec     _ebp
-        jnz     load1_load0
+        jnz     load1_load0            ;---->
 ;
 ;Get fixup table memory & load fixups.
 ;
@@ -792,13 +790,12 @@ load1_loadz:
         ;
         ;Work through each name getting the module link address.
         ;
-load1_NextModLnk:
+load1_NextModLnk:                       ;<----
         cmp     [LEHeader.LE_ImportModNum],0
         jz      load1_GotImpMods
         ;
         ;Preserve current header state.
         ;
-
         push    esi
         mov     ecx,size LE_Header
         Sys     GetMemLinear32
@@ -849,7 +846,7 @@ load1_NextModLnk:
         inc     ecx
         add     esi,ecx
         dec     [LEHeader.LE_ImportModNum]
-        jmp     load1_NextModLnk
+        jmp     load1_NextModLnk        ;---->
 
 ;
 ;Apply the fixups.
@@ -860,7 +857,7 @@ load1_GotImpMods:
         mov     eax,[load1._ObjMem]
         mov     [load1._ObjBase],eax
         mov     [load1._EntryEIP],0
-load1_fix0:
+load1_fix0:                             ;<----
         mov     esi,[load1._ObjBase]
         mov     ecx,es:LE_OBJ.LE_OBJ_PageNum[esi]
         or      ecx,ecx
@@ -869,8 +866,8 @@ load1_fix0:
         mov     [load1._PageCount+4],0
         mov     edx,es:LE_OBJ.LE_OBJ_PageIndex[esi]
         dec     edx
-        mov     _ebp,edx                 ;Set base page map entry.
-load1_fix1:
+        mov     _ebp,edx                ;Set base page map entry.
+load1_fix1:                             ;<----
         mov     edx,_ebp
         mov     esi,[load1._FixupMem]
         mov     ecx,es:[esi+4+edx*4]    ;Get next offset.
@@ -882,7 +879,7 @@ load1_fix1:
         add     esi,[LEHeader.LE_FixupsRec] ;Point to fixup data.
         sub     esi,[LEHeader.LE_Fixups]
         add     esi,edx                 ;Move to start of this pages fixups.
-load1_fix2:
+load1_fix2:                             ;<----
 
         mov     al,es:[esi]             ;Get type byte.
         mov     bl,al
@@ -1423,23 +1420,22 @@ load1_Neg2:
 load1_fix3:
         inc     [load1._EntryEIP]
         or      ecx,ecx
-        jnz     load1_fix2
+        jnz     load1_fix2            ;---->
         ;
 load1_fix4:
         inc     _ebp
         inc     [load1._PageCount+4]
         dec     [load1._PageCount+0]
-        jnz     load1_fix1
+        jnz     load1_fix1            ;---->
         ;
 load1_fix400:
         add     [load1._ObjBase],size LE_OBJ
         dec     [load1._ObjCount]
-        jnz     load1_fix0
+        jnz     load1_fix0            ;---->
 
         mov     esi,[load1._FixupMem]
         Sys     RelMemLinear32
         mov     [load1._FixupMem],0
-
 ;
 ;Setup entry CS:EIP.
 ;
@@ -1507,7 +1503,7 @@ load1_NoAutoDS:
 
         mov     esi,[load1._ObjMem]
         mov     edi,esi
-load1_makesegs0:
+load1_makesegs0:                                ;<----
         mov     eax,es:LE_OBJ.LE_OBJ_Flags[esi] ;Get objects flags.
         xor     ebx,ebx
         test    eax,LE_OBJ_Flags_Exec           ;Executable?
@@ -1540,7 +1536,7 @@ load1_makesegs4:
         add     esi,size LE_OBJ
         add     edi,4+4
         dec     _ebp
-        jnz     load1_makesegs0
+        jnz     load1_makesegs0                 ;---->
         ;
         ;Shrink OBJ memory to fit segment definitions.
         ;
@@ -1557,7 +1553,7 @@ load1_makesegs4:
         mov     ecx,[LEHeader.LE_ObjNum]
         mov     esi,[load1._ObjMem]
         mov     bx,[load1._BaseSeg]     ;base selector.
-load1_SegLoop:
+load1_SegLoop:                          ;<----
         push    ebx
         push    ecx
         push    esi
@@ -1633,7 +1629,7 @@ load1_SegDone:
         add     esi,8                   ;next definition.
         add     ebx,8                   ;next selector.
         dec     ecx
-        jnz     load1_SegLoop
+        jnz     load1_SegLoop           ;---->
 ;
 ;Close the input file.
 ;

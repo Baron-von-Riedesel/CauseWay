@@ -1,7 +1,7 @@
 
-;--- reads cw.exe
-;--- writes cw.cw
-;--- expects cw.exe as CauseWay app ( with DOS extender stub ).
+;--- reads cwem.exe
+;--- writes cwem.cw
+;--- expects cwem.exe as CauseWay app ( with DOS extender stub ).
 
 	.model small
 	.stack 400h
@@ -31,9 +31,9 @@ MZHdr ends
 ;
 PSPSegment	dw ?
 ;
-InFileName	db 'cw.exe',0
+InFileName	db 'cwem.exe',0
 InFileHandle	dw ?
-OutFileName	db 'cw.cw',0
+OutFileName	db 'cwem.cw',0
 OutFileHandle	dw ?
 	even
 

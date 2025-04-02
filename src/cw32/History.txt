@@ -1,5 +1,10 @@
 
-   Changelog
+   __.__.____: v5.1
+
+   - fixed: both raw mode switches cleared IF.
+
+
+   26.03.2025: v5.0
 
    - adjusted source so OPTION OLDSTRUCTS isn't necessary.
    - added "wdeb386 int 68h" interface to kernel debugger.
@@ -35,13 +40,14 @@
    - fixed: DPMI emulator func 0001 (release descriptor) always returned
      with NC.
    - significant binary size reduction: compressed binary (CWSTUB.EXE) now
-     40 kB (was 46.5), uncompressed binary now 72 kB (was 94). 
+     40 kB (was 46.5), uncompressed binary (CW32.EXE) now 72 kB (was 94). 
    - fixed: all DPMI descriptor functions got some validity checks so they
      should fail for an invalid selector argument in BX.
    - fixed: no swapfile-related DOS access if indos flag is set.
    - default value for LOWMEM is now 256kB; previously the value entered was
      added to a minimum of 32 kB.
-   - removed restriction that cwstub.exe can only launch a 32-bit application.
+   - removed restriction that cw32.exe/cwstub.exe can only launch a 32-bit
+     application.
    - fixed: copy FCBs in int 21h, ax=4B00h emulation; code still optional.
    - various fixes for emulation of int 31h, ax=800h (map physical memory).
    - DPMI functions 0x10x: removed allocation of an extra paragraph that was

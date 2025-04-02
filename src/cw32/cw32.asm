@@ -1365,9 +1365,9 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         or      dx,cx                   ;set use flags.
         mov     eax,STARTPDINDEX        ;PDE(1) = range 400000-7fffff
         mov     esi,PageDirLinear
-        mov     es:[esi+eax*4],edx      ;store this tables address.
+        mov     es:[esi+eax*4],edx      ;store PTE in page dir
         mov     esi,PageAliasLinear     ;get alias table address.
-        mov     es:[esi+eax*4],edx      ;setup in alias table as well, same range.
+        mov     es:[esi+eax*4],edx      ;store PTE in alias table as well, same range.
 ;        call    CR3Flush
         mov     edi,PTMAPADDR+1000h     ;clear the page table
         mov     ecx,4096/4
@@ -1377,9 +1377,9 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         call    CR3Flush
         mov     LinearEntry,STARTPDINDEX shl 10  ;start address space (1 shl 22 = 400000h)
 ;
-;Setup DET page table.
+;Setup "details" page table.
 ;
-        call    getandmappage
+        call    getandmappage           ;get phys page and map it at 400000h
         shl     eax,12
         mov     edi,eax
 
@@ -1393,9 +1393,9 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         mov     esi,PageDirLinear
         mov     edx,CurrPhysPage        ;get physical address again.
         or      dx,111b
-        mov     es:[esi+eax*4],edx
+        mov     es:[esi+eax*4],edx      ;set in page dir
         mov     esi,PageAliasLinear
-        mov     es:[esi+eax*4],edx
+        mov     es:[esi+eax*4],edx      ;and in page alias (FFC00000h)
         call    CR3Flush
 ;
 ;Setup DET page 0 (region 0-3FFFFFh)
@@ -1412,8 +1412,6 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         mov     edx,CurrPhysPage
         or      dx,111b
         mov     esi,PageDETLinear
-;        xor     eax,eax
-;        mov     es:[esi+eax*4],edx
         mov     es:[esi+0*4],edx
         call    CR3Flush
 ;
@@ -1431,28 +1429,13 @@ cw_safesp:                  ;space up to this point may be used for rm stack whi
         mov     edx,CurrPhysPage      ;get physical address again.
         or      dx,111b
         mov     esi,PageDETLinear
-;        mov     eax,1
         mov     es:[esi+1*4],edx      ;put new page into the map.
         call    CR3Flush
 ;
 ;Move page alias into extended memory.
 ;
-        call    getandmappage
-        shl     eax,12                  ;get linear address.
-        mov     edi,eax
-
-        mov     esi,PageAliasLinear
-        mov     PageAliasLinear,eax
-        mov     ecx,4096/4
-        push    ds
-        push    es
-        pop     ds
-        cld
-        rep     movsd [edi],[esi]       ;copy old to new.
-        pop     ds
-
-        mov     edx,CurrPhysPage
-        or      dx,111b
+        mov     di,offset PageAliasLinear
+        call    copypt2ext
         mov     eax,MAPINDEX
         mov     esi,PageDirLinear
         mov     es:[esi+eax*4],edx
@@ -1464,53 +1447,19 @@ if MOVEPT0TOEXT
 ;
 ;Move page table 0 into extended memory.
 ;
-        call    getandmappage
-        shl     eax,12
-        mov     edi,eax
-        ;
-        ;Copy table to new memory.
-        ;
-        mov     esi,Page1stLinear
-        mov     Page1stLinear,eax       ;set new linear address.
-        mov     ecx,4096/4
-        push    ds
-        push    es
-        pop     ds
-        cld
-        rep     movsd [edi],[esi]       ;copy old to new.
-        pop     ds
-        ;
-        ;Set new address in page dir & page dir alias.
-        ;
-        mov     edx,CurrPhysPage
-        or      dx,111b
-;        mov     eax,0
+        mov     di,offset Page1stLinear
+        call    copypt2ext
         mov     esi,PageDirLinear
-;        mov     es:[esi+eax*4],edx
         mov     es:[esi+0*4],edx
         mov     esi,PageAliasLinear
-;        mov     es:[esi+eax*4],edx
         mov     es:[esi+0*4],edx
         call    CR3Flush
 endif
 ;
 ;Move page dir into extended memory.
 ;
-        call    getandmappage
-        shl     eax,12
-        mov     edi,eax
-        ;
-        ;Copy table to new memory.
-        ;
-        mov     esi,PageDirLinear
-        mov     PageDirLinear,eax       ;set new value.
-        mov     ecx,4096/4
-        push    ds
-        push    es
-        pop     ds
-        cld
-        rep     movsd [edi],[esi]       ;copy old to new.
-        pop     ds
+        mov     di,offset PageDirLinear
+        call    copypt2ext
         ;
         ;Make variables point to new memory.
         ;
@@ -2397,12 +2346,10 @@ cw5_InProtected:
         test    BYTE PTR SystemFlags,SF_16BIT
         jz      cw5_Use32
         mov     [int31call], offset int31call16
-        mov     [int31callcc], offset int31call16cc
         movzx   edx, dx
         jmp     cw5_Use0
 cw5_Use32:
         mov     [int31call], offset int31call32
-        mov     [int31callcc], offset int31call32cc
 cw5_Use0:
         mov     d [OldInt31+0],edx
         mov     w [OldInt31+4],cx
@@ -2505,8 +2452,9 @@ endif
         mov     es:[EPSP_Struc.EPSP_Next],dx
         mov     DWORD PTR es:[EPSP_Struc.EPSP_DTA+0],80h    ;Use default PSP DTA.
         mov     WORD PTR es:[EPSP_Struc.EPSP_DTA+4],es
-        mov     eax,16384-(MCBCHUNKLEN+MCBLEN)
-        mov     es:[EPSP_Struc.EPSP_mcbMaxAlloc],eax
+;        mov     eax,16384 - ( MCBCHUNKLEN + MCBLEN )
+;        mov     es:[EPSP_Struc.EPSP_mcbMaxAlloc],eax
+        mov     es:[EPSP_Struc.EPSP_mcbMaxAlloc],16384 - ( MCBCHUNKLEN + MCBLEN )
         mov     es:[EPSP_Struc.EPSP_mcbHead],edx
         mov     es:[EPSP_Struc.EPSP_SegBase],dx
         mov     es:[EPSP_Struc.EPSP_SegSize],dx
@@ -2663,6 +2611,24 @@ getandmappage:
         mov     es:[esi+eax*4],edx      ;set physical address.
         call    CR3Flush
         inc     LinearEntry             ;update index
+        retn
+
+copypt2ext:
+        call    getandmappage
+        shl     eax,12                  ;get linear address.
+        mov     esi,eax
+        xchg    esi,[di]
+        mov     edi,eax
+
+        mov     ecx,4096/4
+        push    ds
+        push    es
+        pop     ds
+        cld
+        rep     movsd [edi],[esi]       ;copy old to new.
+        pop     ds
+        mov     edx,CurrPhysPage
+        or      dx,111b
         retn
 
 Startup endp

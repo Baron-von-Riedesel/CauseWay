@@ -193,12 +193,12 @@ endif
 ;LE header format.
 ;
 LE_Header               struc
-LE_ID           dw ?    ;"LE" text identifier.
+LE_ID                   dw ?    ;"LE" text identifier.
 LE_ByteOrder            db ?    ;byte order, 0=little-endian, none-zero=big.
 LE_WordOrder            db ?    ;word order.
 LE_Format               dd ?    ;format level.
 ;
-LE_CPU          dw ?    ;CPU type.
+LE_CPU                  dw ?    ;CPU type.
 LE_CPU_286              equ 1
 LE_CPU_386              equ 2
 LE_CPU_486              equ 3
@@ -209,7 +209,7 @@ LE_CPU_R2000            equ 40h
 LE_CPU_R6000            equ 41h
 LE_CPU_R4000            equ 42h
 ;
-LE_OS           dw ?    ;Target operating system.
+LE_OS                   dw ?    ;Target operating system.
 LE_OS_OS2               equ 1
 LE_OS_Windows           equ 2
 LE_OS_DOS4              equ 3
@@ -217,8 +217,8 @@ LE_OS_Win386            equ 4
 ;
 LE_Version              dd ?    ;Module version.
 ;
-LE_Type         dd ?    ;Module type.
-LE_Type_InitPer equ 1 shl 2     ;initialise per process.
+LE_Type                 dd ?    ;Module type.
+LE_Type_InitPer         equ 1 shl 2     ;initialise per process.
 LE_Type_IntFixup        equ 1 shl 4     ;no internal fixups.
 LE_Type_ExtFixup        equ 1 shl 5     ;no external fixups.
 LE_Type_NoLoad          equ 1 shl 13    ;module not loadable.
@@ -248,10 +248,10 @@ LE_DirectivesNum        dd ?    ;module directives entries.
 LE_Fixups               dd ?    ;fixup page table offset.
 LE_FixupsRec            dd ?    ;fixup record table offset.
 LE_ImportModNames       dd ?    ;imported module name table offset.
-LE_ImportModNum dd ?    ;imported modules count.
+LE_ImportModNum         dd ?    ;imported modules count.
 LE_ImportNames          dd ?    ;imported procedures name table offset.
 LE_PageChk              dd ?    ;per-page checksum table offset.
-LE_Data         dd ?    ;data pages offset.
+LE_Data                 dd ?    ;data pages offset.
 LE_PreLoadNum           dd ?    ;pre-load page count.
 LE_NoneRes              dd ?    ;non-resident names table offset.
 LE_NoneResSize          dd ?    ;non-resident names table length.
@@ -261,10 +261,10 @@ LE_Debug                dd ?    ;debug information offset.
 LE_DebugSize            dd ?    ;debug information size.
 LE_PreLoadInstNum       dd ?    ;pre-load instance pages number.
 LE_DemandInstNum        dd ?    ;demand instance pages number.
-LE_HeapExtra            dd ?    ;extra heap alloction.
+LE_HeapExtra            dd ?    ;extra heap allocation.
 LE_Reserved             db 20 dup (?) ;reserved.
 LE_DeviceID             dw ?    ;device ID (Windows VxD only).
-LE_DDK          dw ?    ;DDK version number.
+LE_DDK                  dw ?    ;DDK version number.
 LE_Header               ends
 
 
