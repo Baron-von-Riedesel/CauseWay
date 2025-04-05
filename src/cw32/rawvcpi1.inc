@@ -27,14 +27,14 @@ PageingPointer  dd 0	;memory.inc - used by UnmapPhysical()
 FreePages       dd 1	;memory.inc - free virtual pages
 AllocedPages    dd 0	;memory.inc - allocated virtual pages
 UnLockedPages   dd 0	;memory.inc - unlocked physical pages
-TotalPages      dd 1	;memory.inc - total virtual pages
+TotalPages      dd 1	;memory.inc - physical pages used for virt. backup
 
 RecentMapStack  dd PAGESTACKSIZE dup (0)	;memory.inc
 ;_LM_BlockBase   dd ?	;memory.inc - used by Raw[Un]LockMemory
 ;_LM_BlockEnd    dd ?	;memory.inc
 ;_LM_Needed      dd ?	;memory.inc
 _LM_Got         dd ?	;memory.inc
-TotalPhysical   dd 0
+TotalPhysical   dd 0    ;free phys. pages reported by VCPI/XMS/INT15/DOS
 ;
 SwapFileLength  dd 0
 ;
@@ -52,7 +52,13 @@ XMSList         XMSMEMITEM XMSITEMS dup (<0,0,0>)
 XMSTempList     dd XMSITEMS dup (0)
 XMSTotal        dd 0
 
-ifndef NOLOWMEM
+;--- CAUSEWAY=LOWMEM:xxx default
+;--- the stored value is in paragraph units, while the xxx in LOWMEM:xxx are kB
+IFNDEF DEFLOWMEM
+DEFLOWMEM equ 32   ;default 32kB
+endif
+
+if DEFLOWMEM LT 640
 
 CONVITEMS equ 32
 
@@ -66,13 +72,7 @@ ConvTempList    dw CONVITEMS dup (0)
 ConvTotal       dd 0
 ConvSavePara    dw 0
 
-;--- CAUSEWAY=LOWMEM:xxx default
-;--- the stored value is in paragraph units, while the xxx in LOWMEM:xxx are kB
- IFDEF DEFLOWMEM
 ConvSaveSize    dw DEFLOWMEM*64 ;*64 -> convert kB to paragraphs
- ELSE
-ConvSaveSize    dw 32*64        ;default 32kB
- ENDIF
 endif
 
 INT15ITEMS      equ 8
@@ -116,11 +116,11 @@ VCPIRM2PM ends
 
 vcpi VCPIRM2PM <0,0,0,0,0,0,0>
 
-VCPI_Entry label fword
+    align 4
+VCPI_Entry label fword      ;VCPI entry protected-mode FAR32 address
         dd ?
         dw VCPI_0
 ;
-VCPI_SP dw ?,?
 ;
 GDTVal          df ?            ;current value GDT
 GDTSav          df ?            ;value GDT real-mode (not used)
@@ -155,6 +155,7 @@ PageBufferLinear dd ?           ;linear address for swapfile access
 PageInt         RealRegsStruc <>
 ;
 
+	align 4
 ; byte table for 256 interrupts
 ; it's used to translate IRQs and INT 1C, 23h, 24h to a callback#
 Int2CallCheck label byte
@@ -171,10 +172,32 @@ Int2CallCheck label byte
         db 8 dup ((70h-8))              ;70-77 (70-77 -> callback 8-15)
         db 100h-78h dup (0)             ;78-FF
 ;
-;LastCallBack    dw ?
-CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0,0,0>)
-;ALLCallBack     dw ?
-;ALLICallBack    dw ?
+;--- callback tables
+;--- ICallBackStruc is for internal callbacks: IRQs, Int 1Ch/23h/24h
+;
+ICallBackStruc struc
+CallBackFlags	db ?	; [0]:1=in use; [7]:1=busy
+CallBackInt		db ?	; interrupt#
+CallBackProt	df ?    ; FAR32 protected-mode CS:EIP to call
+CallBackReal	dd ?    ; saved interrupt vector; used by internal callbacks only
+ICallBackStruc ends
+
+ICallBackTable  ICallBackStruc 16+3 dup (<0,0,0,0>)
+
+;--- CallBackStruc is for external callbacks; 2 are allocated before the app gets control:
+;--- 1. mouse event (always allocated, even if no mouse driver installed)
+;--- 2. Int 1Bh (always allocated)
+
+CallBackStruc struc
+CallBackFlags	db ?	; [0]:1=in use; [7]:1=busy
+                db ?    ; not used
+CallBackProt	df ?    ; FAR32 protected-mode CS:EIP to call
+CallBackRegs	df ?    ; RMCS address
+CallBackStackSel dw ?   ; stack selector
+CallBackOff		dw ?    ; real-mode offset of callback address
+CallBackStruc ends
+;
+CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0,0>)
 ;
 VDiskSig        db 'VDISK V'
 VDiskSigLen     equ     $-VDiskSig
@@ -198,29 +221,27 @@ DesiredVMMName  DB 13 DUP (0)   ; VMM name desired by user via CAUSEWAY e-var
 	align 2
 FirstUninitPage DW 0
 	align 4
-rv29_IntAdd   dd ?     ;RAWSimulate() variables
-rv29_tVCPI_SP dd ?
 rv16_Return   dd ?
 rv18_Return   dd ?
-rv29_CallAdd  dw ?
-rv29_ourstack dw ?
+rv29_rmsp     dw ?,?    ;for RAWSimulate(): store real-mode SP in first word
 rv1_RetAdd    dw ?
 rv17_Return   dw ?
 rv19_Return   dw ?
 rv20_Return   dw ?
-rv3x_Return   dw ?,?    ;for RawCallBack/RawICallBack
-rv30_StackAdd dw ?,?    ;for RawCallBack - real-mode ss:sp
+rv30_CallTab  dw ?      ;RawCallBack
+rv30_rmsp     dw ?,?    ;RawCallBack
 	align 4
 rv31_CallB016 label PF16
 rv31_CallB032 label fword
                  df ?
-rv31_CallTab     dw ?
-rv31_FlagsStore  dd 0
-rv31_tVCPI_SP    dd ?
-rv31_zero        dd 0
-rvsp_dsreg    dw ?
-rvsp_esreg    dw ?
-rvsp_csreg    dw ?
+rv31_CallTab     dw ?   ;RawIntCallBack
+rv31_FlagsStore  dd 0   ;RawIntCallBack: saved efl
+rv31_rmsp        dd ?   ;RawIntCallBack: saved rm stack
+;rv31_zero        dd 0   ;RawIntCallBack: ???
+
+rvsp_dsreg    dw ?      ;raw mode switch
+rvsp_esreg    dw ?      ;raw mode switch
+rvsp_csreg    dw ?      ;raw mode switch
 wP2LIndex     dw DETINDEX   ;current bottom PD index for Phys2Linear mappings
 
 ITABSTRUC struct
@@ -236,18 +257,6 @@ _cwRaw$1 ends
 
         assume ds:GROUP16
 
-CallBackList    label byte
-ICallBackList   label byte
-;; MED 02/16/96
-;;      rept 16+4
-        rept 16+3       ; callbacks for 16 IRQs and Int 1Ch, 23h, 24h
-        call    RawICallBack
-        endm
-        rept 16 ;MaxCallBacks
-        call    RawCallBack
-        endm
-CallBackSize    equ     ($-CallBackList)/MaxCallBacks
-
 ;-------------------------------------------------------------------------------
 
 ;--- final switch back to real-mode
@@ -256,28 +265,26 @@ CallBackSize    equ     ($-CallBackList)/MaxCallBacks
 
 RawVCPIRealMode proc near
         pop     [rv1_RetAdd]   ; pop return address
-        ;
 ;
 ;Disable hardware INT call-backs.
 ;
-        mov     bx,offset CallBackTable ;list of call backs.
-;; MED 02/16/96
-;       mov     cx,16+4         ;number of entries to scan.
-        mov     cx,16+3         ;number of entries to scan.
-
-rv1_6:  test    CallBackStruc.CallBackFlags[bx],1       ;in use?
+        mov     bx,offset ICallBackTable ;list of call backs.
+        mov     cx,16+3                  ;number of entries to scan.
+rv1_6:
+        test    ICallBackStruc.CallBackFlags[bx],1       ;in use?
         jz      rv1_7
-        test    CallBackStruc.CallBackFlags[bx],2       ;interupt?
-        jz      rv1_7
-        mov     CallBackStruc.CallBackFlags[bx],0
+;        test    ICallBackStruc.CallBackFlags[bx],2       ;interrupt?
+;        jz      rv1_7
+        mov     ICallBackStruc.CallBackFlags[bx],0
         push    bx
-        mov     eax,[bx].CallBackStruc.CallBackReal     ;get original vector value.
-        mov     bl,[bx].CallBackStruc.CallBackNum       ;get vector number.
+        mov     eax,[bx].ICallBackStruc.CallBackReal     ;get original vector value.
+        mov     bl,[bx].ICallBackStruc.CallBackInt       ;get vector number.
         xor     bh,bh
         shl     bx,2
         mov     d es:[bx+0],eax
         pop     bx
-rv1_7:  add     bx,size CallBackStruc   ;next entry.
+rv1_7:
+        add     bx,sizeof ICallBackStruc   ;next entry.
         loop    rv1_6
 ;
 ;Release VCPI memory.
@@ -384,7 +391,7 @@ CallPL0Proc     endp
 ;called by RawRelXMS if RELXMSINRM==0
 ;called by FreeVCPIPage if VCPIPMCALL==0
 ;
-if (RELXMSINRM eq 0) and (VCPIPMCALL eq 0)
+if (RELXMSINRM eq 0) or (VCPIPMCALL eq 0)
 fRawSimulateFCall proc near
         db 66h,9ah
         dd offset _ffRawSimulateFCall
@@ -556,10 +563,10 @@ ife RELXMSINRM
         mov     [edi].RealRegsStruc.Real_SSSP,0
         call    fRawSimulateFCall        ;free EMB (if RELXMSINRM=0)
 else
-        mov ah, 0dh
-        call [XMSControl]
-        mov ah, 0ah
-        call [XMSControl]
+        mov     ah, 0dh
+        call    [XMSControl]
+        mov     ah, 0ah
+        call    [XMSControl]
 endif
         pop     si
         pop     cx
@@ -865,19 +872,20 @@ RawProt2Real    endp
 ;On Entry:-
 ;
 ;--- CX:EDX - target stack.
+;--- ss:[sp] - far16 protected-mode address protected-mode
 ;--- modifies AX,ESI
 ;
 VCPIReal2Prot   proc    near
         pop     [rv18_Return]
-        mov     vcpi._CS,KernalCS0
-        mov     vcpi._EIP,offset rv18_Resume486
+;        mov     vcpi._CS,KernalCS0
+;        mov     vcpi._EIP,offset VCPI_ResumeProt
         mov     ax,0de0ch
         mov     esi,GROUP16
         shl     esi,4
         add     esi,offset vcpi
         int     67h             ; VCPI call 0de0ch may alter EAX and ESI
         ;
-rv18_Resume486:
+VCPI_ResumeProt::
         ;Make our stuff addresable.
         ;
         mov     ax,KernalSS0

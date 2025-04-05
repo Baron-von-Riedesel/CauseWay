@@ -2,6 +2,12 @@
    __.__.____: v5.1
 
    - fixed: both raw mode switches cleared IF.
+   - fixed: int 31h, ax=301h/302h called real-mode with IF=0, ignoring
+     the flags field in real-mode call structure.
+   - int 31h, ax=500h: return max from VCPI/XMS as free physical memory.
+   - cw32.asm: switch STDKERNELSS set to 1 again.
+   - support for GDT selectors 0A000h, 0B000h, 0B800h disabled.
+   - fixed: align stack to dword for internal callbacks (IRQ/Int 1C,23,24).
 
 
    26.03.2025: v5.0

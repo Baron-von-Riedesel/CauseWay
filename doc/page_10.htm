@@ -7,13 +7,22 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 10
 </HEAD>
 <BODY>
 <A NAME="Page_10"></A>
-<B>DPMI</B><BLOCKQUOTE>Force DPMI rather than default VCPI usage whenever possible (recommended for 386^Max and BlueMax users). The memory manager must support DPMI or else this setting is ignored.
+<B>DPMI</B><BLOCKQUOTE>Force DPMI rather than default VCPI usage whenever possible (recommended for 386^Max and BlueMax users).
+The memory manager must support DPMI or else this setting is ignored.
 </BLOCKQUOTE>
 
-<B>EXTALL</B><BLOCKQUOTE>Force CauseWay to use all extended memory and sub-allocate memory from the bottom up instead of the default top-down approach. This setting is most useful for processor intensive environments which have a small hardware CPU cache. Use of this setting means that no extended memory will be available for other programs while the application is loaded (including shelling to DOS).
+<B>EXTALL</B><BLOCKQUOTE>Force CauseWay to use all extended memory and sub-allocate memory from the bottom up instead of the
+default top-down approach under RAW memory environments (no DPMI host, no EMM, no HIMEM.SYS loaded). This setting is most
+useful for processor intensive environments which have a small hardware CPU cache. Use of this setting means that no extended
+memory will be available for other programs while the application is loaded (including shelling to DOS).
 </BLOCKQUOTE>
 
-<B>HIMEM:<I>nnn</I></B><BLOCKQUOTE>Set maximum physical (conventional plus extended) memory that can be consumed by CauseWay. <I>nnn</I> is the decimal number of kilobytes that can be consumed. If memory allocation requests exceed this figure, CauseWay will use virtual memory, even if additional physical memory is present. If the HIMEM memory value exceeds available physical memory, then memory allocations operate normally. For example, HIMEM:2048 on a 4M machine would force virtual memory use after 2M of memory allocations (including loading the executable file). The remaining 2M of memory could be used by other applications while the CauseWay application is active.
+<B>HIMEM:<I>nnn</I></B><BLOCKQUOTE>Set maximum physical (conventional plus extended) memory that can be consumed by CauseWay.
+<I>nnn</I> is the decimal number of kilobytes that can be consumed. If memory allocation requests exceed this figure, CauseWay
+will use virtual memory, even if additional physical memory is present. If the HIMEM memory value exceeds available physical
+memory, then memory allocations operate normally. For example, HIMEM:2048 on a 4M machine would force virtual memory use after
+2M of memory allocations (including loading the executable file). The remaining 2M of memory could be used by other
+applications while the CauseWay application is active.
 </BLOCKQUOTE>
 
 <B>LOWMEM:<I>nnn</I></B><BLOCKQUOTE>Set amount of DOS (conventional) memory not to be used by CauseWay.

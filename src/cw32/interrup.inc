@@ -60,7 +60,7 @@ ExceptionIntBuffer RealRegsStruc <>  ;used to display unhandled exception info
 
 InterruptTable  label fword
 ;
-;Interupt handler entry points (Int nn and IntR).
+;Interrupt handler entry points (Int nn and IntR).
 ;
 IntNum  = 0
       rept 256
@@ -148,7 +148,7 @@ stdregdump2 label byte
 
 ;-------------------------------------------------------------------------------
 ;
-;initial entry points for the interupt handlers.
+;initial entry points for the interrupt handlers.
 ;
 INTCALLSIZE  equ 4    ; must be 4 or 8
 INTNN386SIZE equ 4    ; must be 4 or 8
@@ -443,7 +443,7 @@ IntHandler      endp
 
 ;-------------------------------------------------------------------------------
 ;
-;It's a user stack and its not an exception or hardware interupt so switch back
+;It's a user stack and its not an exception or hardware interrupt so switch back
 ;to the original stack via a system stack to allow re-entrancy if original
 ;stack needs to be fetched from disk.
 ;
@@ -593,7 +593,7 @@ IntStack        endp
 ;-------------------------------------------------------------------------------
 ;
 ;Either we were already on the system stack or we have an exception or hardware
-;interupt on our hands. Either way we need to switch to another piece of the
+;interrupt on our hands. Either way we need to switch to another piece of the
 ;system stack to make sure we're using a legitimate one.
 ;
 KernalStack     proc    near
@@ -669,7 +669,7 @@ inter16_Use0:
         pop     ebx
         pop     ds
         ;
-        ;Pass control to interupt dispatcher.
+        ;Pass control to interrupt dispatcher.
         ;
         iretd
 KernalStack     endp
@@ -677,7 +677,7 @@ KernalStack     endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Direct control to exception or interupt handler.
+;Direct control to exception or interrupt handler.
 ;
 IntDispatch     proc    near
         push    eax
@@ -734,7 +734,7 @@ inter17_Resume:
         ;Return from normal int.
         ;
         pushfd
-        cli                     ;stop interupts interfering.
+        cli                     ;stop interrupts interfering.
         push    eax
         push    ds
         push    ebx
@@ -925,13 +925,13 @@ endif
         or      al,al           ;Hardware?
         jz      inter18_c2
         sub     bl,al
-        imul    ebx, sizeof CallBackStruc	;is 24
-        add     ebx,offset CallBackTable
-        test    CallBackStruc.CallBackFlags[ebx],1
+        imul    ebx,sizeof ICallBackStruc
+        add     ebx,offset ICallBackTable
+        test    ICallBackStruc.CallBackFlags[ebx],1
         jz      inter18_c2
-        test    CallBackStruc.CallBackFlags[ebx],80h    ;already busy?
+        test    ICallBackStruc.CallBackFlags[ebx],80h    ;already busy?
         jnz     inter18_c2
-        or      CallBackStruc.CallBackFlags[ebx],80h    ;mark it as busy.
+        or      ICallBackStruc.CallBackFlags[ebx],80h    ;mark it as busy.
         mov     [ebp].INTNN386FR.xxx,ebx
 inter18_c2:
         ;
@@ -949,8 +949,8 @@ inter18_c2:
         cmp     [ebp].INTNN386FR.xxx,0
         jz      inter18_NoCall
         mov     esi,[ebp].INTNN386FR.xxx
-;        and     CallBackStruc.CallBackFlags[esi],255-128
-        and     CallBackStruc.CallBackFlags[esi],not 80h
+;        and     ICallBackStruc.CallBackFlags[esi],255-128
+        and     ICallBackStruc.CallBackFlags[esi],not 80h
 inter18_NoCall:
         ;
         ;Update the flags.
@@ -1230,11 +1230,11 @@ myprintf2 endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Get protected mode interupt handler address.
+;Get protected mode interrupt handler address.
 ;
 ;On Entry:-
 ;
-;BL     - Interupt vector number.
+;BL     - Interrupt vector number.
 ;
 ;On Exit:-
 ;
@@ -1263,11 +1263,11 @@ RawGetVector    endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Get real mode interupt handler address.
+;Get real mode interrupt handler address.
 ;
 ;On Entry:-
 ;
-;BL     - Interupt vector number.
+;BL     - Interrupt vector number.
 ;
 ;On Exit:-
 ;
@@ -1352,11 +1352,11 @@ RawGetEVector   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set protected mode interupt handler address.
+;Set protected mode interrupt handler address.
 ;
 ;On Entry:-
 ;
-;BL     - Interupt vector number.
+;BL     - Interrupt vector number.
 ;CX:EDX - selector:offset of new handler.
 ;
 ;On Exit:-
@@ -1367,7 +1367,6 @@ RawSetVector    proc    near
         ;
         push    eax
         push    ebx
-        push    ecx
         push    edx
         push    ds
         push    es
@@ -1393,74 +1392,49 @@ inter9_use32_add:
         je      med2a
         cmp     bl,24h                  ; always allow 24h callback
         je      med2a
-        test    BYTE PTR NoPassFlag,0ffh        ; see if not passing hardware interrupts from real to protected mode
+        test    NoPassFlag,0ffh         ; CAUSEWAY=NOPASS set?
         jne     inter9_NotHardware
         ;
 med2a:
-        cmp     cx,DpmiEmuCS            ;restoreing previous vector?
-        jnz     inter9_Setting
-inter9_Restoreing:
         pushad
-        mov     ecx,ebx
+        mov     edx,ebx                 ; save Int#
         sub     bl,al                   ; now BL=Callback# (1Ch->16, 23h->17, 24h->18)
-;        movzx   bx,bl
-        mov     ax,size CallBackStruc
-        mul     bx
-        mov     bx,ax
-        add     bx,offset CallBackTable
-        test    [bx].CallBackStruc.CallBackFlags,1      ;this one in use?
-        jz      inter9_DoneHardware     ;not likely.
         mov     ax,KernalZero
         mov     es,eax
-        mov     [bx].CallBackStruc.CallBackFlags,0      ;Mark this one as un-used.
-        push    ecx
-        mov     dx,w[bx].CallBackStruc.CallBackReal+0   ;get original real mode vector.
-        mov     cx,w[bx].CallBackStruc.CallBackReal+2
-        pop     ebx
-        shl     bx,2
-        mov     es:[bx+0],dx
-        mov     es:[bx+2],cx
+        mov     eax,ebx                 ; save callback#
+        imul    ebx,sizeof ICallBackStruc
+        add     ebx,offset ICallBackTable
+        cmp     cx,DpmiEmuCS            ; restoreing previous vector?
+        jnz     inter9_Setting
+;inter9_Restoreing:
+        test    [ebx].ICallBackStruc.CallBackFlags,1      ;this one in use?
+        jz      inter9_DoneHardware                      ;not likely.
+        mov     [ebx].ICallBackStruc.CallBackFlags,0      ;Mark this one as un-used.
+        mov     eax,[ebx].ICallBackStruc.CallBackReal     ;get original real mode vector.
+        mov     es:[edx*4],eax
         jmp     inter9_DoneHardware
 inter9_Setting:
-        pushad
-        mov     ecx,ebx
-        sub     bl,al
-;        movzx   bx,bl
-        mov     ax,size CallBackStruc
-        mul     bx
-        mov     edx,ebx   ;save callback#
-        mov     bx,ax
-        add     bx,offset CallBackTable
-        test    [bx].CallBackStruc.CallBackFlags,1      ;this one in use?
+        test    [ebx].ICallBackStruc.CallBackFlags,1      ;this one in use?
         jnz     inter9_DoneHardware
-        mov     ax,KernalZero
-        mov     es,eax
-        mov     [bx].CallBackStruc.CallBackNum,cl       ;set interupt number.
-        mov     [bx].CallBackStruc.CallBackFlags,1+2    ;mark call back as used interupt.
-        mov     ax,CallBackSize
-        mul     dx
-        mov     si,offset ICallBackList
-        add     si,ax           ;index list of calls.
-        push    ebx
-        mov     bx,cx
-        shl     bx,2
-        mov     dx,es:[bx+0]
-        mov     cx,es:[bx+2]
-        mov     es:[bx+0],si
-        mov     WORD PTR es:[bx+2],GROUP16
-        pop     ebx
-        mov     w[bx].CallBackStruc.CallBackReal+0,dx   ;store original real mode vector.
-        mov     w[bx].CallBackStruc.CallBackReal+2,cx
+        mov     [ebx].ICallBackStruc.CallBackInt,dl       ;set interrupt number.
+        mov     [ebx].ICallBackStruc.CallBackFlags,1      ;mark call back as used
+        mov     si,GROUP16
+        add     si,ax
+        shl     esi,16
+        mov     si,offset RawIntCallBack
+        shl     ax,4
+        sub     si,ax
+        mov     eax,es:[edx*4]    ;get IVT value
+        mov     es:[edx*4],esi    ;set new IVT value
+        mov     [ebx].ICallBackStruc.CallBackReal,eax     ;store original real mode vector.
 inter9_DoneHardware:
         popad
 inter9_NotHardware:
         mov     ax,DpmiEmuDS
         mov     ds,eax
         assume ds:DPMIGRP
-        movzx   ebx,bl
-        shl     ebx,1           ;*2
-        lea     ebx,[ebx*2+ebx] ;*6
-        add     ebx,offset InterruptTable
+        shl     ebx,1           ;*2 (with next line's *3 it will be *6
+        lea     ebx,[ebx*2+ebx+offset InterruptTable]
         mov     [ebx+0],edx             ;set offset.
         mov     [ebx+4],cx              ;set segment selector.
         pop     eax
@@ -1472,7 +1446,6 @@ inter9_NotHardware:
         pop     ds
         assume ds:nothing
         pop     edx
-        pop     ecx
         pop     ebx
         pop     eax
         ret
@@ -1481,11 +1454,11 @@ RawSetVector    endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set real mode interupt handler address.
+;Set real mode interrupt handler address.
 ;
 ;On Entry:-
 ;
-;BL     - Interupt vector number.
+;BL     - Interrupt vector number.
 ;CX:DX  - selector:offset of new handler.
 ;
 ;On Exit:-
@@ -1613,8 +1586,8 @@ RawGetCallBack  proc near
         assume ds:GROUP16
         ;
 ;;MED 02/16/96
-        mov     ebx,offset CallBackTable+((size CallBackStruc)*(16+3))
-        mov     eax,16+3  ;eax=callback#
+        mov     ebx,offset CallBackTable
+        mov     eax,0  ;eax=callback#
 
 inter12_0:
         test    CallBackStruc.CallBackFlags[ebx],1              ;this one in use?
@@ -1631,11 +1604,11 @@ inter12_1:
         mov     cx,1
         xor     eax,eax   ;alloc descriptor
         int     31h
-        mov     w[ebx].CallBackStruc.CallBackStackSel,ax
+        mov     [ebx].CallBackStruc.CallBackStackSel,ax
         popad
         jc      inter12_9
         pushad
-        mov     bx,w[ebx].CallBackStruc.CallBackStackSel
+        mov     bx,[ebx].CallBackStruc.CallBackStackSel
         xor     ecx,ecx
         or      edx,-1
         mov     ax,8      ;set limit
@@ -1648,14 +1621,14 @@ inter12_1:
         mov     w[ebx].CallBackStruc.CallBackProt+4,si  ;store org DS
         mov     d[ebx].CallBackStruc.CallBackRegs+0,edi ;store register table address ES:EDI.
         mov     w[ebx].CallBackStruc.CallBackRegs+4,es
-        mov     dx,CallBackSize
-        mul     dx
-        mov     esi,offset CallBackList
-        add     esi,eax         ;index list of calls.
-        mov     [ebx].CallBackStruc.CallBackOff,si      ;store call back address.
+        mov     cx,GROUP16
+        add     cx,ax
+        mov     dx,offset RawCallBack
+        shl     ax,4
+        sub     dx,ax
+        mov     [ebx].CallBackStruc.CallBackOff,dx      ;store call back address.
         mov     [ebx].CallBackStruc.CallBackFlags,1     ;flag this entry in use.
-        mov     cx,GROUP16      ;get real mode code seg.
-        mov     dx,si           ;get real mode offset.
+        @dprintf DOPT_MODESW,<"RawGetCallBack: ok, addr=%X:%X",10>,ecx,edx
         clc
 inter12_9:
         pop     ds
@@ -1695,6 +1668,7 @@ inter13_0:
         mov     ax,1
         int     31h
         clc
+        @dprintf DOPT_MODESW,<"RawRelCallBack: ok, addr=%X:%X",10>,ecx,edx
         jmp     inter13_2
         ;
 inter13_1:

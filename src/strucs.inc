@@ -41,9 +41,6 @@ MEM_PHYS	equ	32	;physical mapping - not used (and should be 64, since bit 5 is u
 MEM_FILL	equ	(MEM_LOCK_MASK shl MEM_LOCK_SHIFT)+MEM_START
 
 ;
-KernalB000		equ	0b000h+3
-KernalB800		equ	0b800h+3
-KernalA000		equ	0a000h+3
 
 ;
 Desc		struc

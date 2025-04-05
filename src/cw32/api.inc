@@ -3888,7 +3888,7 @@ COMMENT ! MED 02/15/96
         jmp     api74_500_2
         ;
 api74_500_1:
-        mov     edx,TotalPhysical
+        mov     edx,TotalPhysical      ;free phys. pages reported by VCPI/XMS/INT15/DOS
 api74_500_2:
         add     edx,FreePages
         ;
@@ -6703,7 +6703,7 @@ local   api90:EMFRM
 @@:
         push    ds
         push    es
-        @dprintf -1,<"ExecModule enter, cs:eip=%X:%lX, ss:esp=%X:%lX",10>,ecx,ebx,esi,edx
+        @dprintf DOPT_EXEC,<"ExecModule enter, cs:eip=%X:%lX, ss:esp=%X:%lX",10>,ecx,ebx,esi,edx
         ;
 ;        mov     [api90._Flags],eax     ;flags not used
         mov     [api90._EntryEIP],ebx
@@ -7105,7 +7105,7 @@ UnPatchExc      proc    far
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
 ;
-;Release real mode hardware interupt vectors and call back entries.
+;Release real mode hardware interrupt vectors and call back entries.
 ;
         cmp     [OldInt1Br],0
         jz      api95_no1b

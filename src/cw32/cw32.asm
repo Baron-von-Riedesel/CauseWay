@@ -15,6 +15,8 @@
 ;
         option proc:private
 
+VIDEOGDTSELS     equ 0	;1=define selectors A000h,B000h and B800h (an odd CauseWay peculiarity)
+
         include equates.inc
         include strucs.inc
         include cw.inc
@@ -69,7 +71,6 @@ DETMAPADDR  equ DETINDEX shl 22 ;=FF800000h, 4 MB region to store page details
 MAINSTKSIZE equ 2048       ;stack size of PL3 stack during init/exit (segment _cwStack)
 STARTPDINDEX equ 1         ;PD index start address space (1 shl 22 = 400000h)
 
-VIDEOGDTSELS     equ 1	;1=define selectors A000h,B000h and B800h (an odd CauseWay peculiarity)
 SMARTRMALLOC     equ 1	;1=if conv. memory couldn't be alloc'd in an UMB, it will use space behind transient area
 MOVEPT0TOEXT     equ 1	;1=move page table 0 (region 0-3fffff) to extended memory
 MOVETSS          equ 1	;1=move TSS to extended memoy (behind IDT)
@@ -81,7 +82,11 @@ endif
 ifndef EARLYKDINIT
 EARLYKDINIT      equ 1	;1=init KD very early after switch to protected-mode
 endif
-STDKERNELSS      equ 0	;1=D bit of KernalSS and KernalSS0 depend on app bitness
+;--- using a 32-bit kernel stack even for 16-bit apps seems ok at first, but KernalSS
+;--- is used by client code (exception handler/real-mode callbacks), and LEAVE may then cause a GPF
+;--- if hiword(EBP) is != 0.
+STDKERNELSS      equ 1	;1=D bit of KernalSS and KernalSS0 depend on app bitness
+
 ;DPMIDBG          equ 1	;1=emulate DPMI initial switch to pm to allow DEBUG to intrude in raw/vcpi mode
 
 IRET16 struc
@@ -184,10 +189,6 @@ ELSE
 NoEXECPatchFlag DB 0
 ENDIF
 
-; MED, 11/11/99
-; used to flag checking XMS total memory because EMM386 lies and acts as VCPI
-;  host when NOVCPI set, but provides no memory
-VCPIHasNoMem    DB 0
 apiExcepPatched db 0
 ;
 	align 4
@@ -1076,9 +1077,9 @@ endif
         mov     di,MainSS
         call    MakeDesc
 
-;--- use the main SS also for mode switches
+;--- use _cwStack also for mode switches;
 ;--- it needs no space in raw mode, and just a few dwords in vcpi mode
-        mov     ecx,65535
+        mov     ecx,65535    ;limit MUST be 0ffffh
         mov     al,0
         mov     ah,DescPresent+DescPL0+DescMemory+DescRWData
         mov     di,KernalSS0Switch
@@ -1285,6 +1286,8 @@ cw5_VCPI:
         ;
         mov     vcpi._LDT,KernalLDT
         mov     vcpi._TR,KernalTS
+        mov     vcpi._EIP,offset VCPI_ResumeProt
+        mov     vcpi._CS,KernalCS0
 
         mov     esi,GROUP16
         shl     esi,4
@@ -1747,6 +1750,25 @@ if VIDEOGDTSELS
         mov     es:[esi+(KernalB000 shr 3)],al
         mov     es:[esi+(KernalB800 shr 3)],al
         ;
+else
+ ifdef _DEBUG
+  ifdef LLOUT
+        push    es
+        mov     ax,GDTData
+        mov     es,ax
+;--- dprintf16 needs the B000 selector in non-DPMI mode
+        mov     di,0B000h
+        mov     esi,0b0000h
+        mov     ecx,65535
+        mov     al,0
+        mov     ah,DescPresent+DescPL3+DescMemory+DescRWData
+        call    MakeDesc
+        pop     es
+        mov     esi,MDTLinear+4
+        mov     al,DT_GDTDESC
+        mov     es:[esi+(0B000h shr 3)],al
+  endif
+ endif
 endif
 
 cw5_LDT:
@@ -2659,7 +2681,7 @@ InitError       proc    near
 ;
 ;Remove extension patches.
 ;
-        mov     di,offset ExtensionEnd - sizeof EXTENSION ;list of interupt patches.
+        mov     di,offset ExtensionEnd - sizeof EXTENSION ;list of interrupt patches.
 cw6_p0:
         cmp     [di].EXTENSION.wFlgs,-1  ;installed?
         jnz     cw6_p2
@@ -2774,69 +2796,63 @@ cw6_NoError:
         mov     ax,IErrorNumber
         mov     ah,4ch
         int     21h
-        assume ds:GROUP16
 InitError       endp
 
+        assume ds:GROUP16
 
 ;-------------------------------------------------------------------------------
 ;
-;Initialise real mode hardware interupt vectors so that control is always passed to protected mode
-;even if the interupt occurs in real mode. This simulates the DPMI environment and is essential for
-;any program that re-programs IRQ-0 frequency.
+;Initialise IVT vectors so that control is always passed to protected mode
+;even if the interrupt occurs in real mode. As default, it's done for INT 23h/24h only.
 ;
 InitHardwareInts proc near
         .386
-;        push    ds
         push    es
-;        mov     ax,KernalDS
-;        mov     ds,ax
-        assume ds:GROUP16
         mov     ax,KernalZero
         mov     es,ax
-;       mov     ch,16
-;       mov     cl,1ch
-;       call    @@0
-        mov     ch,17
+if 0
+        mov     ax,16
+        mov     bx,16 * sizeof ICallBackStruc
+        mov     cl,1ch
+        call    @@0
+endif
+        mov     ax,17
+        mov     bx,17 * sizeof ICallBackStruc
         mov     cl,23h                  ;patch ctrl-break.
         call    cw7_0
-        mov     ch,18
+
+        mov     ax,18
+        mov     bx,18 * sizeof ICallBackStruc
         mov     cl,24h                  ;patch critical error.
         call    cw7_0
+
         pop     es
-;        pop     ds
         ret
         ;
 cw7_0:
-        mov     ax,size CallBackStruc
-        movzx   bx,ch
-        mul     bx
-        mov     bx,ax
-        add     bx,offset CallBackTable
-        pushf
-        cli
-        mov     CallBackStruc.CallBackNum[bx],cl    ;set interupt number.
-        mov     CallBackStruc.CallBackFlags[bx],1+2 ;mark call back as used interupt.
-        mov     ax,CallBackSize
-        movzx   dx,ch
-        mul     dx
-        mov     si,offset ICallBackList
-        add     si,ax                   ;index list of calls.
+        add     bx,offset ICallBackTable
+        mov     dx,ax
+        add     ax,GROUP16
+        push    ax
+        mov     ax,offset RawIntCallBack
+        shl     dx,4
+        sub     ax,dx
+        push    ax
+        pop     eax
+
+        mov     [bx].ICallBackStruc.CallBackInt,cl    ;set interrupt number.
+        mov     [bx].ICallBackStruc.CallBackFlags,1   ;mark call back as used
         push    bx
         movzx   bx,cl
         shl     bx,2
-        mov     dx,es:[bx+0]
-        mov     cx,es:[bx+2]
-        mov     es:[bx+0],si
-        mov     WORD PTR es:[bx+2],GROUP16
+        xchg    eax,es:[bx]
         pop     bx
-        mov     w[bx].CallBackStruc.CallBackReal+0,dx
-        mov     w[bx].CallBackStruc.CallBackReal+2,cx   ;store original real mode vector.
-        popf
+        mov     [bx].ICallBackStruc.CallBackReal,eax  ;store original real mode vector.
         ret
-        assume ds:GROUP16
         .286
 InitHardwareInts endp
 
+        assume ds:GROUP16
 
 ;-------------------------------------------------------------------------------
 CheckProcessor  proc    near
@@ -3005,7 +3021,7 @@ cw10_nopass:
         mov     ax,es:[si+4]
         cmp     ax,"SS"
         jnz     skipkw
-        add     si,4+1
+        add     si,6
         or      NoPassFlag,-1
         ret
 
@@ -3159,7 +3175,7 @@ cw10_lowmem:
         jnz     skipkw
         add     si,4+2+1
         call    getnum
-ifndef NOLOWMEM
+if DEFLOWMEM LT 640
         shl     edx,10-4                ;turn K into para's
 ;--- the amount is no longer ADDED to the default value
 ;        movzx   ebx,[ConvSaveSize]

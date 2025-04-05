@@ -10,11 +10,13 @@
 #           phase.
 # PERMNOVM: if defined, same as CAUSEWAY environment variable setting NOVM.
 # PERMNOEX: if defined, same as CAUSEWAY environment variable setting NOEX.
+# PERMBIG1: if defined, same as CAUSEWAY environment variable setting BIG1.
 # LXWORK:   if defined, enables support for LX.
 # DEBUGLE:  if defined, enables debug displays for LE loader.
 # DBGOPT:   select debug displays (debug version only) 
-# DEFLOWMEM:if defined, sets default for LOWMEM in kB.
-# NOLOWMEM: if defined, VMM won't touch conv. memory, LOWMEM is a dummy.
+# LLOUT:    if defined, low-level output of debug displays (debug version only) 
+# DEFLOWMEM:if defined, sets default for LOWMEM env var in kB; else, it's 32kb;
+#           setting it to >=640, VMM won't touch conv. memory at all.
 # NOEXPORTS:if defined, disables the kernel exports in api.inc; not needed
 #           for dll support.
 # NOI21RMHOOK:if defined, removes code for real-mode int 21h hook;
@@ -31,7 +33,7 @@ DEBUG=0
 !endif
 
 !if $(DEBUG)
-AOPT=-D_DEBUG -Sg -DDEBUG2 -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG -DNOEXPORTS -DDBGOPT=10 -DDEBUGLE
+AOPT=-D_DEBUG -Sg -DLLOUT -DDEFLOWMEM=256 -DKRNLDBG -DNOEXPORTS -DDBGOPT=64 -DDEBUGLE
 OUTD=Debug
 DBGINC=dprint16.inc dprint32.inc vioout.inc
 !else

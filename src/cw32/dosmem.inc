@@ -67,7 +67,6 @@ endif
         pop     es
         mov     RealRegsStruc.Real_AX[edi],4800h;get memory.
         mov     RealRegsStruc.Real_EBX[edi],ebx ;memory size.
-        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    RawSimulateInt  ;allocate it.
         pop     ecx
@@ -172,7 +171,6 @@ mem19_8:
         mov     es,eax
         mov     es:RealRegsStruc.Real_AX[edi],4900h    ;release memory.
         mov     es:RealRegsStruc.Real_ES[edi],bx       ;segment.
-        mov     es:RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    RawSimulateInt   ;release it.
         ;
@@ -252,7 +250,6 @@ endif
         mov     RealRegsStruc.Real_AX[edi],4a00h
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ES[edi],ax
-        mov     RealRegsStruc.Real_SSSP[edi],0
         mov     bl,21h
         call    RawSimulateInt
         mov     eax,RealRegsStruc.Real_EAX[edi]
@@ -412,7 +409,6 @@ endif
         mov     edi,offset MemIntBuffer
         mov     es:[edi].RealRegsStruc.Real_AX,4900h;release block.
         mov     es:[edi].RealRegsStruc.Real_ES,ax   ;block to release.
-        mov     es:[edi].RealRegsStruc.Real_SSSP,0
         mov     bl,21h
         call    RawSimulateInt
         mov     eax,es:[edi].RealRegsStruc.Real_EAX

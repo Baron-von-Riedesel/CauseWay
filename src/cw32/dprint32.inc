@@ -11,7 +11,7 @@
 ;--- outb is assumed to be stack-located.
 
 @dprintf macro cond,fmt,a1,a2,a3,a4,a5
-if DBGOPT and cond
+if DBGOPT and (cond)
   for x,<a5,a4,a3,a2,a1>
    ifnb <x>
 	push x

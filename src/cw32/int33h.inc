@@ -112,7 +112,7 @@ Int33hClose     proc    far
         Sys     RelCallBack
         ;
 int332_8:
-        ;Release interupt vector.
+        ;Release interrupt vector.
         ;
         cmp     w[OldInt33h+4],0
         jz      int332_9

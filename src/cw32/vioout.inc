@@ -78,7 +78,7 @@ bChar textequ <dl>
 @@:
 	push ds
 	push ax
-	mov ax,0B000H    ; CauseWay peculiarity
+	mov ax,0B000H    ; CauseWay peculiarity - may work in pm, but requires "VIDEOGDTSELS equ 1"
 ifndef dpsuffix
 	mov bp, cs
 	cmp bp, GROUP16  ; 16-bit only: in real-mode?

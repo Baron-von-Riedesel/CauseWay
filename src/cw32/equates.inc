@@ -1,9 +1,7 @@
 
 ;------------------------------------------------------------------------------
 
-;; MED 02/16/96
-MaxCallBacks	equ	32+3	;maximum number of call back table entries.
-;MaxCallBacks	equ	32+4	;maximum number of call back table entries.
+MaxCallBacks	equ	16	;maximum number of call back table entries.
 
 ;; MED increased 512 to 1024, 12/05/95
 IFDEF BIGSTACK
@@ -11,7 +9,7 @@ RawStackDif		equ	5*1024	;size of interrupt stacks.
 ELSE
 ;RawStackDif	equ	1280	;size of interrupt stacks.
 RawStackDif		equ	1024	;size of interrupt stacks.
-;RawStackDif	equ	512		;size of interupt stacks.
+;RawStackDif	equ	512		;size of interrupt stacks.
 ENDIF
 
 ;--- RawStackTotal must be a multiple of 16
@@ -23,7 +21,7 @@ ENDIF
 
 tPL2StackSize	equ	0		;other priveledge level stacks. never used.
 tPL1StackSize	equ	0
-tPL0StackSize	equ	256		;Interupt catcher stack.
+tPL0StackSize	equ	256		;Interrupt catcher stack.
 
 
 GDTNul		equ	00h			;Null entry.
@@ -51,11 +49,8 @@ MainPSP			equ	80h+3	;PSP segment.
 MainEnv			equ	88h+3	;Enviroment segment.
 ;MainCS			equ	78h+3	;Main code seg.
 ;MainDS			equ	80h+3	;Main data seg.
-;MainCS0			equ	0a0h	;code seg at PL0.
-;MainPL3toPL0	equ	0a8h+3	;call gate
 MainCS			equ	KernalCS
 MainDS			equ	KernalDS
-MainCS0			equ	KernalCS0
 MainPL3toPL0	equ	KernalPL3toPL0
 ;
 DpmiEmuCS		equ	090h+3	;DPMI emulator code seg.
@@ -71,16 +66,10 @@ GDT_Entries		equ	0d0h/8
 else
 GDT_Entries		equ	0b8h/8	;GDT entries to allocate.
 endif
-;
-;
-CallBackStruc struc
-CallBackFlags	db ?	; b[0]:1=in use;b[7]:1=busy
-CallBackNum		db ?	; interrupt#
-CallBackOff		dw ?
-CallBackProt	df ?
-CallBackRegs	df ?
-CallBackReal	dd ?
-CallBackStackSel	dw ?
-				dw ?
-CallBackStruc ends
+
+if VIDEOGDTSELS
+KernalB000		equ	0b000h+3
+KernalB800		equ	0b800h+3
+KernalA000		equ	0a000h+3
+endif
 ;

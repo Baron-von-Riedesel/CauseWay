@@ -679,7 +679,7 @@ exc20_Use16Bit678:
         mov     ebp,esp         ;make stack addressable.
         ;
         ;Now modify original CS:EIP,SS:ESP values and return control
-        ;to this code via interupt structure to restore stacks.
+        ;to this code via interrupt structure to restore stacks.
         ;
         test    BYTE PTR SystemFlags,SF_16BIT
         jz      exc20_Use32_2

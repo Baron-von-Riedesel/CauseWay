@@ -17,9 +17,10 @@ DOPT_SEL      equ 100b
 DOPT_EXEC     equ 1000b
 DOPT_PHYSMEM  equ 10000b
 DOPT_STACK    equ 100000b
+DOPT_MODESW   equ 1000000b
 
 @dprintf macro cond,fmt,a1,a2,a3,a4,a5
-if DBGOPT and cond
+if DBGOPT and (cond)
   for x,<a5,a4,a3,a2,a1>
    ifnb <x>
 	push x
