@@ -318,15 +318,10 @@ inter14_SortedCode2:
         test    ExceptionFlags,ISEXCEPTION  ;exception?
         jnz     KernalStack
         ;
-        push    ds
         push    eax
-        mov     ax,KernalDS             ;make our data addresable.
-        mov     ds,eax
-        assume ds:GROUP16
         mov     eax,ExceptionIndex
-        cmp     b[eax+Int2CallCheck],0  ;Hardware INT or int 1Ch, 23h, 24h?
+        cmp     [eax][Int2CallCheck],-1  ;Hardware INT or int 1Ch, 23h, 24h?
         pop     eax
-        pop     ds
         jnz     KernalStack
         jmp     IntStack
 
@@ -867,11 +862,15 @@ IntDispatch     endp
 ;frame:
 INTNN386FR struc
 	dd 8 dup (?)	;pushad
-    dw 10 dup (?)	;10*2
-    dd 2 dup (?)    ;push ds - push es
-newfl dd ?          ;sub esp,4+4
-xxx   dd ?
+	dw 10 dup (?)	;10*2 (RMCS fl,es,ds,fs,gs,ip,cs,sp,ss)
+	dd 2 dup (?)    ;push ds - push es
+newfl   dd ?        ;sub esp,4+4
+pCBS    dd ?        ;0 or, if IRQ, stored CallBackStruc ptr
 retaddr dd ?        ;return address
+union
+i16	IRET16 <>
+i32	IRET32 <>
+ends
 INTNN386FR ends
 
         assume ds:nothing
@@ -884,8 +883,6 @@ else
 endif
         push    ds
         push    es
-;        push    fs
-;        push    gs
         sub     esp,10*2    ; room for a (dword aligned) RealRegsStruc
         pushad
         ;
@@ -893,10 +890,10 @@ endif
         test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         jz      inter18_Use32Bit19
         movzx   ebp,bp
-        movzx   eax,[ebp+sizeof INTNN386FR].IRET16._fl
+        movzx   eax,[ebp].INTNN386FR.i16._fl
         jmp     inter18_Use16Bit19
 inter18_Use32Bit19:
-        mov     eax,[ebp+sizeof INTNN386FR].IRET32._fl
+        mov     eax,[ebp].INTNN386FR.i32._fl
 inter18_Use16Bit19:
         mov     [ebp].INTNN386FR.newfl,eax
 if INTNN386SIZE eq 4
@@ -908,7 +905,7 @@ else
         sub     edx,offset IntNN386Catch + 5
         shr     edx,3
 endif
-        mov     [ebp].INTNN386FR.xxx,0
+        mov     [ebp].INTNN386FR.pCBS,-1
         ;
         mov     edi,ebp
         push    ss
@@ -921,71 +918,66 @@ endif
         mov     ax,KernalDS
         mov     ds,eax
         assume ds:GROUP16
-        mov     al,[ebx+Int2CallCheck]
+        mov     al,[ebx][Int2CallCheck]
         or      al,al           ;Hardware?
-        jz      inter18_c2
-        sub     bl,al
-        imul    ebx,sizeof ICallBackStruc
-        add     ebx,offset ICallBackTable
-        test    ICallBackStruc.CallBackFlags[ebx],1
-        jz      inter18_c2
-        test    ICallBackStruc.CallBackFlags[ebx],80h    ;already busy?
-        jnz     inter18_c2
-        or      ICallBackStruc.CallBackFlags[ebx],80h    ;mark it as busy.
-        mov     [ebp].INTNN386FR.xxx,ebx
+        js      inter18_c2
+        mov     bl,al
+        bt      [ICallBackUsed],ebx
+        jnc     inter18_c2
+        bts     [ICallBackBusy],ebx    ;already busy?
+        jc      inter18_c2
+        mov     [ebp].INTNN386FR.pCBS,ebx
 inter18_c2:
         ;
         ;Now pass control to the INT simulator.
         ;
         mov     eax,[ebp].INTNN386FR.newfl
-        and     ah,11111000b   ; clear TF, IF & DF
-        push    eax
-        popfd
+        mov     es:[edi].RealRegsStruc.Real_Flags,ax
+
+;--- since "USEPMFLAGS equ 0" in rawvcpi2.inc, there's no need to modify EFL here
+;        and     ah,11111000b   ; clear TF, IF & DF
+;        push    eax
+;        popfd
 
         mov     ebx,edx
         mov     es:RealRegsStruc.Real_SSSP[edi],0
         call    RawSimulateInt
         ;
-        cmp     [ebp].INTNN386FR.xxx,0
+        cmp     [ebp].INTNN386FR.pCBS,-1
         jz      inter18_NoCall
-        mov     esi,[ebp].INTNN386FR.xxx
-;        and     ICallBackStruc.CallBackFlags[esi],255-128
-        and     ICallBackStruc.CallBackFlags[esi],not 80h
+        mov     ebx,[ebp].INTNN386FR.pCBS
+        btr     [ICallBackBusy],ebx
 inter18_NoCall:
         ;
         ;Update the flags.
         ;
-        mov     ax,es:RealRegsStruc.Real_Flags[edi]
+        mov     ax,es:[edi].RealRegsStruc.Real_Flags
         and     ax,1000100011111111b            ;lose TF, IF, DF, IOPL, NT
         ;
         test    BYTE PTR DpmiEmuSystemFlags,SF_16BIT
         jz      inter18_Use32Bit
-        mov     bx,[ebp+sizeof INTNN386FR].IRET16._fl
+        mov     bx,[ebp].INTNN386FR.i16._fl
         and     bx,0111011100000000b            ;retain TF, IF, DF, IOPL, NT
         or      ax,bx
-        mov     [ebp+sizeof INTNN386FR].IRET16._fl,ax
+        mov     [ebp].INTNN386FR.i16._fl,ax
         popad
-        add     sp,10*2
-;        pop     gs
-;        pop     fs
+        add     esp,10*2
         pop     es
         pop     ds
-        add     sp,4+4+4
+        add     esp,4+4+4
         iret                    ;Switch back to calling program.
         ;
 inter18_Use32Bit:
-        mov     bx,w[ebp+sizeof INTNN386FR].IRET32._fl
+        mov     ebx,[ebp].INTNN386FR.i32._fl
         and     bx,0111011100000000b            ;retain TF, IF, DF, IOPL, NT
         or      ax,bx
-        mov     w[ebp+sizeof INTNN386FR].IRET32._fl,ax
+        mov     w[ebp].INTNN386FR.i32._fl,ax
         popad
         add     esp,10*2
-;        pop     gs
-;        pop     fs
         pop     es
         pop     ds
         assume ds:nothing
-        add     esp,4+4+4
+        add     esp,4+4+4       ;skip newfl,pCBS,retaddr
         iretd                   ;Switch back to calling program.
 IntNN386        endp
 
@@ -1383,9 +1375,9 @@ inter9_use32_add:
         mov     ds,eax
         assume ds:GROUP16
         movzx   ebx,bl
-        mov     al,[ebx+Int2CallCheck]
+        mov     al,[ebx][Int2CallCheck]
         or      al,al
-        jz      inter9_NotHardware
+        js      inter9_NotHardware
 
 ;*** MED 11/30/95
         cmp     bl,23h                  ; always allow 23h callback
@@ -1398,35 +1390,31 @@ inter9_use32_add:
 med2a:
         pushad
         mov     edx,ebx                 ; save Int#
-        sub     bl,al                   ; now BL=Callback# (1Ch->16, 23h->17, 24h->18)
+        mov     bl,al                   ; now BL=Callback# (1Ch->16, 23h->17, 24h->18)
         mov     ax,KernalZero
         mov     es,eax
         mov     eax,ebx                 ; save callback#
-        imul    ebx,sizeof ICallBackStruc
-        add     ebx,offset ICallBackTable
         cmp     cx,DpmiEmuCS            ; restoreing previous vector?
         jnz     inter9_Setting
 ;inter9_Restoreing:
-        test    [ebx].ICallBackStruc.CallBackFlags,1      ;this one in use?
-        jz      inter9_DoneHardware                      ;not likely.
-        mov     [ebx].ICallBackStruc.CallBackFlags,0      ;Mark this one as un-used.
-        mov     eax,[ebx].ICallBackStruc.CallBackReal     ;get original real mode vector.
+        btr     [ICallBackUsed],ebx     ;Mark this one as un-used
+        jnc     inter9_DoneHardware     ;do nothing if it wasn't used (not likely)
+        mov     eax,[ebx*4][ICallBackOldVec] ;get original real mode vector.
         mov     es:[edx*4],eax
         jmp     inter9_DoneHardware
 inter9_Setting:
-        test    [ebx].ICallBackStruc.CallBackFlags,1      ;this one in use?
-        jnz     inter9_DoneHardware
-        mov     [ebx].ICallBackStruc.CallBackInt,dl       ;set interrupt number.
-        mov     [ebx].ICallBackStruc.CallBackFlags,1      ;mark call back as used
+        bts     [ICallBackUsed],ebx     ;this one in use?
+        jc      inter9_DoneHardware
+        mov     [ebx][ICallBackIntNo],dl;set interrupt number.
         mov     si,GROUP16
         add     si,ax
         shl     esi,16
         mov     si,offset RawIntCallBack
         shl     ax,4
         sub     si,ax
-        mov     eax,es:[edx*4]    ;get IVT value
-        mov     es:[edx*4],esi    ;set new IVT value
-        mov     [ebx].ICallBackStruc.CallBackReal,eax     ;store original real mode vector.
+        mov     eax,es:[edx*4]                ;get old IVT value
+        mov     es:[edx*4],esi                ;set new IVT value
+        mov     [ebx*4][ICallBackOldVec],eax  ;store original real mode vector.
 inter9_DoneHardware:
         popad
 inter9_NotHardware:
@@ -1626,7 +1614,6 @@ inter12_1:
         mov     dx,offset RawCallBack
         shl     ax,4
         sub     dx,ax
-        mov     [ebx].CallBackStruc.CallBackOff,dx      ;store call back address.
         mov     [ebx].CallBackStruc.CallBackFlags,1     ;flag this entry in use.
         @dprintf DOPT_MODESW,<"RawGetCallBack: ok, addr=%X:%X",10>,ecx,edx
         clc
@@ -1658,10 +1645,14 @@ RawRelCallBack proc near
         ;
         mov     esi,offset CallBackTable
         mov     ebx,MaxCallBacks
+        mov     ax,GROUP16
+        mov     di,offset RawCallBack
 inter13_0:
         test    [esi].CallBackStruc.CallBackFlags,1
         jz      inter13_1
-        cmp     dx,[esi].CallBackStruc.CallBackOff
+        cmp     ax,cx
+        jnz     inter13_1
+        cmp     di,dx
         jnz     inter13_1
         mov     [esi].CallBackStruc.CallBackFlags,0
         mov     bx,[esi].CallBackStruc.CallBackStackSel
@@ -1672,6 +1663,8 @@ inter13_0:
         jmp     inter13_2
         ;
 inter13_1:
+        inc     ax
+        sub     di,10h
         add     esi,size CallBackStruc
         dec     ebx
         jnz     inter13_0

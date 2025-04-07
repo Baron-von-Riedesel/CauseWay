@@ -224,6 +224,7 @@ ifdef _DEBUG
         include dprint16.inc
 else
 @dprintf equ <;>
+@dprintf16 equ <;>
 endif
 
 ;-------------------------------------------------------------------------------
@@ -2812,17 +2813,14 @@ InitHardwareInts proc near
         mov     es,ax
 if 0
         mov     ax,16
-        mov     bx,16 * sizeof ICallBackStruc
         mov     cl,1ch
         call    @@0
 endif
         mov     ax,17
-        mov     bx,17 * sizeof ICallBackStruc
         mov     cl,23h                  ;patch ctrl-break.
         call    cw7_0
 
         mov     ax,18
-        mov     bx,18 * sizeof ICallBackStruc
         mov     cl,24h                  ;patch critical error.
         call    cw7_0
 
@@ -2830,8 +2828,8 @@ endif
         ret
         ;
 cw7_0:
-        add     bx,offset ICallBackTable
         mov     dx,ax
+        mov     bx,ax
         add     ax,GROUP16
         push    ax
         mov     ax,offset RawIntCallBack
@@ -2840,14 +2838,15 @@ cw7_0:
         push    ax
         pop     eax
 
-        mov     [bx].ICallBackStruc.CallBackInt,cl    ;set interrupt number.
-        mov     [bx].ICallBackStruc.CallBackFlags,1   ;mark call back as used
+        bts     w[ICallBackUsed],bx      ;mark call back as used
+        mov     [bx][ICallBackIntNo],cl  ;set interrupt number.
         push    bx
         movzx   bx,cl
         shl     bx,2
         xchg    eax,es:[bx]
         pop     bx
-        mov     [bx].ICallBackStruc.CallBackReal,eax  ;store original real mode vector.
+        shl     bx,2
+        mov     [bx][ICallBackOldVec],eax ;store original real mode vector.
         ret
         .286
 InitHardwareInts endp

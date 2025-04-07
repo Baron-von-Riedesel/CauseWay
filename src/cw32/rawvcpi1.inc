@@ -154,50 +154,30 @@ PageBufferReal  dw ?            ;real mode segment for swapfile access
 PageBufferLinear dd ?           ;linear address for swapfile access
 PageInt         RealRegsStruc <>
 ;
+	align 4
+;--- callback tables
+;--- ICallxx = for internal callbacks: IRQs, Int 1Ch/23h/24h
+;
+ICallBackUsed   dd 0
+ICallBackBusy   dd 0
+ICallBackOldVec dd 16+3 dup (0)
+ICallBackIntNo  db 16+3 dup (-1)
 
 	align 4
-; byte table for 256 interrupts
-; it's used to translate IRQs and INT 1C, 23h, 24h to a callback#
-Int2CallCheck label byte
-        db 8 dup (0)                    ;00-07
-        db 8 dup (8)                    ;08-0F (08-0F -> callback 0-7)
-
-;; MED 02/16/96, force INT15h to be treated as hardware interrupt
-        db 8 dup (0)                    ;10-17
-;       db      0,0,0,0,0,15h-19,0,0    ;10-17
-
-        db 0,0,0,0,1ch-16,0,0,0         ;18-1F (1C: 1Ch-16=12 -> 28 - 12 -> cb 16)
-        db 0,0,0,23h-17,24h-18,0,0,0    ;20-27 (23: 23h-17=18 -> 35 - 18 -> cb 17; 24: 24h-18=18 -> 36 - 18 -> cb 18)
-        db 70h-28h dup (0)              ;28-6F
-        db 8 dup ((70h-8))              ;70-77 (70-77 -> callback 8-15)
-        db 100h-78h dup (0)             ;78-FF
-;
-;--- callback tables
-;--- ICallBackStruc is for internal callbacks: IRQs, Int 1Ch/23h/24h
-;
-ICallBackStruc struc
-CallBackFlags	db ?	; [0]:1=in use; [7]:1=busy
-CallBackInt		db ?	; interrupt#
-CallBackProt	df ?    ; FAR32 protected-mode CS:EIP to call
-CallBackReal	dd ?    ; saved interrupt vector; used by internal callbacks only
-ICallBackStruc ends
-
-ICallBackTable  ICallBackStruc 16+3 dup (<0,0,0,0>)
 
 ;--- CallBackStruc is for external callbacks; 2 are allocated before the app gets control:
 ;--- 1. mouse event (always allocated, even if no mouse driver installed)
 ;--- 2. Int 1Bh (always allocated)
 
 CallBackStruc struc
-CallBackFlags	db ?	; [0]:1=in use; [7]:1=busy
+CallBackFlags	db ?	; [0]:1=in use
                 db ?    ; not used
 CallBackProt	df ?    ; FAR32 protected-mode CS:EIP to call
-CallBackRegs	df ?    ; RMCS address
+CallBackRegs	df ?    ; FAR32 address of RMCS
 CallBackStackSel dw ?   ; stack selector
-CallBackOff		dw ?    ; real-mode offset of callback address
 CallBackStruc ends
 ;
-CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0,0>)
+CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0>)
 ;
 VDiskSig        db 'VDISK V'
 VDiskSigLen     equ     $-VDiskSig
@@ -268,24 +248,22 @@ RawVCPIRealMode proc near
 ;
 ;Disable hardware INT call-backs.
 ;
-        mov     bx,offset ICallBackTable ;list of call backs.
-        mov     cx,16+3                  ;number of entries to scan.
+        mov     edx,ICallBackUsed ;list of call backs.
+        mov     bx,offset ICallBackIntNo
+        mov     si,offset ICallBackOldVec
 rv1_6:
-        test    ICallBackStruc.CallBackFlags[bx],1       ;in use?
-        jz      rv1_7
-;        test    ICallBackStruc.CallBackFlags[bx],2       ;interrupt?
-;        jz      rv1_7
-        mov     ICallBackStruc.CallBackFlags[bx],0
+        lodsd
+        shr     edx,1
+        jnc     rv1_7
         push    bx
-        mov     eax,[bx].ICallBackStruc.CallBackReal     ;get original vector value.
-        mov     bl,[bx].ICallBackStruc.CallBackInt       ;get vector number.
-        xor     bh,bh
+        movzx   bx,b [bx]    ;get Int#
         shl     bx,2
-        mov     d es:[bx+0],eax
+        mov     es:[bx],eax
         pop     bx
 rv1_7:
-        add     bx,sizeof ICallBackStruc   ;next entry.
-        loop    rv1_6
+        inc     bx
+        and     edx,edx
+        jnz     rv1_6
 ;
 ;Release VCPI memory.
 ;

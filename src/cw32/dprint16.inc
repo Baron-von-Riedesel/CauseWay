@@ -31,6 +31,19 @@ if DBGOPT and (cond)
 endif
 endm
 
+;--- if 16-bit code is located in a 32-bit include (rawvcpi2.inc)
+@dprintf16 macro cond,fmt,a1,a2,a3,a4,a5
+if DBGOPT and (cond)
+  for x,<a5,a4,a3,a2,a1>
+   ifnb <x>
+	push x
+   endif
+  endm
+	call dprintf16
+	db fmt,0
+endif
+endm
+
 ifdef LLOUT
 _B000H equ 4+3          ;specific descriptor in dpmi mode for segment 0B000h
 	include vioout.inc

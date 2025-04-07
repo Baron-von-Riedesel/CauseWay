@@ -14,6 +14,8 @@
 ; 1. Int 15h memory management (used if VCPI/XMS isn't available) is very slow
 ;    unless CAUSEWAY=BIG1 is set.
 
+USEPMFLAGS equ 0	;1=don't use rmcs flags for rm flags setup
+
 DbgStruc struc
 _Address     dd ?
 _Size        db ?
@@ -38,6 +40,21 @@ DefaultInt31 label fword
 endif
 _cwDPMIEMU$1 ends
 
+	align 4
+; byte table for 256 interrupts
+; it's used to translate IRQs and INT 1C, 23h, 24h to an internal callback#
+Int2CallCheck label byte
+    db 256 dup (-1)
+    org Int2CallCheck + 08h
+    db 0,1, 2, 3, 4, 5, 6, 7 ;08-0F -> cb 0-7
+    org Int2CallCheck + 70h
+    db 8,9,10,11,12,13,14,15 ;70-77 -> cb 8-15
+    org Int2CallCheck + 1Ch
+    db 16                    ;   1C -> cb 16
+    org Int2CallCheck + 23h
+    db 17,18                 ;23-24 -> cb 17-18
+    org Int2CallCheck + 100h
+;
 ;-------------------------------------------------------------------------------
 ;
 ;Simulate real mode interrupt.
@@ -263,10 +280,14 @@ rv29_noextendstack:
         pop     esi
 rv29_NoStacked:
         mov     ebp,eax
+if USEPMFLAGS
+        mov     eax,[ebp].RV29FR.wFlgs
+else
+        mov     ax,es:[edi].RealRegsStruc.Real_Flags
+endif
         cmp     bh,1             ;call far proc with RETF frame?
         jz      rv29_noflagscopy
 ;                                ;for sim int and sim fcall with IRET frame...
-        mov     eax,[ebp].RV29FR.wFlgs
         sub     esi,2
         mov     fs:[esi],ax      ;put flags onto the rm stack.
 rv29_noflagscopy:
@@ -279,24 +300,22 @@ rv29_noflagscopy:
         jmp     rv29_NotInt
         ;
 rv29_IsInt:
-        and     b es:[edi].RealRegsStruc.Real_Flags+1,11111100b    ;clear TF and IF
+        and     ah,11111100b   ;clear TF and IF
+        mov     es:[edi].RealRegsStruc.Real_Flags,ax
         ;See if this is a busy interrupt call back.
         ;
-        xor     bh,bh
-        mov     bp,bx
-        shl     bp,2
-        mov     al,[Int2CallCheck+bx]
+        movzx   ebx,bl
+        mov     ecx,ebx
+        mov     al,[Int2CallCheck][ebx]
         or      al,al
-        jz      rv29_c3
-        sub     bl,al           ;gives callback# in bx
-        imul    bx,sizeof ICallBackStruc
-        add     bx,offset ICallBackTable
-        test    ICallBackStruc.CallBackFlags[bx],80h     ;this entry in use?
-        jz      rv29_c3
-        mov     ecx,ICallBackStruc.CallBackReal[bx]
+        js      rv29_c3
+        mov     bl,al               ;ebx = callback#
+        bt      [ICallBackBusy],ebx ;busy?
+        jnc     rv29_c3
+        mov     ecx,[ebx*4][ICallBackOldVec]
         jmp     rv29_c2
 rv29_c3:
-        mov     ecx,fs:[bp]     ;Get interrupt vector to put on stack.
+        mov     ecx,fs:[ecx*4]  ;Get IVT vector
 rv29_c2:
 rv29_NotInt:
         sub     esi,4
@@ -433,18 +452,11 @@ RAWSimulate     endp
 
 _cwRaw segment
 
-RCBFRM struct
-_ax		dw ?
-_bp		dw ?
-_fl		dw ?
-RCBFRM ends
-
 STACKADJ equ 8*4+4*2+2 ;pushad, push segregs,pushf
 
 RawCallBack     proc    near
         pushf
-        push    bp
-        mov     bp,cs
+        push    cs
         db      0eah
         dw      @F,GROUP16
 @@:
@@ -453,19 +465,13 @@ RawCallBack     proc    near
         ;
         cmp     cs:InWindows,0
         jz      rv30_Normal
-        pop     bp
+        add     sp,2
         popf
         retf
         ;
 rv30_Normal:
         cli
-        push    ax
-        mov     ax,cs
-        sub     bp,ax
-        imul    bp,sizeof CallBackStruc
-        mov     cs:[rv30_CallTab],bp
-        pop     ax
-        pop     bp
+        pop     cs:[rv30_CallTab]
         ;
         push    gs
         push    fs
@@ -490,6 +496,8 @@ _cwRaw ends
         ;
 rv30_contpm:    
         movzx   ebx,[rv30_CallTab]
+        sub     bx,GROUP16
+        imul    ebx,sizeof CallBackStruc
         add     ebx,offset CallBackTable;get callback
 
         movzx   eax,[rv30_rmsp+0]
@@ -531,73 +539,68 @@ rv30_Use16Bit12:
         ;
         movzx   ebx,[ebx].CallBackStruc.CallBackStackSel
         push    ebx
-        push    es
-        push    edi
 
+        movzx   esi,es:RealRegsStruc.Real_SP[edi]
         movzx   eax,es:RealRegsStruc.Real_SS[edi]
         shl     eax,4
-        mov     di,KernalZero
-        mov     es,edi
         and     ebx,not 7
-        mov     edi,d GDTVal+2
-        add     edi,ebx
-        mov     es:[edi].Desc.Base_l,ax
+        add     ebx,d GDTVal+2
+        mov     fs:[ebx].Desc.Base_l,ax
         shr     eax,16
-        mov     es:[edi].Desc.Base_m,al
-        mov     es:[edi].Desc.Base_H,ah
+        mov     fs:[ebx].Desc.Base_m,al
+        mov     fs:[ebx].Desc.Base_H,ah
 
-        pop     edi
-        pop     es
         test    BYTE PTR SystemFlags,SF_16BIT
         pop     ds              ;load DS with stack sel
         assume ds:nothing
-        movzx   esi,es:RealRegsStruc.Real_SP[edi]
-        pushfd                  ;push a dword to keep stack aligned
+        pushfd                  ;push a dword to keep stack aligned even for 16-bit apps
         jz      rv30_Use32Bit13
         db 66h                  ;change "fword ptr" to "PF16 ptr"
 rv30_Use32Bit13:
         call    fword ptr [ebp]
         cli
-        mov     ax,KernalDS
-        mov     ds,eax
-        assume ds:GROUP16
+        ;
+        ; copy the registers from RMCS in es:[edi]
+        ; onto real-mode stack (then "restored" with POPAD, POP xx below)
         ;
         movzx   esi,es:RealRegsStruc.Real_SS[edi]       ;point to stacked registers.
-        mov     ebp,esi
+        mov     ebp,esi            ;BP=realmode SS
         shl     esi,4
         movzx   eax,es:RealRegsStruc.Real_SP[edi]
         sub     eax,8*4+4*2+2+2*2  ;size PUSHAD, 4 seg regs, flags, CS:IP
-        mov     edx,eax            ;DX=realmode SP
+        mov     edx,eax            ;DX=rmSP
         add     esi,eax
         xchg    esi,edi
         mov     eax,es
-        mov     fs,eax
+        mov     ds,eax             ;now src (DS:ESI) = callback's RMCS
         mov     ax,KernalZero
         mov     es,eax
         mov     ecx,8
         cld
-        rep     movsd es:[edi],fs:[esi]
-        lodsw   fs:[esi]           ;flags
-        movsd   es:[edi],fs:[esi]  ;ES,DS
-        movsd   es:[edi],fs:[esi]  ;FS,GS
-        stosw   es:[edi]           ;flags
-        movsd   es:[edi],fs:[esi]  ;CS:IP
+        rep     movsd              ;8 GPRs
+        lodsw                      ;flags
+        movsd                      ;ES,DS
+        movsd                      ;FS,GS
+        movsd                      ;CS:IP
+        stosw                      ;flags
         ;
         ;Switch back to real/v86 mode.
         ;
-        mov     ecx,ebp
+        mov     ax,KernalDS
+        mov     ds,eax
+        assume ds:GROUP16
+        add     [RawStackPos],RawStackDif
+        mov     ecx,ebp            ;CX=rmSS
         push    offset rv30_contrm
         jmp     [fProtected2Real]
 _cwRaw segment
 rv30_contrm:
-        add     RawStackPos,RawStackDif
         popad
         pop     es
         pop     ds
         pop     fs
         pop     gs
-        popf
-        retf
+        iret
         ;
 RawCallBack     endp
 
@@ -615,35 +618,36 @@ RawIntCallBack    proc    near
         push    ax
         mov     ax,cs
         sub     bp,ax
-        imul    bp,sizeof ICallBackStruc
-        add     bp,offset ICallBackTable
         ;
-        ;Check if this call back is busy.
+        ;disable IRQ handling if Windows enhanced mode is running
         ;
         cmp     cs:InWindows,0
         jnz     rv31_ForceOld
         ;
-        test    cs:[bp].ICallBackStruc.CallBackFlags,80h  ;call back busy?
-        jz      rv31_NotBusy
+        ;Check if this call back is busy.
+        ;
+        bts     w cs:[ICallBackBusy],bp  ;call back busy?
+        jnc     rv31_NotBusy
 rv31_ForceOld:
         ;
         ;This is a busy int call back so pass control to old real mode vector.
+        ;The reason for this restriction is to avoid IRQs to enter a "routing"-loop.
         ;
+        @dprintf16 DOPT_MODESW,<"RawIntCallBack: forced jmp to old vector",10>
         push    dx
-        mov     ax,WORD PTR cs:[bp].ICallBackStruc.CallBackReal+0
-        mov     dx,WORD PTR cs:[bp].ICallBackStruc.CallBackReal+2        ;fetch old real mode vector address.
+        shl     bp,2
+        mov     ax,w cs:[bp][ICallBackOldVec+0]
+        mov     dx,w cs:[bp][ICallBackOldVec+2];fetch old real mode vector address.
         mov     bp,sp
-        mov     [bp+3*2+0],ax
-        mov     [bp+3*2+2],dx
+        xchg    ax,[bp+2]
+        xchg    dx,[bp+4]
+        mov     bp,dx
         pop     dx
-        pop     ax
-        pop     bp
-        retf                    ;pass onto old handler.
+        retf                ;pass onto old handler.
         ;
         ;
 rv31_NotBusy:
-        mov     cs:[rv31_CallTab],bp
-        or      cs:[bp].ICallBackStruc.CallBackFlags,80h  ;mark it as busy.
+        mov     cs:[rv31_CallTab],bp   ;callback#
         mov     bp,sp
         mov     ax,[bp+2*2].IRET16._fl
 ;        and     ah,00001100b               ; clear TF,IF,IOPL,NT???
@@ -697,7 +701,7 @@ rv31_contpm:
         ;Get protected mode code address.
         ;
         mov     bx,[rv31_CallTab]
-        movzx   ebx,[bx].ICallBackStruc.CallBackInt  ;get int number.
+        movzx   ebx,[bx][ICallBackIntNo]   ;get int number.
         shl     ebx,1           ;*2
         lea     ebx,[ebx*2+ebx] ;*6
         add     ebx,offset InterruptTable
@@ -764,8 +768,8 @@ rv31_Use16Bit13:
 
         pushfd
         cli
+        @dprintf DOPT_MODESW,<"RawIntCallBack: back from pm irq proc",10>
         pop     [rv31_FlagsStore]
-
         pop     [rv31_CallTab]
         pop     [rv31_rmsp]
 
@@ -801,7 +805,7 @@ rv31_Use16Bit13:
         or      es:[esi].IRET16._fl,ax
         ;
         mov     bx,[rv31_CallTab]      ;restore call back structure.
-        and     [bx].ICallBackStruc.CallBackFlags,not 80h ;clear busy flag.
+        btr     w [ICallBackBusy],bx   ;clear busy flag.
         ;
         ;Switch back to real/v86 mode.
         ;
@@ -1210,6 +1214,7 @@ rv46_DPMI_030x:
         sub     ebp,sizeof IRET16
 rv46_030x_0a:
         call    eax
+if 0 ;v5.1: removed
         jc      rv46_030x_9
 ;
 ;Mask real mode register structure flags.
@@ -1225,6 +1230,7 @@ rv46_030x_1:
         and     es:RealRegsStruc.Real_Flags[edi],1111000111111111b      ;lose IF, DF, OF
         or      es:RealRegsStruc.Real_Flags[edi],ax
 rv46_030x_9:
+endif
         pop     ebp
         pop     edi
         pop     eax
