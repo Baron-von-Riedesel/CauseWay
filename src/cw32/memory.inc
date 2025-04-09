@@ -1716,7 +1716,7 @@ mem10_DoneTables:
         shr     ecx,16
         mov     bx,VMMHandle    ;get swap file handle.
         mov     ax,4200h
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     RealRegsStruc.Real_EAX[edi],eax
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_ECX[edi],ecx
@@ -1936,7 +1936,7 @@ mem11_NoLocking:
         shr     ecx,16
         mov     bx,VMMHandle
         mov     ax,4200h
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_EDX[edi],edx
         mov     RealRegsStruc.Real_ECX[edi],ecx
@@ -1947,7 +1947,7 @@ mem11_NoLocking:
         push    ds
         pop     es
         call    RawSimulateInt          ;move to right place.
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     ax,VMMHandle
         mov     RealRegsStruc.Real_EBX[edi],eax
         mov     ax,PageBufferReal
@@ -2191,7 +2191,7 @@ mem12_GotPage:
         mov     cx,di
         mov     ax,4200h
         mov     bx,VMMHandle
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     RealRegsStruc.Real_EBX[edi],ebx
         mov     RealRegsStruc.Real_EDX[edi],edx
         mov     RealRegsStruc.Real_ECX[edi],ecx
@@ -2212,7 +2212,7 @@ mem12_GotPage:
         cmp     edx,ebp
         jnz     mem12_force_error
         ;
-;        mov     edi,offset PageInt
+;        mov     edi,offset PageRMCS
         mov     ax,VMMHandle
         mov     RealRegsStruc.Real_EBX[edi],eax
         mov     ax,PageBufferReal

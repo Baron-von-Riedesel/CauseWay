@@ -1146,7 +1146,7 @@ endif
         mov     w[OldInt2Fr+0],bx
         mov     w[OldInt2Fr+2],es
         mov     ax,252fh
-        mov     dx,offset Int2FPatch
+        mov     dx,offset Int2FrPatch
         int     21h
 
 ifdef KRNLDBG
@@ -1903,7 +1903,7 @@ shiftloop:
         jae     shiftloop
 
         push    di
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         push    ds
         pop     es
         mov     [di].RealRegsStruc.Real_AX,1900h
@@ -1988,7 +1988,7 @@ med5a:
         mov     si,di
         mov     ax,5a00h                ; create temporary file
 med5a1:
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     [di].RealRegsStruc.Real_AX,ax
         push    ds
         pop     es
@@ -2066,7 +2066,7 @@ medpre2:
         or      SystemFlags,SF_VMM      ;flag VMM's presence.
 cw5_v9:
 if 1 ;resize memory to 8k/12k
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         mov     ax,wUMB
         mov     [di].RealRegsStruc.Real_ES,ax
         mov     [di].RealRegsStruc.Real_BX,(2000h+1000h)/16
@@ -2752,7 +2752,7 @@ endif
         cmp     IErrorNumber,IERR_00
         jz      cw6_NoError
         mov     ax,[InitErrorList]      ;get the "CauseWay error nn : " string
-        mov     edi,offset PageInt      ;not used yet in dpmi mode
+        mov     edi,offset PageRMCS     ;not used yet in dpmi mode
         push    ds
         pop     es
         mov     RealRegsStruc.Real_DX[di],ax

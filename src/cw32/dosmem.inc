@@ -62,7 +62,7 @@ if ADD1PARA
 mem19_0:
 endif
         push    ebx
-        mov     edi,offset MemIntBuffer
+        mov     edi,offset MemIntBuffer ;RawGetDOSMemory
         push    ds
         pop     es
         mov     RealRegsStruc.Real_AX[edi],4800h;get memory.
@@ -88,7 +88,7 @@ mem19_1:
         push    eax
         push    ecx
 if TILE16ONLY
-        test    b DpmiEmuSystemFlags,SF_16BIT
+        test    b SystemFlags,SF_16BIT
         jnz     @F
         mov     cx,1
         jmp     mem19_1a
@@ -129,7 +129,7 @@ endif
         push    ebx
         push    ds
         pop     es
-        mov     edi,offset RawSelBuffer
+        mov     edi,offset RawDescBuffer
         movzx   ecx,cx
         ;
 mem19_2:                 ;<---- next descriptor
@@ -149,13 +149,13 @@ mem19_2:                 ;<---- next descriptor
         pop     ebx
         pop     eax
 if TILE16ONLY
-        test    b DpmiEmuSystemFlags,SF_16BIT
+        test    b SystemFlags,SF_16BIT
         jz      mem19_2a
 endif
         add     eax,8           ;next selector.
         add     ebx,1000h       ;update segment base.
         sub     ecx,1000h       ;reduce segment size.
-        ja      mem19_2         ;keep going till all done.
+        ja      mem19_2         ;---->
 mem19_2a:
         ;
         pop     eax             ;Get base segment again.
@@ -166,11 +166,11 @@ mem19_2a:
 mem19_8:
         ;Release memory we managed to allocate.
         ;
-        mov     edi,offset MemIntBuffer
-        mov     ax,KernalDS
-        mov     es,eax
-        mov     es:RealRegsStruc.Real_AX[edi],4900h    ;release memory.
-        mov     es:RealRegsStruc.Real_ES[edi],bx       ;segment.
+        mov     edi,offset MemIntBuffer ;RawGetDOSMemory
+;        mov     ax,KernalDS
+;        mov     es,eax
+        mov     RealRegsStruc.Real_AX[edi],4900h    ;release memory.
+        mov     RealRegsStruc.Real_ES[edi],bx       ;segment.
         mov     bl,21h
         call    RawSimulateInt   ;release it.
         ;
@@ -193,6 +193,8 @@ RawGetDOSMemory endp
 ;
 ;IN: DX=selector, BX=new size in paragraphs
 ;
+;failure: DOS error (error code returned in AX 7/8/9, max size in BX)
+;         DPMI error (out of descriptors ax=8022, invalid block ax=8022)
 ;caller (RawDPMIPatch) ensures hiword(eax) and ebx are preserved.
 ;
 RawResizeDOSMemory proc near
@@ -216,6 +218,7 @@ RawResizeDOSMemory proc near
 
         pop     edx
         pop     ebx
+        mov     ax,8022h
         jc      mem20_err       ;selector invalid
         cmp     esi,0ffff0h+65536
         cmc
@@ -244,7 +247,7 @@ if ADD1PARA
 endif
         push    ds
         pop     es
-        mov     edi,offset MemIntBuffer
+        mov     edi,offset MemIntBuffer ;RawResizeDOSMemory
         mov     eax,esi
         shr     eax,4           ;get real mode segment.
         mov     RealRegsStruc.Real_AX[edi],4a00h
@@ -315,7 +318,7 @@ desc_done:
         pop     ebx
         pop     eax
 if TILE16ONLY
-        test    b DpmiEmuSystemFlags,SF_16BIT
+        test    b SystemFlags,SF_16BIT
         jz      mem20_8
 endif
         add     eax,8           ;next selector.
@@ -332,7 +335,7 @@ mem20_Expand_err:
         ;
 if TILE16ONLY and EXPANDIF32
 ;--- for 32-bit, expanding is ok if selector tiling is off
-        test    b DpmiEmuSystemFlags,SF_16BIT
+        test    b SystemFlags,SF_16BIT
         jz      mem20_Shrink
 endif
 if ADD1PARA
@@ -340,7 +343,7 @@ if ADD1PARA
 else
         mov     bx,ax
 endif
-        mov     ax,8
+        mov     ax,8   ;out of memory
 mem20_err:
         stc
 mem20_done:
@@ -362,17 +365,24 @@ RawResizeDOSMemory endp
 ;IN:  DX=selector
 ;
 ;caller (RawDPMIPatch) ensures hiword(eax) is preserved
+;if DOS call fails with C, return error code in EAX
+;(error code 7 apparently is never returned by DOS, meaning a call to
+;free a block twice won't return an error if the MCB still exists).
+;for invalid selectors, return AX=8022h
 ;
 RawReleaseDOSMemory proc near
 
         push    ebx
         push    ecx
         push    edx
+if ADD1PARA
         push    esi
+endif
         push    edi
         ;
         ;Get segment base address.
         ;
+        mov     ax,8022h
         mov     ebx,edx
         call    RawGetSelBase
         jc      mem21_err
@@ -406,16 +416,20 @@ endif
         mov     dx,KernalDS
         mov     es,edx
         assume es:GROUP16
-        mov     edi,offset MemIntBuffer
+        mov     edi,offset MemIntBuffer ;RawReleaseDOSMemory
         mov     es:[edi].RealRegsStruc.Real_AX,4900h;release block.
         mov     es:[edi].RealRegsStruc.Real_ES,ax   ;block to release.
         mov     bl,21h
         call    RawSimulateInt
-        mov     eax,es:[edi].RealRegsStruc.Real_EAX
-        bt      es:[edi].RealRegsStruc.Real_Flags,0
+        mov     edx,es:[edi].RealRegsStruc.Real_EAX
+        test    b es:[edi].RealRegsStruc.Real_Flags,1
         pop     ebx
         pop     es
-        jc      mem21_err
+        assume es:nothing
+        jz      mem21_0
+        mov     eax,edx
+        stc
+        jmp     mem21_err
 
 ;--- Release selectors.
 ;--- RawRelDescriptor will set any seg regs to NULL if they contain the selector to be freed.
@@ -433,7 +447,9 @@ mem21_1:
         clc
 mem21_err:
         pop     edi
+if ADD1PARA
         pop     esi
+endif
         pop     edx
         pop     ecx
         pop     ebx

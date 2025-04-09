@@ -7474,7 +7474,7 @@ cwOpen  proc    near
 ;block again to release as much memory as possible.
 ;
 ;        mov     edi,offset Int21Buffer
-        mov     edi,offset PageInt
+        mov     edi,offset PageRMCS
         push    ds
         pop     es
         mov     ax,RealPSPSegment

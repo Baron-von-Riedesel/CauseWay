@@ -865,7 +865,7 @@ INTNN386FR struc
 	dw 10 dup (?)	;10*2 (RMCS fl,es,ds,fs,gs,ip,cs,sp,ss)
 	dd 2 dup (?)    ;push ds - push es
 newfl   dd ?        ;sub esp,4+4
-pCBS    dd ?        ;0 or, if IRQ, stored CallBackStruc ptr
+dwCbIdx dd ?        ;-1 or, if IRQ, stored ICallBack #
 retaddr dd ?        ;return address
 union
 i16	IRET16 <>
@@ -905,7 +905,7 @@ else
         sub     edx,offset IntNN386Catch + 5
         shr     edx,3
 endif
-        mov     [ebp].INTNN386FR.pCBS,-1
+        mov     [ebp].INTNN386FR.dwCbIdx,-1
         ;
         mov     edi,ebp
         push    ss
@@ -926,7 +926,7 @@ endif
         jnc     inter18_c2
         bts     [ICallBackBusy],ebx    ;already busy?
         jc      inter18_c2
-        mov     [ebp].INTNN386FR.pCBS,ebx
+        mov     [ebp].INTNN386FR.dwCbIdx,ebx
 inter18_c2:
         ;
         ;Now pass control to the INT simulator.
@@ -943,9 +943,9 @@ inter18_c2:
         mov     es:RealRegsStruc.Real_SSSP[edi],0
         call    RawSimulateInt
         ;
-        cmp     [ebp].INTNN386FR.pCBS,-1
+        cmp     [ebp].INTNN386FR.dwCbIdx,-1
         jz      inter18_NoCall
-        mov     ebx,[ebp].INTNN386FR.pCBS
+        mov     ebx,[ebp].INTNN386FR.dwCbIdx
         btr     [ICallBackBusy],ebx
 inter18_NoCall:
         ;
@@ -977,7 +977,7 @@ inter18_Use32Bit:
         pop     es
         pop     ds
         assume ds:nothing
-        add     esp,4+4+4       ;skip newfl,pCBS,retaddr
+        add     esp,4+4+4       ;skip newfl,dwCbIdx,retaddr
         iretd                   ;Switch back to calling program.
 IntNN386        endp
 
@@ -1234,6 +1234,8 @@ myprintf2 endp
 ;
 ;CX:EDX - selector:offset of current handler.
 ;
+;  DPMI dispatcher ensures that hiword(edx) is restored for 16-bit.
+;
 RawGetVector    proc    near
         ;
         push    eax
@@ -1299,6 +1301,8 @@ RawGetRVector   endp
 ;
 ;CX:EDX - selector:offset of current handler.
 ;
+;  DPMI dispatcher ensures that hiword(edx) is restored for 16-bit.
+;
 RawGetEVector   proc    near
         ;
         push    ds
@@ -1344,12 +1348,14 @@ RawGetEVector   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set protected mode interrupt handler address.
+;Set protected mode interrupt handler address. Int 31h, ax=205h
 ;
 ;On Entry:-
 ;
 ;BL     - Interrupt vector number.
 ;CX:EDX - selector:offset of new handler.
+;
+;  DPMI dispatcher ensures that hiword(edx) is cleared for 16-bit.
 ;
 ;On Exit:-
 ;
@@ -1442,7 +1448,7 @@ RawSetVector    endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set real mode interrupt handler address.
+;Set real mode interrupt handler address. Int 31h, ax=201h
 ;
 ;On Entry:-
 ;
@@ -1480,12 +1486,14 @@ RawSetRVector   endp
 
 ;-------------------------------------------------------------------------------
 ;
-;Set protected mode exception handler address.
+;Set protected mode exception handler address. Int 31h, ax=203h
 ;
 ;On Entry:-
 ;
 ;BL     - Exception vector number.
 ;CX:EDX - selector:offset of new handler.
+;
+;  DPMI dispatcher ensures that hiword(edx) is cleared for 16-bit.
 ;
 ;On Exit:-
 ;
@@ -1494,185 +1502,40 @@ RawSetRVector   endp
 RawSetEVector   proc    near
         ;
         push    ds
-        push    es
         push    ebx
-        push    ecx
-        push    edx
         push    eax                     ; push last so is easily accessible for changing
 
         mov     ax,DpmiEmuDS
         mov     ds,eax
         assume ds:DPMIGRP
-        movzx   eax,bl
-        mov     ebx,eax
+        movzx   ebx,bl
+        cmp     bl,14           ;Special case for 14
+        je      Special14x
+        cmp     bl,20h
+        jc      inter11_Normal
+        pop     eax
+        mov     ax,8021h        ; flag invalid value
+        stc                     ; flag error
+        jmp     inter11_exit    ; don't set vector
+Special14x:
+        cmp     w[OldExcep14+4],0 ;Virtual memory active?
+        jz      inter11_Normal
+        mov     ebx,offset OldExcep14
+        jmp     inter11_specific
+        ;
+inter11_Normal:
         shl     ebx,1           ;*2
         lea     ebx,[ebx*2+ebx] ;*6
         add     ebx,offset ExceptionTable
-        ;
-        cmp     al,14           ;Special case for 14
-
-;       jnz     @@Normal
-        je      Special14x      ; MED 01/17/96
-        cmp     al,20h
-        jc      inter11_Normal
-        stc                     ; flag error
-        pop     eax
-        mov     ax,8021h        ; flag invalid value
-        push    eax
-        jmp     inter11_GotVect ; don't set vector
-
-Special14x:
-        cmp     w[OldExcep14+4],0       ;Virtual memory active?
-        jz      inter11_Normal
-        ;
-        ;Vector 14 and VMM is still installed.
-        ;
-        mov     d[OldExcep14+0],edx
-        mov     w[OldExcep14+4],cx
-        jmp     inter11_GotVect
-        ;
-inter11_Normal:
-        clc             ; MED 01/17/96, flag no error
-
+inter11_specific:
         mov     [ebx+0],edx             ;set offset.
         mov     [ebx+4],cx              ;set segment selector.
-inter11_GotVect:
+        clc
         pop     eax
-        pop     edx
-        pop     ecx
+inter11_exit:
         pop     ebx
-        pop     es
         pop     ds
         assume ds:nothing
         ret
 RawSetEVector   endp
-
-
-;-------------------------------------------------------------------------------
-;
-;Allocate a real mode call back address.
-;
-;On Entry:-
-;
-;DS:ESI - Protected mode code.
-;ES:EDI - Real mode register structure.
-;
-;On Exit:-
-;
-;Carry set on error - no regs modified
-;else
-;CX:DX  - Real mode address allocated.
-;
-RawGetCallBack  proc near
-        ;
-        push    eax
-        push    ebx
-        push    esi
-        push    ds
-        mov     ax,KernalDS
-        mov     ds,eax
-        assume ds:GROUP16
-        ;
-;;MED 02/16/96
-        mov     ebx,offset CallBackTable
-        mov     eax,0  ;eax=callback#
-
-inter12_0:
-        test    CallBackStruc.CallBackFlags[ebx],1              ;this one in use?
-        jz      inter12_1
-        add     ebx,size CallBackStruc
-        inc     eax
-        cmp     eax,MaxCallBacks
-        jnz     inter12_0
-        stc
-        jmp     inter12_9
-        ;
-inter12_1:
-        pushad
-        mov     cx,1
-        xor     eax,eax   ;alloc descriptor
-        int     31h
-        mov     [ebx].CallBackStruc.CallBackStackSel,ax
-        popad
-        jc      inter12_9
-        pushad
-        mov     bx,[ebx].CallBackStruc.CallBackStackSel
-        xor     ecx,ecx
-        or      edx,-1
-        mov     ax,8      ;set limit
-        int     31h
-        popad
-        ;
-        mov     d[ebx].CallBackStruc.CallBackProt+0,esi ;store protected mode code address.
-        pop     esi
-        push    esi
-        mov     w[ebx].CallBackStruc.CallBackProt+4,si  ;store org DS
-        mov     d[ebx].CallBackStruc.CallBackRegs+0,edi ;store register table address ES:EDI.
-        mov     w[ebx].CallBackStruc.CallBackRegs+4,es
-        mov     cx,GROUP16
-        add     cx,ax
-        mov     dx,offset RawCallBack
-        shl     ax,4
-        sub     dx,ax
-        mov     [ebx].CallBackStruc.CallBackFlags,1     ;flag this entry in use.
-        @dprintf DOPT_MODESW,<"RawGetCallBack: ok, addr=%X:%X",10>,ecx,edx
-        clc
-inter12_9:
-        pop     ds
-        assume ds:nothing
-        pop     esi
-        pop     ebx
-        pop     eax
-        ret
-RawGetCallBack endp
-
-
-;-------------------------------------------------------------------------------
-;
-;Release a previously allocated real mode call back address.
-;
-;On Entry:-
-;
-;CX:DX  - Real mode call back address.
-;
-RawRelCallBack proc near
-        ;
-        pushad
-        push    ds
-        mov     ax,KernalDS
-        mov     ds,eax
-        assume ds:GROUP16
-        ;
-        mov     esi,offset CallBackTable
-        mov     ebx,MaxCallBacks
-        mov     ax,GROUP16
-        mov     di,offset RawCallBack
-inter13_0:
-        test    [esi].CallBackStruc.CallBackFlags,1
-        jz      inter13_1
-        cmp     ax,cx
-        jnz     inter13_1
-        cmp     di,dx
-        jnz     inter13_1
-        mov     [esi].CallBackStruc.CallBackFlags,0
-        mov     bx,[esi].CallBackStruc.CallBackStackSel
-        mov     ax,1
-        int     31h
-        clc
-        @dprintf DOPT_MODESW,<"RawRelCallBack: ok, addr=%X:%X",10>,ecx,edx
-        jmp     inter13_2
-        ;
-inter13_1:
-        inc     ax
-        sub     di,10h
-        add     esi,size CallBackStruc
-        dec     ebx
-        jnz     inter13_0
-        stc
-        ;
-inter13_2:
-        pop     ds
-        popad
-        ret
-RawRelCallBack endp
 

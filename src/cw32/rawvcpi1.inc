@@ -33,12 +33,12 @@ RecentMapStack  dd PAGESTACKSIZE dup (0)	;memory.inc
 ;_LM_BlockBase   dd ?	;memory.inc - used by Raw[Un]LockMemory
 ;_LM_BlockEnd    dd ?	;memory.inc
 ;_LM_Needed      dd ?	;memory.inc
-_LM_Got         dd ?	;memory.inc
+_LM_Got         dd ?	;memory.inc - used by Raw[Un]LockMemory
 TotalPhysical   dd 0    ;free phys. pages reported by VCPI/XMS/INT15/DOS
 ;
 SwapFileLength  dd 0
 ;
-RawSelBuffer    Desc <>
+RawDescBuffer   Desc <>
 ;
 ;
 XMSMEMITEM struc
@@ -47,10 +47,15 @@ dwBase   dd ?
 dwEnd    dd ?
 XMSMEMITEM ends
 
+XMSTMPITEM struc
+wHdl     dw ?
+;wFlags   dw ?
+XMSTMPITEM ends
+
 MemIntBuffer    RealRegsStruc <>
 XMSList         XMSMEMITEM XMSITEMS dup (<0,0,0>)
-XMSTempList     dd XMSITEMS dup (0)
-XMSTotal        dd 0
+XMSTempList     XMSTMPITEM XMSITEMS dup (<?>) ;GetXMSPages() local var
+XMSTotal        dd ?                ;GetXMSPages() local var
 
 ;--- CAUSEWAY=LOWMEM:xxx default
 ;--- the stored value is in paragraph units, while the xxx in LOWMEM:xxx are kB
@@ -70,7 +75,7 @@ DOSMEMITEM ends
 ConventionalList DOSMEMITEM CONVITEMS dup (<0,0>)
 ConvTempList    dw CONVITEMS dup (0)
 ConvTotal       dd 0
-ConvSavePara    dw 0
+ConvSavePara    dw 0  ;GetCONVPage(s) local var
 
 ConvSaveSize    dw DEFLOWMEM*64 ;*64 -> convert kB to paragraphs
 endif
@@ -152,7 +157,7 @@ pminit          df ?
 endif
 PageBufferReal  dw ?            ;real mode segment for swapfile access
 PageBufferLinear dd ?           ;linear address for swapfile access
-PageInt         RealRegsStruc <>
+PageRMCS        RealRegsStruc <>
 ;
 	align 4
 ;--- callback tables
@@ -165,20 +170,6 @@ ICallBackIntNo  db 16+3 dup (-1)
 
 	align 4
 
-;--- CallBackStruc is for external callbacks; 2 are allocated before the app gets control:
-;--- 1. mouse event (always allocated, even if no mouse driver installed)
-;--- 2. Int 1Bh (always allocated)
-
-CallBackStruc struc
-CallBackFlags	db ?	; [0]:1=in use
-                db ?    ; not used
-CallBackProt	df ?    ; FAR32 protected-mode CS:EIP to call
-CallBackRegs	df ?    ; FAR32 address of RMCS
-CallBackStackSel dw ?   ; stack selector
-CallBackStruc ends
-;
-CallBackTable   CallBackStruc MaxCallBacks dup (<0,0,0,0,0>)
-;
 VDiskSig        db 'VDISK V'
 VDiskSigLen     equ     $-VDiskSig
 VDiskSigVec     equ     19h
@@ -208,16 +199,15 @@ rv1_RetAdd    dw ?
 rv17_Return   dw ?
 rv19_Return   dw ?
 rv20_Return   dw ?
-rv30_CallTab  dw ?      ;RawCallBack
-rv30_rmsp     dw ?,?    ;RawCallBack
+rv30_rmCS     dw ?      ;RawCallBack: stored real-mode CS to calc callback #
+;rv30_rmStk    dw ?,?    ;RawCallBack: stored real-mode SS:SP
 	align 4
 rv31_CallB016 label PF16
 rv31_CallB032 label fword
                  df ?
-rv31_CallTab     dw ?   ;RawIntCallBack
-rv31_FlagsStore  dd 0   ;RawIntCallBack: saved efl
-rv31_rmsp        dd ?   ;RawIntCallBack: saved rm stack
-;rv31_zero        dd 0   ;RawIntCallBack: ???
+rv31_CbIdx       dw ?   ;RawIntCallBack: callback #
+rv31_FlagsStore  dd ?   ;RawIntCallBack: saved efl
+rv31_rmStk       dd ?   ;RawIntCallBack: saved real-mode SS:SP
 
 rvsp_dsreg    dw ?      ;raw mode switch
 rvsp_esreg    dw ?      ;raw mode switch
@@ -242,6 +232,7 @@ _cwRaw$1 ends
 ;--- final switch back to real-mode
 ;--- ES: flat 4G
 ;--- DS: KernalDS
+;--- [sp]: near16 return address
 
 RawVCPIRealMode proc near
         pop     [rv1_RetAdd]   ; pop return address
@@ -249,19 +240,17 @@ RawVCPIRealMode proc near
 ;Disable hardware INT call-backs.
 ;
         mov     edx,ICallBackUsed ;list of call backs.
-        mov     bx,offset ICallBackIntNo
+        mov     di,offset ICallBackIntNo
         mov     si,offset ICallBackOldVec
 rv1_6:
         lodsd
         shr     edx,1
         jnc     rv1_7
-        push    bx
-        movzx   bx,b [bx]    ;get Int#
+        movzx   bx,b [di]    ;get Int#
         shl     bx,2
         mov     es:[bx],eax
-        pop     bx
 rv1_7:
-        inc     bx
+        inc     di
         and     edx,edx
         jnz     rv1_6
 ;
@@ -512,7 +501,7 @@ RawRelXMS       proc    near
 ife RELXMSINRM
         push    ds
         pop     es
-        mov     edi,offset MemIntBuffer
+        mov     edi,offset MemIntBuffer ;RawRelXMS (RELXMSINRM==0)
 endif        
         ;
         mov     si,offset XMSList       ;+2             ;list of handles.
@@ -581,7 +570,7 @@ FreeVCPIPage proc
         push    ds
         pop     es
         mov     ax,0DE05h               ;free 4k page.
-        mov     edi,offset MemIntBuffer
+        mov     edi,offset MemIntBuffer ;FreeVCPIPage (VCPIPMCALL==0)
         mov     RealRegsStruc.Real_AX[edi],ax
         mov     RealRegsStruc.Real_EDX[edi],edx
         mov     RealRegsStruc.Real_IP[edi],offset Int67h
@@ -1106,77 +1095,49 @@ endif
 ;
 ;Intercept for windows init broadcast (int 2Fh real-mode)
 ;
-Int2FPatch      proc    near
-;
-;check if it's an init broadcast that's being allowed.
-;
+Int2FrPatch      proc    near
         cmp     ax,1605h
-        jnz     no_1605
-        or      bx,bx
-        jnz     rv23_ret
-        or      si,si
-        jnz     rv23_ret
-        or      cx,cx
-        jnz     rv23_ret
-        test    dx,1
-        jnz     rv23_ret
-        ;
-        push    ds
-        push    cs
-        pop     ds
-        assume ds:GROUP16
-        inc     InWindows
-        pop     ds
-        jmp     rv23_ret
-;
-;check if it's an exit broadcast.
-;
-no_1605:
+        jz      is_1605
         cmp     ax,1606h
-        jnz     no_1606
-        test    dx,1
-        jnz     rv23_ret
-        ;
-        push    ds
-        push    cs
-        pop     ds
-        dec     InWindows
-        pop     ds
-no_1606:
-if 0;DPMIDBG
+        jz      is_1606
+if 0
         cmp     ax,1687h
-        jnz     rv23_ret
-Patch2f1687 equ $-2
-        mov     es,cs
-        mov     di,offset initjmp2pm
-        clc
-        retf 2
+        jz      is_1687
 endif
 rv23_ret:
-;
-;Let previous handlers have a go at it.
-;
-        jmp     cs:[OldInt2Fr]
-if 0
-        push    ax
-        push    dx
-        push    ds
-        push    cs
-        pop     ds
-        mov     dx,offset WinMessage
-        mov     ah,9
-        int     21h
-        pop     ds
-        mov     ax,4cffh
-        int     21h
+        jmp     cs:[OldInt2Fr]    ;Let previous handlers have a go at it.
 
-        jmp     cs:[OldInt2Fr]
+;--- Windows init broadcast
+is_1605:
+        or      bx,bx        ;ES:BX == 0:0
+        jnz     rv23_ret
+        or      si,si        ;DS:SI == 0:0
+        jnz     rv23_ret
+        or      cx,cx        ;CX == 0
+        jnz     rv23_ret
+        test    dl,1         ;DX[0]=0 if enhanced mode
+        jnz     rv23_ret
+        inc     cs:InWindows
+        jmp     rv23_ret
 
-WinMessage      db 'Cannot run Windows in enhanced mode while a CauseWay application is active.',13,10
-        db 'Run Windows in standard mode or remove the CauseWay application.',13,10,'$'
+;--- Windows exit broadcast.
+is_1606:
+        test    dl,1         ;DX[0]=0 if enhanced mode
+        jnz     rv23_ret
+        dec     cs:InWindows
+        jmp     rv23_ret
+if 0;DPMIDBG
+is_1687:
+        mov     es,cs
+        mov     di,offset initjmp2pm
+        push    bp
+        mov     bp,sp
+        and     byte ptr [bp+3*2],not 1
+        pop     bp
+        iret
 endif
 
-Int2FPatch      endp
+Int2FrPatch      endp
 
 ;-------------------------------------------------------------------------------
 ;
