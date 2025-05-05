@@ -10,8 +10,8 @@
 cr equ 13
 lf equ 10
 
-ifdef __JWASM__
-	option mz:40h	;if JWasm's -mz option is used, ensure that header size is at least 64 bytes.
+if 0;def __JWASM__
+	option mz:40h	;if JWasm's -mz option is used, header size will be min(64)
 endif
 
 MZHdr struct
@@ -20,7 +20,7 @@ MZHdr struct
 wPages	dw ?;04 # of 512 byte pages
 	dw ?	;06
 	dw ?	;08
-	dw ?	;0A
+MinAllc dw ?;0A min paras to add
 	dw ?	;0C
 EntrySS	dw ?;0E
 EntrySP	dw ?;10
@@ -58,17 +58,19 @@ local  mzhdr:MZHdr
 	shr bx,4
 	mov ax,es:[2]	;end of block - para address
 	sub ax,bx		;ax=destination address paragraph
-	jc  error1
+;--- the memory block may be so small that dest < src + size;
+;--- therefore the move is done with direction "down".
 	mov es,ax
-	xor di,di
-	xor si,si
-	cld
+	mov ss,ax		;SS=new DGROUP
+	mov di,cx
+	mov si,cx
+	std
 	rep movsb es:[di],cs:[si]
+	cld
 	push es
 	push @F
 	retf			;CS=new DGROUP
 @@:
-	mov ss,ax		;SS=new DGROUP
 	mov ds,ax		;DS=new DGROUP
 
 ;--- move done. Now search extender
@@ -88,6 +90,8 @@ local  mzhdr:MZHdr
 	mov ah,3Fh
 	int 21h
 	jc error2
+	cmp ax,cx
+	jnz error2
 	mov ah,3eh
 	int 21h
 
@@ -100,6 +104,7 @@ local  mzhdr:MZHdr
 	mov [bx+2],ax
 	mov cx,mzhdr.wPages
 	shl cx,5			;pages to paras (512-256-128-64-32-16)
+;	add cx,mzhdr.MinAllc
 	add ax,cx
 	mov cx,cs
 	cmp cx,ax
@@ -109,7 +114,7 @@ local  mzhdr:MZHdr
 	lea dx,szPgm		;path of CW32.EXE
 	mov ax,4B03h		;load as overlay
 	int 21h
-	jb  error2			;fatal load error
+	jb error2			;fatal load error
 
 ;--- load ok. finally jump to extender startup code.
 
@@ -189,7 +194,7 @@ nextchr:
 	cmp byte ptr es:[si],0	;if PATH doesn't exist or is at its end
 	jz pgmnotfound
 	mov di,dx
-	lea bx,[di+(sizeof szPgm - (SIZEEXTENDER + 2))]
+	lea bx,[di+(sizeof szPgm - (SIZEEXTENDER + 1))]
 nextchr2:
 	lodsb es:[si]	;search next path
 	cmp al,';'

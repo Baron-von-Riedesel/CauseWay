@@ -548,7 +548,8 @@ endif
         movsd   es:[edi],fs:[esi]   ;FS,GS
 
         add     esi,2               ;skip flags
-        movsd                       ;CS:IP
+;        movsd                       ;CS:IP
+        movsd   es:[edi],fs:[esi]   ;CS:IP
 ;        mov     eax,d[rv30_rmStk]
         mov     eax,ebp
 

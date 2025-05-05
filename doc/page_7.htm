@@ -18,7 +18,141 @@ CauseWay for Watcom C/C++ &amp; Assembly Language: Manual Page 7
 </FONT><FONT SIZE=3><P>If DISPLAY.OBJ or DRIVER.OBJ are not found in the C:\ASMWORK directory, WL32 also searches the \ASMWORK\SUPPORT directory on the current drive and \HARDWARE directory on the F: drive for the object module files.</P>
 <B><P>NOTE:</B> If an object module is explicitly given a path specification in the link file or command line, the WL32 will only search for the file in the path specified. The OBJ environment variable directories are searched for a file only when a file is listed without an associated directory and WL32 does not find the file in the current directory.</P>
 
-<P><A HREF="page_8.htm">Next Page</A></P>
+<B><P>LIB Environment Variable</P>
+</B><P>The LIB environment variable contains the name of one or more directories that are used if WL32 does not find a library file in the current directory. The LIB environment variable is identical to the OBJ environment variable except WL32 searches for the library files with the LIB environment variable instead of searching for object module files.</P>
+<P>For example, assume your current directory is C:\ASMWORK. The following command lines DISPLAY.OBJ and DRIVER.OBJ with SA.LIB.</P>
+<P>W</FONT><FONT FACE="Courier" SIZE=3>L32 DISPLAY DRIVER,,,SA</P>
+</FONT><FONT SIZE=3><P>Without a LIB environment variable, if SA.LIB is not in the C:\ASMWORK directory, WL32 issues a DOS error 2 (file not found) error. To specify that library files may also be found in the \SA or \LIB directories, set the LIB environment variable as follows:</P>
+</FONT><FONT FACE="Courier" SIZE=3><P>SET LIB=\SA;\LIB</P>
+</FONT><FONT SIZE=3><P>In the example above, if LIB is not found in the C:\ASMWORK directory, WL32 searches the current drive’s \SA and \LIB directories for the library file. Of course, you may also place a drive specifier, such as C:\SA in the LIB environment variable setting to tell WL32 to search a particular drive’s directory for library files.</P>
+<B><P>NOTE:</B> If a library is explicitly given a path specification in the link file or command line, then WL32 will only search for the library file in the path specified. The LIB environment variable directories are searched only when a file is listed without an associated directory and WL32 does not find the file in the current directory.</P>
+<B><P>TEMP and TMP Environment Variables</P>
+</B><P>The TEMP and TMP environment variables specify the directory and drive where a swap file is built by CauseWay’s virtual memory manager (VMM) when operating under DOS. Windows and OS/2 provide their own memory management functions which override CauseWay’s use of the TEMP and TMP environment variables. The path indicated by TEMP will be used under DOS if both TEMP and TMP environment variables exist. Both settings are superseded by the</P>
+
+<P>CAUSEWAY=SWAP environment variable setting.</P>
+</FONT><FONT FACE="Courier" SIZE=3><P>SET TMP=C:\SWAP</P>
+</FONT><FONT SIZE=3><P>The example above directs the CauseWay DOS extended to create it swap file, if any, in the C:\SWAP
+directory. Since the WL32 linker itself contains the CauseWay DOS extender, you may use the TEMP or TMP settings to specify
+a swap file directory when linking applications.</P>
+<P>If no TEMP, TMP and CAUSEWAY==SWAP settings are present or are invalid, the current drive is used when creating a swap
+file. If free drive space is less than physical memory (extended and conventional) available at startup, then the DOS extender
+VMM is disabled, no swap file is created, and virtual memory is not available to the application.</P>
+
+<B><P>CAUSEWAY Environment Variable</P>
+</B><P>The CAUSEWAY environment variable controls operation of the DOS extender at application runtime. Eleven (11) options
+are supported, although they are ignored in a Window or OS/2 DPMI environment. Use any combination of the options in the
+following format:</P>
+</FONT><FONT FACE="Courier" SIZE=3><P>SET CAUSEWAY=[<I>setting_1</I>;][<I>setting_2</I>;][<I>setting_n</I>;]</P>
+</FONT><FONT SIZE=3><P>Items in brackets ([ ]) are optional. Do not actually type the brackets if you use the optional items.
+Items in italics should be replaced with actual values, separated by semicolons. Following is a description of the nine valid
+settings:</P>
+
+<B>BIG1</B><BLOCKQUOTE>Force CauseWay to use an alternate method to determine available extended memory under RAW memory
+environments (no DPMI host, no EMM, no HIMEM.SYS loaded), allowing CauseWay to see more than 64M of memory on machines which do not
+support more than 64M under original INT 15h method. This method uses INT 15h function 0e801h to determine available extended
+memory, falling back to the original function if 0e801h fails. Note that old machines may not support this function and there
+is a slight chance that some older machines may not work if the BIG1 setting is used. OTOH, on machines with more than 64M of
+memory setting BIG1 may significantly increase speed of memory allocations under RAW memory environments.
+</BLOCKQUOTE>
+
+<B>DPMI</B><BLOCKQUOTE>Force DPMI rather than default VCPI usage whenever possible (recommended for 386^Max and BlueMax users).
+The memory manager must support DPMI or else this setting is ignored.
+</BLOCKQUOTE>
+
+<B>EXTALL</B><BLOCKQUOTE>Force CauseWay to use all extended memory and sub-allocate memory from the bottom up instead of the
+default top-down approach under RAW memory environments (no DPMI host, no EMM, no HIMEM.SYS loaded). This setting is most
+useful for processor intensive environments which have a small hardware CPU cache. Use of this setting means that no extended
+memory will be available for other programs while the application is loaded (including shelling to DOS).
+</BLOCKQUOTE>
+
+<B>HIMEM:<I>nnn</I></B><BLOCKQUOTE>Set maximum physical (conventional plus extended) memory that can be consumed by CauseWay.
+<I>nnn</I> is the decimal number of kilobytes that can be consumed. If memory allocation requests exceed this figure, CauseWay
+will use virtual memory, even if additional physical memory is present. If the HIMEM memory value exceeds available physical
+memory, then memory allocations operate normally. For example, HIMEM:2048 on a 4M machine would force virtual memory use after
+2M of memory allocations (including loading the executable file). The remaining 2M of memory could be used by other
+applications while the CauseWay application is active.
+</BLOCKQUOTE>
+
+<B>LOWMEM:<I>nnn</I></B><BLOCKQUOTE>Set amount of DOS (conventional) memory not to be used by CauseWay.
+ <I>nnn</I> is the decimal number of kilobytes to reserve, the default is 256 kB (in previous versions this was 32 kB).
+ If there is not enough conventional memory to satisfy the <I>nnn</I> request value, then CauseWay will leave
+ all conventional memory free that is not required by the extender to operate. 
+ Note that this option does not guarantee the amount of free DOS memory, just how much needs to be free before
+ CauseWay will consume DOS memory after exhausting all extended memory.
+ For example, LOWMEM:200 will attempt to reserve 200K of DOS memory, even if CauseWay has exhausted all extended
+ memory and is using conventional memory to fill memory allocation requests.
+</BLOCKQUOTE>
+
+<B>MAXMEM:<I>nn</I></B><BLOCKQUOTE>Set maximum linear address space provided by CauseWay. <I>nn</I> is the decimal number of
+<B>megabytes</B> of linear address space. This setting is similar to HIMEM except that it includes any virtual memory. For
+example, MAXMEM:32 on a 16M memory system restricts VMM disk space usage to 32M, even if more disk space is present.
+MAXMEM:8 on the same system would restrict the application to 8M of memory (all physical). Note that the setting is in
+megabytes, rather than kilobytes used in the LOWMEM and HIMEM options.
+</BLOCKQUOTE>
+
+<B>NAME:&lt;<I>filename</I>&gt;</B><BLOCKQUOTE>Set a name, without a pathspec, to use the virtual memory temporary swap file.
+To set a path for the swap file, use the CAUSEWAY=SWAP, TEMP, or TEMP. The filename must be valid, 12 characters or less.
+Additional characters are truncated or invalidate the filename, depending upon how DOS handles it (e.g., multiple periods
+make an invalid file name whereas a five-character extension is truncated to three). If the filename specified is invalid,
+CauseWay shuts off virtual memory. It makes no further attempts for a temporary file name. If a pre-existing file name is
+specified, CauseWay overwrites the file.
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+In conjunction with the PRE setting, the NAME setting can be a very powerful tool. Not only can no clusters be lost due to
+reset/reboot, but the leftover temporary file can be forced to a known name and location. Erase the swap file prior to
+running the application or leave it as a "permanent" swap file for CauseWay.
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+<B>NOTE:</B> In a multi-user or multi-CauseWay application situation, do not use the NAME setting unless it generates a unique
+file for each user and application. Otherwise, applications will be stepping on others' temporary files. Alternatively, use
+WARPWRAP to avoid a problem by burning in different file names or creating workstation-specific environment variable settings.
+</BLOCKQUOTE>
+
+<B>NOEX</B><BLOCKQUOTE>Force CauseWay to not patch the INT 21h, function 4bh (EXEC) vector to turn off CauseWay's INT 31h
+extensions when the EXEC function is called. CauseWay normally turns off support of its INT 31h extensions with an EXEC call
+to be well behaved and avoid conflicts with other extenders or programs which may add their own extensions to INT 31h.
+However, if your CauseWay extended application shells out to DOS and passes the shelled-to application a callback address
+pointing to a routine within the parent CauseWay application, the callback will not work properly if the protected mode code
+uses the CauseWay extensions. With the NOEX setting present, CauseWay still supports its INT 31h extensions for those users
+who need to operate with callbacks in this fashion. Be aware that when the NOEX setting is present, CauseWay is less
+"well-behaved" about other programs which might add their own INT 31h extensions.
+</BLOCKQUOTE>
+
+<B>NOPASS</B><BLOCKQUOTE>Disable passing of interrupts occuring in real-mode to protected-mode.
+</BLOCKQUOTE>
+
+<B>NOVM</B><BLOCKQUOTE>Disable all virtual memory use by CauseWay. If physical memory is exhausted, CauseWay will fail further
+memory allocation requests.
+</BLOCKQUOTE>
+
+<B>PRE:<I>nnn</I></B><BLOCKQUOTE>Pre-allocates a swap file size, under non-DPMI environments, at start-up. <I>nnn</I> is file
+size in megabytes, not kilobytes (same as MAXMEM).
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+There are at least two uses for this feature. First, to pre-allocate a virtual memory file size for applications with a
+total memory allocation (including EXE image) that does not exceed the set size. For example:
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+</FONT><FONT FACE="Courier" SIZE=3>SET CAUSEWAY=PRE:4
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+</FONT><FONT SIZE=3>pre-allocates a virtual memory file of 4M. If an end-user resets or powers off the computer while the
+application is running and virtual memory is in use, the enduser's machine will not have lost clusters. There is only a 4M
+temporary file to find and erase. If virtual memory usage exceeds 4M, then SCANDISK must be used to recover lost clusters
+above and beyond what was pre-allocated.
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+Secondly, PRE can be used to allow your application to stake a claim to disk space before it needs it.
+</BLOCKQUOTE>
+<BLOCKQUOTE>
+PRE may be used in conjunction with MAXMEM to ensure that virtual memory does not exceed the pre-allocation setting.
+</BLOCKQUOTE>
+
+<B>SWAP:<I>path</I></B><BLOCKQUOTE>Set CauseWay's virtual memory manager swap file path. This path takes precedence for
+choosing the location of a swap file over the TEMP and TMP environment variables.
+</BLOCKQUOTE>
+
+<P><A HREF="page_1X2X.htm">Next Page</A></P>
 <P><A HREF="page_6.htm">Previous Page</A></P>
 <P><A HREF="page_iii.htm">Go to Table of Contents</A></P>
 

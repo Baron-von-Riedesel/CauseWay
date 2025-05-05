@@ -5528,7 +5528,10 @@ FindModule      proc    near
         push    es
         mov     ds,cs:apiDSeg32
         assume ds:GROUP32
-        @dprintf DOPT_EXEC,<"FindModule enter, es:esi=%ls",10>,esi,es
+ifdef _DEBUG
+        lea eax,[esi+1]
+endif
+        @dprintf DOPT_EXEC,<"FindModule enter, es:esi=%ls",10>,eax,es
 ;
 ;Search resident modules first.
 ;
@@ -7526,7 +7529,7 @@ endif
         push    cs
         pop     ds
         xor     ecx,ecx                 ;CX = environment
-        Sys     cwExec                  ;run the bugger (executes cwAPI_exec).
+        Sys     cwExec                  ;run the bugger (executes cwAPI_exec, 0ff24h).
         mov     ds,cs:apiDSeg16
         jnc     cw1_8
         add     ax,10-1                 ;convert error number.

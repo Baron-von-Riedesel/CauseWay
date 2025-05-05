@@ -1,6 +1,6 @@
 
-;--- CW converts LE to P3
-;--- if image is P3 already, it displays current format with /i
+;--- CW converts LE to 3P
+;--- if image is 3P already, it displays current format with /i
 ;--- or sets various parameters for CW dos extender.
 
 ;--- this version has been adjusted and needs to find cwstub.exe!
